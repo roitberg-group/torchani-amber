@@ -1,0 +1,357 @@
+#include <cstdlib>
+#include <iostream>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
+
+// Header for torch::autograd::grad, not included by default, necessary for forces
+#include <torch/csrc/autograd/autograd.h>
+#include <torch/script.h>
+
+#include "torchani.h"
+// WARNING VERSION COMPATIBILITY: It is crucial that Torchani is compiled with
+// JIT using the same torch version as the LibTorch version used to run the
+// model in C++ (or a lower one).  For example, if torch.__version__ = 1.5.0 for
+// Torchani, then LibTorch must also be 1.5.0 or higher, otherwise this will
+// never work.
+
+// WARNING LIBTORCH AND cuDNN DEPENDANCE: libtorch has *.so libraries so it
+// can't really be included with the binary. libtorch has to be installed in
+// whatever machine this runs on. cuDNN must ALSO be installed. cuDNN library
+// and include files (CUDNN_LIBRARY_PATH=(...)/libcudnn.so and
+// CUDNN_INCLUDE_PATH=(...)/include/ must be directly set in the CMakeLists.txt
+// file if not installed in the default location under /usr/local/cuda
+
+// The model is private to the library so I will not allow other stuff to access
+// it.
+static torch::jit::script::Module torchani_model;
+static torch::Tensor torchani_atomic_numbers;
+// This conversion factor should come straight from torchani.units and be
+// consistent with ASE
+static double HARTREE_TO_KCALMOL = 627.5094738898777;
+// Default device is CPU
+static torch::Device torchani_device(torch::DeviceType::CPU, -1);
+// Amber has PBC enabled in all directions for PME
+static torch::Tensor has_pbc;
+static torch::ScalarType torchani_precision;
+static std::unordered_map<int, std::string> model_type = {
+    {-1, "custom"},
+    {0, "ani1x"},
+    {1, "ani1ccx"},
+    {2, "ani2x"}
+};
+
+void torchani_set_device(
+    bool use_cuda_device,
+    int device_index
+){
+    if (use_cuda_device) {
+        torchani_device = torch::Device(torch::DeviceType::CUDA, device_index);
+    } else {
+        // CPU device should always be -1
+        if (device_index != -1) {
+            std::cerr << "Error in libtorchani, device index should be -1 for CPU "
+                      << std::endl;
+            std::exit(-1);
+        }
+        torchani_device = torch::Device(torch::DeviceType::CPU, device_index);
+    }
+}
+
+void torchani_set_precision(bool use_double_precision){
+    if (use_double_precision) {
+        torchani_precision = torch::kDouble;
+    } else {
+        torchani_precision = torch::kFloat;
+    }
+}
+
+// define idx = 0, wants_gpu = 0 : CPU and idx = gpu_idx, wants_gpu = 1 : GPU
+// Call with (... &wants_gpu, &idx)
+extern "C" void torchani_init_atom_types_(
+    int atomic_numbers[],
+    int* num_atoms_raw,
+    int* use_cuda_device_raw,
+    int* device_index_raw,
+    int* use_double_precision_raw,
+    int* model_type_raw,
+    int* model_index_raw,
+    int* use_cell_list_raw,
+    int* use_external_neighborlist_raw
+){
+  // use_cuda_device and use_double_precision should be a bool but it is
+  // set to an int pointer for compatibility with C / Fortran
+  // model_type should be a string but it is set to an int for compatibility
+  // with C
+  //
+  int num_atoms = *num_atoms_raw;
+  int device_index = *device_index_raw;
+  int model_index = *model_index_raw;
+  bool use_external_neighborlist = static_cast<bool>(*use_external_neighborlist_raw);
+  bool use_cell_list = static_cast<bool>(*use_cell_list_raw);
+  bool use_cuda_device = static_cast<bool>(*use_cuda_device_raw);
+  bool use_double_precision = static_cast<bool>(*use_double_precision_raw);
+  std::string torchani_model_file;
+  std::string cell_name = "";
+
+  if (use_cell_list) {
+      cell_name = "_internal_cell";
+  } else if (use_external_neighborlist) {
+      cell_name = "_external_cell";
+  }
+  if (model_index == -1) {
+      torchani_model_file = "/" + model_type[*model_type_raw] + cell_name +  ".pt";
+  } else {
+      torchani_model_file = "/" + model_type[*model_type_raw] + cell_name + "_" +
+                          std::to_string(model_index) + ".pt";
+  }
+
+  torchani_set_device(use_cuda_device, device_index);
+  torchani_set_precision(use_double_precision);
+  // It is VERY important to get types correctly here. If the
+  // types don't match then from_blob will not interpret the pointers correctly
+  // and as a consequence the tensor will have junk memory inside. If the blob
+  // is int then the tensor should be torch::kInt. If the blob is double
+  // then the tensor should be torch::kDouble
+  //
+  // PBC tensor is initialized even if pbc is not needed afterwards,
+  // since the tensor occupies almost no space
+  auto pbc_options = torch::TensorOptions().dtype(torch::kBool).device(torchani_device);
+  has_pbc = torch::tensor({true, true, true}, pbc_options);
+  std::string file_path = __FILE__;
+  file_path = file_path.substr(0, file_path.find_last_of("/"));
+  file_path = file_path.substr(0, file_path.find_last_of("/"));
+  std::string jit_model_path = file_path + "/jit" + torchani_model_file;
+  auto atomic_numbers_options = torch::TensorOptions().dtype(torch::kInt);
+  torchani_atomic_numbers = torch::from_blob(atomic_numbers, {num_atoms},atomic_numbers_options);
+  torchani_atomic_numbers = torchani_atomic_numbers.to(torchani_device);
+  torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
+  // This is necessary since torch has to use this tensor to index internally,
+  // and only long tensors can be used for this, so widening of the ints has
+  // to be performed.
+  // Also, torchani needs an extra dimension as batch dimension
+  torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
+  // The model is loaded from a JIT compiled file always.
+  try {
+      torchani_model = torch::jit::load(jit_model_path, torchani_device);
+      // This is only necessary for double precision, since
+      // the buffers / parameters are kFloat by default
+      if (use_double_precision) {
+          torchani_model.to(torchani_precision);
+      }
+  } catch (const c10::Error& e) {
+      std::cerr
+          << "Error in libtorchani, could not load model correctly from "
+          << jit_model_path
+          << std::endl;
+      std::exit(-1);
+  }
+  // Long tensors are recast to kLong, this is necessary because
+  // to(torch::kDouble) also casts buffers to double (or float)
+  if (use_double_precision) {
+      torchani_model.get_method("_recast_long_buffers")({});
+  }
+}
+std::vector<torch::jit::IValue> setup_inputs_pbc_external_neighborlist(
+    torch::Tensor& coordinates,
+    torch::Tensor& neighborlist,
+    torch::Tensor& shifts
+){
+    std::tuple<torch::Tensor, torch::Tensor> input_tuple = {torchani_atomic_numbers, coordinates};
+    return {input_tuple, neighborlist, shifts};
+}
+
+std::vector<torch::jit::IValue> setup_inputs_pbc(
+    double pbc_box[][3],
+    torch::Tensor& coordinates
+){
+    // uses two "globals", has_pbc and torchani_atomic_numbers
+    // Amber's ucell is read into cell
+    auto cell_options = torch::TensorOptions().dtype(torch::kDouble);
+    torch::Tensor cell = torch::from_blob(pbc_box, {3, 3}, cell_options);
+    cell = cell.to(torchani_device);
+
+    #if defined(DEBUG)
+        torch::Tensor cpu_cell = torch::from_blob(pbc_box, {3, 3}, cell_options);
+        cpu_cell = cpu_cell.to(torch::kCPU);
+        auto cell_a = cpu_cell.accessor<double, 2>();
+        std::cout << "Unit Cell recieved (columns are cell vectors)" << std::endl;
+        std::cout << cell_a[0][0] << " " << cell_a[0][1] << " " << cell_a[0][2] << std::endl;
+        std::cout << cell_a[1][0] << " " << cell_a[1][1] << " " << cell_a[1][2] << std::endl;
+        std::cout << cell_a[2][0] << " " << cell_a[2][1] << " " << cell_a[2][2] << std::endl;
+        std::cout << "Torch output" << std::endl;
+        std::cout << cpu_cell << std::endl;
+        std::cout << "Transposed torch output" << std::endl;
+        std::cout << torch::transpose(cpu_cell, 0, 1) << std::endl;
+    #endif
+
+    coordinates = coordinates.to(torchani_precision);
+    cell = cell.to(torchani_precision);
+    // cell needs to be transposed due to fortran using column major order
+    cell = torch::transpose(cell, 0, 1);
+    std::tuple<torch::Tensor, torch::Tensor> input_tuple = {torchani_atomic_numbers, coordinates};
+    // Create a vector of input values, jit::script::Module
+    // classes accept and return values of ONLY type torch::jit::IValue so
+    // any tensor passed to them has to be wrapped in this
+    // return by value is OK since inputs is locally created
+    return {input_tuple, cell, has_pbc};
+}
+
+std::vector<torch::jit::IValue> setup_inputs_nopbc(torch::Tensor& coordinates) {
+    // uses one "global", torchani_atomic_numbers
+    coordinates = coordinates.to(torchani_precision);
+    std::tuple<torch::Tensor, torch::Tensor> input_tuple = {
+        torchani_atomic_numbers,
+        coordinates
+    };
+    // Create a vector of input values, jit::script::Module
+    // classes accept and return values of ONLY type torch::jit::IValue so
+    // any tensor passed to them has to be wrapped in this
+    std::vector<torch::jit::IValue> inputs = {input_tuple};
+    // return by value is OK since inputs is locally created
+    return inputs;
+}
+
+torch::Tensor setup_coordinates(double coordinates_raw[][3], int num_atoms) {
+    // Torch needs as an input a TensorDataContainer to the
+    // torch::tensor constructor. The TensorDataContainer supports an initializer
+    // list, an at::ArrayRef or an std::vector of supported data types.
+    // An alternative used here to initialize from a pointer to a sequential
+    // memory location that has some data (from_blob).
+    // WARNING: It is crucial that
+    // the pointer type and the tensor type are the same when doing this,
+    // otherwise memory alignment issues occurr
+    // coordinates must be set to require grad, since automatic differentiation is
+    // used to get the forces
+    torch::Tensor coordinates = torch::from_blob(
+                                    coordinates_raw,
+                                    {num_atoms, 3},
+                                    torch::TensorOptions().dtype(torch::kDouble).requires_grad(true)
+                                ).to(torchani_device);
+    // torchani needs an extra dimension as "batch dimension"
+    coordinates = coordinates.unsqueeze(0);
+    return coordinates;
+}
+
+torch::Tensor setup_neighborlist(
+    int* neighborlist_raw[],
+    int num_neighbors
+){
+    auto options = torch::TensorOptions().dtype(torch::kInt);
+    torch::Tensor neighborlist = torch::from_blob(neighborlist_raw, {2, num_neighbors}, options);
+    neighborlist = neighborlist.to(torch::kLong);
+    return neighborlist.to(torchani_device);
+}
+
+torch::Tensor setup_shifts(
+    double shifts_raw[][3],
+    int num_neighbors
+){
+    auto options = torch::TensorOptions().dtype(torch::kDouble).requires_grad(true);
+    torch::Tensor shifts = torch::from_blob(shifts_raw, {num_neighbors, 3}, options);
+    return shifts.to(torchani_device);
+}
+
+void calculate_forces(
+    torch::Tensor& coordinates,
+    torch::Tensor& output,
+    double forces[][3],
+    int num_atoms
+){
+    std::vector<torch::Tensor> energy_vec = {output.sum()};
+    std::vector<torch::Tensor> coord_vec = {coordinates};
+    // the output is a vector of tensors, of the same number of elements as
+    // coord_vec (in this case only one) so the [0] element is the array of
+    // derivatives, and the negative is the force
+    torch::Tensor torchani_force = -torch::autograd::grad(energy_vec, coord_vec)[0] * HARTREE_TO_KCALMOL;
+    // Accessor is used to access tensor elements, but dimensionality has
+    // to be known at compile time. Note that this is a CPU accessor.
+    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
+    // AFIK cuda tensors have to be converted to cpu before access is allowed
+    // This cast does nothing if output is already of the required type and
+    // device, so there should be no overhead.
+    torchani_force = torchani_force.to(torch::kCPU, torch::kDouble);
+
+    auto torchani_force_a = torchani_force.accessor<double, 3>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            forces[atom][c] = torchani_force_a[0][atom][c];
+        }
+    }
+}
+
+void calculate_potential_energy(
+    torch::Tensor& output,
+    double* potential_energy
+){
+    // data is copied here, otherwise errors ocurr, since the data dies as soon
+    // as the function exits.
+    // This cast does nothing if output is already of the required type and
+    // device, so there should be no overhead
+    output = output.to(torch::kCPU, torch::kDouble);
+    *potential_energy = (*output.data_ptr<double>()) * HARTREE_TO_KCALMOL;
+}
+
+torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
+    // The output value of the model is of type torch::jit::IValue
+    // so it has to be converted to tensor to be correctly used
+    // output value is a tuple here
+    // The output value of the model is an IValue that has to be cast to a
+    // (pointer to a) tuple. The first element is the only important one, which is
+    // a 1D tensor that holds the potential energy
+    torch::Tensor output = torchani_model.forward(inputs).toTuple()->elements()[1].toTensor();
+    return output;
+}
+
+void torchani_energy_force_pbc_external_neighborlist_(
+    int* neighborlist_raw[],
+    double shifts_raw[][3],
+    int* num_neighbors_raw,
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    double forces[][3],
+    double* potential_energy
+){
+    int num_atoms = *num_atoms_raw;
+    int num_neighbors = *num_neighbors_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    torch::Tensor neighborlist = setup_neighborlist(neighborlist_raw, num_neighbors);
+    torch::Tensor shifts = setup_shifts(shifts_raw, num_neighbors);
+
+    // Inputs are setup with PBC
+    std::vector<torch::jit::IValue> inputs = setup_inputs_pbc_external_neighborlist(coordinates, neighborlist, shifts);
+    torch::Tensor output = get_energy_output(inputs);
+    calculate_forces(coordinates, output, forces, num_atoms);
+    calculate_potential_energy(output, potential_energy);
+}
+
+void torchani_energy_force_pbc_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    double forces[][3],
+    double pbc_box[][3],
+    double* potential_energy
+){
+    int num_atoms = *num_atoms_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    // Inputs are setup with PBC
+    std::vector<torch::jit::IValue> inputs = setup_inputs_pbc(pbc_box, coordinates);
+    torch::Tensor output = get_energy_output(inputs);
+    calculate_forces(coordinates, output, forces, num_atoms);
+    calculate_potential_energy(output, potential_energy);
+}
+
+void torchani_energy_force_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    double forces[][3],
+    double* potential_energy
+){
+    int num_atoms = *num_atoms_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
+    torch::Tensor output = get_energy_output(inputs);
+    calculate_forces(coordinates, output, forces, num_atoms);
+    calculate_potential_energy(output, potential_energy);
+}

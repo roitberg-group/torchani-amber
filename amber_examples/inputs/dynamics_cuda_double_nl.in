@@ -1,0 +1,26 @@
+! Constant T dynamics
+&cntrl
+    imin = 0
+    ntx = 1
+    ntpr = 1
+    ntwx = 1
+    nstlim = 300
+    dt = 0.001
+    tempi = 300.0
+    temp0 = 300.0
+    cut = 8.0
+    ntt = 3  ! langevin thermostat
+    gamma_ln = 2.0
+    ig = 5541  ! seed set by hand for repeatability
+    iextpot = 1
+/
+
+&extpot
+    extprog = "torchani"
+    use_double_precision = .true.
+    use_cuda_device = .true.
+    cuda_device_index = 0
+    model_type = "ani1x"
+    model_index = -1
+    use_cell_list = .true.
+/
