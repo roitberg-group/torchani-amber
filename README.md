@@ -11,22 +11,6 @@ and [ANI-1ccx](https://www.nature.com/articles/s41467-019-10827-4) ensembles
 available to use as calculators. ANI-1x and ANI-1ccx support HCNO elements.
 ANI-2x supports in addition F, Cl and S.
 
-## Note about Ampere GPUs (e.g. A100 nodes)
-
-The latest Ampere GPU introduced new TF32 tensor cores,
-which can speed-up matrix multiplications and convolutions of float32 by ~7x
-while sacrificing precision. This feature is ON by default, which means, if you
-are using Ampere and you don't turn it OFF, then all your networks will be
-evaluated at lower precision. For most popular AI applications it is a
-good idea to turn this on, but this might not be the case for neural network
-potentials. To disable TF32 try:
-
-```python
-import torch
-torch.backends.cuda.matmul.allow_tf32 = False
-torch.backends.cudnn.allow_tf32 = False
-```
-
 ## Requirements
 
 - Linux operating system
