@@ -56,18 +56,7 @@ time sander -O -i ./inputs/dynamics_cpu_double_ani1x.in \
          -inf tmp \
          -x outputs/dynamics_sander_cpu_double_ani1x.nc
 
-if [ -z "${cuda_is_available}" ]; then
-    # If this script is called from install.sh then this is unnecessary since
-    # install.sh already checks for cuda, so this is only called if
-    # this script is called directly
-    cuda_is_available=$(${python_command} "${DIR}/../install/inquire_cuda.py")
-fi
-
-if [ -z "${cuda_is_available}" ]; then
-    cuda_is_available=false
-fi
-
-if ${cuda_is_available}; then
+if $(hash nvidia-smi); then
     echo "############# Running CUDA dynamics #############"
     echo "############# Single precision #############"
     echo

@@ -3,14 +3,6 @@
 # The directory where this file is located
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-# shellcheck disable=SC1090
-source "${DIR}/install/python.sh"
-
-# shellcheck disable=SC2154
-if [ -z "${python_command}" ]; then
-    set_python_command
-fi
-
 # amber
 test_amber=false
 make_amber=false
@@ -227,20 +219,10 @@ else
     echo "Flag no-libtorchani models specified, skipping libtorchani.so compilation"
 fi
 
-# check cuda availability
-# check if cuda is available, requires torch unfortunately
-cuda_is_available=$(${python_command} "${DIR}/install/inquire_cuda.py")
-if [ -z "${cuda_is_available}" ]; then
-    cuda_is_available=false
-    echo "WARNING: No CUDA devices could be detected."
-        echo "Either torch could not detect a CUDA device or torch is not installed."
-fi
-export cuda_is_available
-
 # Run unit tests for libtorchani only
 if ${run_tests}; then
     # Only run cuda tests if a cuda device could be detected by torch
-    if ${cuda_is_available}; then
+    if $(hash nvidia-smi); then
         "${DIR}/build/test/unit_tests" ${1} [CUDA]
     else
         echo "WARNING: Only running CPU tests, no CUDA device detected."

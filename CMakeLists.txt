@@ -26,21 +26,28 @@ include(SetCudaToolkitVars)
 ensure_linux_build()
 
 # User options and flags
-option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
-set(CUSTOM_CUDNN_VERSION "8" CACHE STRING "cuDNN version to use for LibTorch")
-set(CUSTOM_CUDNN_CUDA_VERSION "11.6" CACHE STRING "CUDA version cuDNN is compatible with")
+option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
+
+set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
+set(PYTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version PyTorch is compatible with")
+
+set(CUDA_TOOLKIT_VERSION "11.6" CACHE STRING "CUDA Toolkit version to set CUDA vars")
+set(LIBTORCH_CUDNN_CUDA_VERSION "11.6" CACHE STRING "CUDA version cuDNN is compatible with")
+set(PYTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version PyTorch is compatible with")
+set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA verison LibTorch is compatible with")
+
+set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
+set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
+
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" ON)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
 option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" ON)
-option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" ON)
-set(CUDA_TOOLKIT_VERSION "11.6" CACHE STRING "CUDA Toolkit version to set CUDA vars")
-set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
+option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
+
+set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
 set(PYTORCH_TORCHVISION_VERSION "0.14" CACHE STRING "Torchvision version to use for TorchANI")
-set(PYTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version PyTorch is compatible with")
-set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
-set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA verison LibTorch is compatible with")
 set(LIBTORCH_USES_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
 
 # Sets LIBTORCH_EXTRACTED_DIR, LIBTORCH_EXTRACTED_LIB_DIR
@@ -59,8 +66,8 @@ list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_EXTRACTED_LIB_DIR})  # RPATH?
 if (CUSTOM_CUDNN)
     # sets CUDNN_LIBRARY_DIR, CUDNN_LIBRARY_PATH, CUDNN_INCLUDE_PATH
     set_custom_cudnn_paths(
-        LIBRARY_VERSION ${CUSTOM_CUDNN_VERSION}
-        CUDA_VERSION ${CUSTOM_CUDNN_CUDA_VERSION}
+        LIBRARY_VERSION ${LIBTORCH_CUDNN_VERSION}
+        CUDA_VERSION ${LIBTORCH_CUDNN_CUDA_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
 else()
@@ -78,6 +85,8 @@ endif()
 
 if(TORCHANI_INSTALL)
     install_torchani(
+        PYTORCH_CUDNN ${PYTORCH_CUDNN_VERSION}
+        PYTORCH_PYTHON ${PYTORCH_PYTHON_VERSION}
         PYTORCH_VERSION ${PYTORCH_VERSION}
         PYTORCH_CUDA_VERSION ${PYTORCH_CUDA_VERSION}
         TORCHVISION_VERSION ${PYTORCH_TORCHVISION_VERSION}
@@ -100,7 +109,8 @@ endif()
 # unit tests (CPU and CUDA if it is available)
 
 # LibTorch is a required dependency
-find_package(Torch REQUIRED)  # sets TORCH_LIBRARIES, TORCH_INCLUDE_DIRS
+# sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
+find_package(Torch VERSION ${LIBTORCH_VERSION} REQUIRED)
 
 file(GLOB ANI_AMBER_SOURCES "./src/*.cpp")
 add_library(ani_amber SHARED ${ANI_AMBER_SOURCES})
@@ -138,6 +148,7 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY AnyNewerVersion
 )
+
 install(
     FILES
         ${PROJECT_CONFIG_FILE}
