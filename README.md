@@ -11,13 +11,6 @@ and [ANI-1ccx](https://www.nature.com/articles/s41467-019-10827-4) ensembles
 available to use as calculators. ANI-1x and ANI-1ccx support HCNO elements.
 ANI-2x supports in addition F, Cl and S.
 
-## Note about hardcoded LibTorch paths
-
-Some versions of libtorch have hardcoded paths inside
-/path/to/libtorch/share/cmake/Caffe2/Caffe2Targets.cmake, which you need to
-change to ${CUDA_TOOLKIT_ROOT_DIR} instead of /usr/local/cuda to make things
-work correctly in case installation fails due to issues with the linker)
-
 ## Note about Ampere GPUs (e.g. A100 nodes)
 
 The latest Ampere GPU introduced new TF32 tensor cores,
