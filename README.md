@@ -14,36 +14,42 @@ ANI-2x supports in addition F, Cl and S.
 ## Requirements
 
 - Linux operating system
-- gcc (tested on 9.3.0 and 8.4.0)
 - cmake 3.13 or higher
+- gcc 9.3.0
 - git (necessary to obtain the latest torchani version) (?)
 - catch2 (library for unit tests only, included in the distribution)
-- python 3.8 or higher (for generating the models and some test data)
+- python 3.8 (for generating the models and some test data)
 - torchani (latest version, for generating the models and some test data)
 - Amber20 (23?)
-- PyTorch 1.5.0 or higher  (1.13?)
-- LibTorch 1.5.0 or higher  (1.13?)
-- CUDA Toolkit 10.2  (11.6?)
-- cuDNN 7.6  (8?)
+- LibTorch 1.13.1
 
-*LibTorch/PyTorch versions warning*: It is crucial that Torchani is compiled
-with JIT using the same torch version as the LibTorch version used to run the
-model in C++ (or a lower one).  For example, if `torch.__version__ == 1.5.0`
-for Torchani, then LibTorch must also be 1.5.0 or *higher*, otherwise LibTorch
-will fail to load the model, or load it incorrectly.
+Through conda:
 
-Note that libtorch has shared libraries in it so it can't really be included
-with the binary. Also note that the dependance on the CUDA Toolkit, cuDNN and
-LibTorch is there also if you want to only run the model on GPU. This is due to
-the intrinsic way LibTorch works.
+- PyTorch 1.13.1
+- CUDA Toolkit 11.6
+- cuDNN 8.3.2
+
+## LibTorch / PyTorch compatibility
+
+It is important that the TorchANI models is compiled with JIT using the same
+PyTorch version as the LibTorch version used to run the model in C++.  For
+example, if `torch.__version__ == 1.13.1` for TorchANI, then LibTorch must also
+be 1.13.1, otherwise LibTorch may fail to load the model, or load it
+incorrectly.
+
+Note that libtorch has shared libraries in it so it be included
+with the binary.
+
+Note that the CUDA Toolkit, cuDNN and LibTorch dependencies exist even if
+you want to run CPU-only.
 
 ## Installation
 
 The following steps are necessary to install the library and link it correctly:
 
-1. Extract Amber20 (No need to install it) into `AMBERHOME`. The AmberTools
+1. Extract Amber20 (don't compile it) into `AMBERHOME`. The AmberTools
     suite (sans pmemd) can be downloaded from [the AmberTools download page](https://ambermd.org/AmberTools.php)
-1. Install CUDA Toolkit 10.2 and cuDNN from
+1. Install CUDA Toolkit 11.6 and cuDNN 8.3.2 for CUDA 11.6 from
    [the NVIDIA CUDA downloads page](https://developer.nvidia.com/cuda-downloads) and
    [the NVIDIA cuDNN download page](https://developer.nvidia.com/cudnn) respectively.
 1. Run `./install.sh --amber --amberhome <AMBERHOME>`
