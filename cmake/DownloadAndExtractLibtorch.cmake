@@ -21,10 +21,10 @@ function(download_and_extract_libtorch)
 
     if(_LIBTORCH_CXX11ABI)
         set(_CXX11ABI_STR "-cxx11-abi")
-        set(_CXX11ABI_PATH "-cxx11-abi")
+        set(_CXX11ABI_PATH "cxx11-abi")
     else()
         set(_CXX11ABI_STR "")
-        set(_CXX11ABI_PATH "-no-cxx11-abi")
+        set(_CXX11ABI_PATH "no-cxx11-abi")
     endif()
 
     # parse the libtorch directory and download url from the options

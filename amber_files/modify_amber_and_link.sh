@@ -15,13 +15,6 @@ if [ -z "${configure_amber}" ]; then
     configure_amber=${1}
 fi
 
-# shellcheck disable=SC1090
-source "${DIR}/../install/python.sh"
-# shellcheck disable=SC2154
-if [ -z "${python_command}" ]; then
-    set_python_command
-fi
-
 
 if [ -z "${AMBERHOME}" ]; then
     echo "\nError: AMBERHOME is not set\n"
