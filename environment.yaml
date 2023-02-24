@@ -11,7 +11,7 @@ dependencies:
 
   # DL it is possible to just build a conda env with this to run torchani
   - numpy=1.20
-  - pytorch=1.13.1
+  - pytorch=1.13.1=py3.8_cuda11.6_cudnn8.3.2_0
   - cudnn=8.3.2
   - cudatoolkit=11.6
   # progress bars

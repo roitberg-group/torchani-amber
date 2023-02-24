@@ -31,7 +31,7 @@ ensure_linux_build()
 
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
-option(CUSTOM_CUDNN "Use the cuDNN from the conda environment" ON)
+option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
 option(CONDA_CUDA_TOOLKIT "Use cuda toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
 option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
@@ -79,8 +79,9 @@ if (CUSTOM_CUDNN)
     )
     list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
 elseif(CONDA_CUDNN)
-    set(CUDNN_INCLUDE_PATH "${CONDA_PREFIX}/include")
-    set(CUDNN_LIBRARY_PATH_PATH "${CONDA_PREFIX}/lib")
+    set(CUDNN_INCLUDE_PATH "$ENV{CONDA_PREFIX}/include")
+    set(CUDNN_LIBRARY_PATH "$ENV{CONDA_PREFIX}/lib")
+    list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
 else()
     msg_warn("Skip setting cuDNN paths, make sure cuDNN is present in CUDA Toolkit")
 endif()
@@ -120,7 +121,7 @@ endif()
 
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-find_package(Torch VERSION ${LIBTORCH_VERSION} REQUIRED)
+find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 
 file(GLOB ANI_AMBER_SOURCES "./src/*.cpp")
 add_library(ani_amber SHARED ${ANI_AMBER_SOURCES})
