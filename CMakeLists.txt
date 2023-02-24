@@ -174,7 +174,7 @@ install(
 )
 install(
     TARGETS ani_amber
-    LIBRARY
     EXPORT "${PROJECT_NAME}Targets"
+    LIBRARY
     DESTINATION ${PROJECT_INSTALL_LIBDIR}
 )
