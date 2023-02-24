@@ -126,9 +126,11 @@ find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 file(GLOB ANI_AMBER_SOURCES "./src/*.cpp")
 add_library(ani_amber SHARED ${ANI_AMBER_SOURCES})
 set_target_properties(ani_amber PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED TRUE)
-target_link_libraries(ani_amber PRIVATE "${TORCH_LIBRARIES}")
+# there is some sort of issue with the torch libraries, seems like there is a
+# dir in the list that should not be there and cmake spits out a warning
+target_link_libraries(ani_amber PRIVATE ${TORCH_LIBRARIES})
 # Seems like the include dirs are necessary for exporting ani_amber, not sure why
-target_include_directories(ani_amber PRIVATE ./include "${TORCH_INCLUDE_DIRS}")
+target_include_directories(ani_amber PRIVATE ./include ${TORCH_INCLUDE_DIRS})
 target_compile_definitions(ani_amber PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
 target_compile_options(ani_amber PRIVATE $<$<CONFIG:Debug>:"-g">)
 
