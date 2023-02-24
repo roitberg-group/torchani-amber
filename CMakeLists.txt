@@ -27,6 +27,8 @@ ensure_linux_build()
 
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
+option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
+option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
 
 set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
 set(PYTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version PyTorch is compatible with")
@@ -39,15 +41,12 @@ set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA verison LibTorch is compatib
 set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
-option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" ON)
+option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" OFF)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
-option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" ON)
-option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
 
 set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
-set(PYTORCH_TORCHVISION_VERSION "0.14" CACHE STRING "Torchvision version to use for TorchANI")
 set(LIBTORCH_USES_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
 
 # Sets LIBTORCH_EXTRACTED_DIR, LIBTORCH_EXTRACTED_LIB_DIR
@@ -89,7 +88,6 @@ if(TORCHANI_INSTALL)
         PYTORCH_PYTHON ${PYTORCH_PYTHON_VERSION}
         PYTORCH_VERSION ${PYTORCH_VERSION}
         PYTORCH_CUDA_VERSION ${PYTORCH_CUDA_VERSION}
-        TORCHVISION_VERSION ${PYTORCH_TORCHVISION_VERSION}
     )
 else()
     msg_warn("Skipping python package installs, make sure JIT models are available")
@@ -125,21 +123,22 @@ target_compile_options(ani_amber PRIVATE $<$<CONFIG:Debug>:"-g">)
 add_subdirectory(test)
 
 # Installation boilerplate for target
-# Note that the CMAKE_INSTALL_PREFIX is prepended to all install directories
-# For instance in unix systems(i.e. linux) /usr/local/ is prepended
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    # default for unix is the /usr/local prefix
     message(STATUS "CMake - Install location is set to the default for the system")
 endif()
+# path prefix for all installation directories
 message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}")
 
 set(PROJECT_VERSION_FILE "${CMAKE_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
 set(PROJECT_CONFIG_FILE "${CMAKE_BINARY_DIR}/${PROJECT_NAME}Config.cmake")
+set(PROJECT_SOURCE_CONFIG_FILE "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in")
 set(PROJECT_INSTALL_CONFIGDIR "share/cmake/${PROJECT_NAME}")
-set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME})
+set(PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
 # Create the <pname>Config.cmake and <pname>ConfigVersion.cmake files
 # For use by downstream packages
 configure_package_config_file(
-    "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+    ${PROJECT_SOURCE_CONFIG_FILE}
     ${PROJECT_CONFIG_FILE}
     INSTALL_DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
 )
@@ -162,6 +161,7 @@ install(
 )
 install(
     TARGETS ani_amber
+    LIBRARY
     EXPORT "${PROJECT_NAME}Targets"
-    LIBRARY DESTINATION ${PROJECT_INSTALL_LIBDIR}
+    DESTINATION ${PROJECT_INSTALL_LIBDIR}
 )
