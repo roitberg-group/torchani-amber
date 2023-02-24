@@ -16,17 +16,23 @@ include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(Msg)
 include(EnsureLinuxBuild)
+include(EnsureOutOfSourceBuild)
 include(DownloadAndExtractLibtorch)
 include(SetCustomCudnnPaths)
 include(InstallTorchani)
 include(JitCompileModels)
 include(SetCudaToolkitVars)
 
+# Fail if building in-source
+ensure_out_of_source_build()
+
 # Fail if not building on linux
 ensure_linux_build()
 
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
+option(CUSTOM_CUDNN "Use the cuDNN from the conda environment" ON)
+option(CONDA_CUDA_TOOLKIT "Use cuda toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
 option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
 
@@ -63,12 +69,18 @@ list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_EXTRACTED_LIB_DIR})  # RPATH?
 # ("custom cuDNN"), or it may be directly extracted into the cuda toolkit dir,
 # in which case it is not needed to specify the paths.
 if (CUSTOM_CUDNN)
+    if (CONDA_CUDNN)
+        msg_error("Not possible to specify custom cuDNN & conda cuDNN")
+    endif()
     # sets CUDNN_LIBRARY_DIR, CUDNN_LIBRARY_PATH, CUDNN_INCLUDE_PATH
     set_custom_cudnn_paths(
         LIBRARY_VERSION ${LIBTORCH_CUDNN_VERSION}
         CUDA_VERSION ${LIBTORCH_CUDNN_CUDA_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
+elseif(CONDA_CUDNN)
+    set(CUDNN_INCLUDE_PATH "${CONDA_PREFIX}/include")
+    set(CUDNN_LIBRARY_PATH_PATH "${CONDA_PREFIX}/lib")
 else()
     msg_warn("Skip setting cuDNN paths, make sure cuDNN is present in CUDA Toolkit")
 endif()
