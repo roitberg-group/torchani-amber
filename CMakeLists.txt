@@ -44,7 +44,7 @@ set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" OFF)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
-option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" ON)
+option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
 
 set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
 set(LIBTORCH_USES_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")

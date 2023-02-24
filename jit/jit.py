@@ -50,7 +50,7 @@ def _main(
         if torch_cell_list:
             print(f"JIT compiling {name} with Torch CellList to TorchScript...")
             try:
-                model_cell_list = model_class(torch_cell_list=True)
+                model_cell_list = model_class(cell_list=True)
             except Exception as e:
                 print(e)
                 print(f"Could not generate model {name} with torch cell list")
@@ -65,7 +65,7 @@ def _main(
         if external_cell_list:
             print(f"JIT compiling {name} with External CellList to TorchScript...")
             try:
-                model_cell_list = model_class(external_cell_list=True)
+                model_cell_list = model_class(cell_list=True)
             except Exception as e:
                 print(e)
                 print(f"Could not generate model {name} with external cell list")

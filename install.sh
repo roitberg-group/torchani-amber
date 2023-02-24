@@ -19,7 +19,7 @@ usage="
 This script installs the shared library libtorchani, along with LibTorch and
 link it to an existing amber installation. Before running this script be sure
 that you have an existing directory with your Amber installation, the path to
-which is AMBERHOME. This script compiles libtorchani, JIT compiles models in
+which is AMBERHOME. This script also JIT compiles models in
 the torchani python library and also performs the necessary modifications to
 the Amber source for libtorchani to be successfully liked with Amber. By
 default it also performs tests to make sure that the interface works properly
