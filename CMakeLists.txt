@@ -32,7 +32,7 @@ ensure_linux_build()
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
-option(CONDA_CUDA_TOOLKIT "Use cuda toolkit from conda environment" ON)
+option(CONDA_CUDA_TOOLKIT "Use cuda toolkit from conda environment" OFF)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
 option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
 
@@ -48,7 +48,7 @@ set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
 option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" OFF)
-option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
+option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" OFF)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
 
@@ -91,9 +91,10 @@ message(STATUS "CMake - prefix path: ${CMAKE_PREFIX_PATH}")
 if(CUDA_TOOLKIT_SET_VARS)
     # set CUDA_TOOLKIT_ROOT_DIR, CUDA_INCLUDE_DIRS, CUDA_TOOLKIT_INCLUDE,
     # CUDA_CUDART_LIBRARY, ENV{CUDA_BIN_DIR}
-    set_cuda_toolkit_vars(CUDA_VERSION ${CUDA_TOOLKIT_VERSION})
-elseif(CONDA_CUDA)
-    message(STATUS "CUDA Toolkit - Using conda CUDA Toolkit")
+    set_cuda_toolkit_vars(
+        CONDA_CUDA ${CONDA_CUDA}
+        CUDA_VERSION ${CUDA_TOOLKIT_VERSION}
+    )
 else()
     msg_warn("Skip explicit set of CUDA vars, make sure correct CUDA Toolkit is used")
 endif()
@@ -129,8 +130,6 @@ find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 file(GLOB ANI_AMBER_SOURCES "./src/*.cpp")
 add_library(ani_amber SHARED ${ANI_AMBER_SOURCES})
 set_target_properties(ani_amber PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED TRUE)
-# there is some sort of issue with the torch libraries, seems like there is a
-# dir in the list that should not be there and cmake spits out a warning
 target_link_libraries(ani_amber PRIVATE ${TORCH_LIBRARIES})
 # Seems like the include dirs are necessary for exporting ani_amber, not sure why
 target_include_directories(ani_amber PRIVATE ./include ${TORCH_INCLUDE_DIRS})
