@@ -2,8 +2,8 @@ include_guard()
 include(Msg)
 
 # Download LibTorch from the pytorch website and extract it into
-# ./lib/_LIBTORCH_DIR, if the libtorch directory does not exist.
-# This function sets the variable LIBTORCH_EXTRACTED_DIR
+# ./external/LIBTORCH_ROOT_NAME, if the libtorch directory does not exist.
+# This function sets the variables LIBTORCH_LIBRARY_DIR, and LIBTORCH_ROOT
 function(download_and_extract_libtorch)
     set(options "")
     set(oneValueArgs CXX11ABI LIBRARY_VERSION CUDA_VERSION)
@@ -21,31 +21,25 @@ function(download_and_extract_libtorch)
 
     if(_LIBTORCH_CXX11ABI)
         set(_CXX11ABI_STR "-cxx11-abi")
-        set(_CXX11ABI_PATH "cxx11abi")
+        set(_CXX11ABI_PATH "-cxx11-abi")
     else()
         set(_CXX11ABI_STR "")
-        set(_CXX11ABI_PATH "nocxx11abi")
+        set(_CXX11ABI_PATH "-no-cxx11-abi")
     endif()
 
     # parse the libtorch directory and download url from the options
-    if(_LIBTORCH_LIBRARY_VERSION STREQUAL "latest") # Nightly libtorch has a slightly different file name
-        set(_LIBTORCH_ZIPFILE "libtorch${_CXX11ABI_STR}-shared-with-deps-latest.zip")
-        set(_START_PATH "libtorch/nightly")
-    else()
-        set(_LIBTORCH_ZIPFILE "libtorch${_CXX11ABI_STR}-shared-with-deps-${_LIBTORCH_LIBRARY_VERSION}%2bcu${_LIBTORCH_CUDA_JOINT}.zip")
-        set(_START_PATH "libtorch")
-    endif()
+    set(_LIBTORCH_ZIPFILE "libtorch${_CXX11ABI_STR}-shared-with-deps-${_LIBTORCH_LIBRARY_VERSION}%2bcu${_LIBTORCH_CUDA_JOINT}.zip")
 
-    set(_LIBTORCH_URL "https://download.pytorch.org/${_START_PATH}/cu${_LIBTORCH_CUDA_JOINT}/${_LIBTORCH_ZIPFILE}")
-    set(_LIBTORCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/libtorch${_LIBTORCH_LIBRARY_VERSION}-${_CXX11ABI_PATH}-cuda${_LIBTORCH_CUDA_VERSION}")
+    set(_LIBTORCH_URL "https://download.pytorch.org/libtorch/cu${_LIBTORCH_CUDA_JOINT}/${_LIBTORCH_ZIPFILE}")
+    set(_LIBTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch${_LIBTORCH_LIBRARY_VERSION}${_CXX11ABI_PATH}-cuda${_LIBTORCH_CUDA_VERSION}")
 
-    if(EXISTS ${_LIBTORCH_DIR})
+    if(EXISTS ${_LIBTORCH_ROOT})
         # Skip download if the requested libtorch version exists
-        message(STATUS "LibTorch - Installation was skipped because ${_LIBTORCH_DIR} already exists.")
-        message(STATUS "LibTorch - If you want to install LibTorch again delete dir and rerun.")
+        message(STATUS "LibTorch - Download was skipped because ${_LIBTORCH_ROOT} already exists.")
+        message(STATUS "LibTorch - If you want to download LibTorch again delete dir and rerun.")
     else()
         # download libtorch to a temporary file _LIBTORCH_TMP_FILE
-        # and extract it into _LIBTORCH_DIR
+        # and extract it into _LIBTORCH_ROOT
         set(_LIBTORCH_TMP_FILE "${CMAKE_CURRENT_LIST_DIR}/libtorch.zip")
         message(STATUS "LibTorch - Downloading")
         file(
@@ -55,24 +49,25 @@ function(download_and_extract_libtorch)
             SHOW_PROGRESS
         )
 
-        message(STATUS "LibTorch - Extracting into ${_LIBTORCH_DIR}")
+        message(STATUS "LibTorch - Extracting into ${_LIBTORCH_ROOT}")
         execute_process(
             COMMAND ${CMAKE_COMMAND} -E tar xfz ${_LIBTORCH_TMP_FILE}
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external"
         )
         file(REMOVE ${_LIBTORCH_TMP_FILE})
 
-        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lib/libtorch")
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch")
             msg_error("LibTorch - Could not be correctly downloaded and extracted")
         else()
-            file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/lib/libtorch" ${_LIBTORCH_DIR})
+            file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch" ${_LIBTORCH_ROOT})
             msg_success("LibTorch - Successfully downloaded and extracted")
         endif()
     endif()
-    set(LIBTORCH_EXTRACTED_DIR ${_LIBTORCH_DIR} PARENT_SCOPE)
-    set(LIBTORCH_EXTRACTED_LIB_DIR "${_LIBTORCH_DIR}/lib" PARENT_SCOPE)
+    set(_LIBTORCH_LIBRARY_DIR "${_LIBTORCH_ROOT}/lib")
+    set(LIBTORCH_ROOT ${_LIBTORCH_ROOT} PARENT_SCOPE)
+    set(LIBTORCH_LIBRARY_DIR "${_LIBTORCH_LIBRARY_DIR}" PARENT_SCOPE)
     message(STATUS "LibTorch - Using version: ${_LIBTORCH_LIBRARY_VERSION}")
     message(STATUS "LibTorch - Compatible with CUDA: ${_LIBTORCH_CUDA_VERSION}")
-    message(STATUS "LibTorch - Extracted dir: ${_LIBTORCH_DIR}")
-    message(STATUS "LibTorch - Extracted lib dir: ${_LIBTORCH_DIR}/lib")
+    message(STATUS "LibTorch - Root dir: ${_LIBTORCH_ROOT}")
+    message(STATUS "LibTorch - Lib dir: ${_LIBTORCH_LIBRARY_DIR}")
 endfunction()

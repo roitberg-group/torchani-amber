@@ -18,10 +18,10 @@ include(Msg)
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
 include(DownloadAndExtractLibtorch)
-include(SetCustomCudnnPaths)
+include(SetCudnnDirs)
+include(SetCudaToolkitDirs)
 include(InstallTorchani)
 include(JitCompileModels)
-include(SetCudaToolkitVars)
 
 # Fail if building in-source
 ensure_out_of_source_build()
@@ -30,11 +30,11 @@ ensure_out_of_source_build()
 ensure_linux_build()
 
 # User options and flags
-option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" OFF)
+option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
+option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
-option(CONDA_CUDA_TOOLKIT "Use cuda toolkit from conda environment" OFF)
+option(CONDA_CUDA "Use CUDA toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
-option(CUDA_TOOLKIT_SET_VARS "Manually set cuda variables" OFF)
 
 set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
 set(PYTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version PyTorch is compatible with")
@@ -48,55 +48,47 @@ set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
 option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" OFF)
-option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" OFF)
+option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
 
 set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
 set(LIBTORCH_USES_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
 
-# Sets LIBTORCH_EXTRACTED_DIR, LIBTORCH_EXTRACTED_LIB_DIR
+# Sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
 # If the requested version already exists it is not extracted
 download_and_extract_libtorch(
     CXX11ABI ${LIBTORCH_USES_CXX11ABI}
     LIBRARY_VERSION ${LIBTORCH_VERSION}
     CUDA_VERSION ${LIBTORCH_CUDA_VERSION}
 )
-list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_EXTRACTED_DIR})
-list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_EXTRACTED_LIB_DIR})  # RPATH?
+list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
+list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR})  # RPATH?
 
 # CUDNN may be linked by LibTorch by providing it with the necessary paths
 # ("custom cuDNN"), or it may be directly extracted into the cuda toolkit dir,
 # in which case it is not needed to specify the paths.
 if (CUSTOM_CUDNN)
-    if (CONDA_CUDNN)
-        msg_error("Not possible to specify custom cuDNN & conda cuDNN")
-    endif()
-    # sets CUDNN_LIBRARY_DIR, CUDNN_LIBRARY_PATH, CUDNN_INCLUDE_PATH
-    set_custom_cudnn_paths(
+    # sets CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
+    set_cudnn_dirs(
+        CONDA_CUDNN ${CONDA_CUDNN}
         LIBRARY_VERSION ${LIBTORCH_CUDNN_VERSION}
         CUDA_VERSION ${LIBTORCH_CUDNN_CUDA_VERSION}
     )
-    list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
-elseif(CONDA_CUDNN)
-    set(CUDNN_INCLUDE_PATH "$ENV{CONDA_PREFIX}/include")
-    set(CUDNN_LIBRARY_PATH "$ENV{CONDA_PREFIX}/lib")
-    list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY_DIR}")
-    message(STATUS "cuDNN - Using conda cuDNN")
+    list(APPEND CMAKE_PREFIX_PATH "${CUDNN_LIBRARY}")
 else()
-    msg_warn("Skip setting cuDNN paths, make sure cuDNN is present in CUDA Toolkit")
+    msg_warn("Skip setting cuDNN dirs, make sure cuDNN is present in CUDA Toolkit")
 endif()
 message(STATUS "CMake - prefix path: ${CMAKE_PREFIX_PATH}")
 
-if(CUDA_TOOLKIT_SET_VARS)
-    # set CUDA_TOOLKIT_ROOT_DIR, CUDA_INCLUDE_DIRS, CUDA_TOOLKIT_INCLUDE,
-    # CUDA_CUDART_LIBRARY, ENV{CUDA_BIN_DIR}
-    set_cuda_toolkit_vars(
+if(CUSTOM_CUDA)
+    # sets CUDA_TOOLKIT_ROOT_DIR
+    set_cuda_toolkit_dirs(
         CONDA_CUDA ${CONDA_CUDA}
         CUDA_VERSION ${CUDA_TOOLKIT_VERSION}
     )
 else()
-    msg_warn("Skip explicit set of CUDA vars, make sure correct CUDA Toolkit is used")
+    msg_warn("Skip setting CUDA dirs, make sure correct CUDA Toolkit is used")
 endif()
 
 if(TORCHANI_INSTALL)
@@ -127,14 +119,14 @@ endif()
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 
-file(GLOB ANI_AMBER_SOURCES "./src/*.cpp")
-add_library(ani_amber SHARED ${ANI_AMBER_SOURCES})
-set_target_properties(ani_amber PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED TRUE)
-target_link_libraries(ani_amber PRIVATE ${TORCH_LIBRARIES})
-# Seems like the include dirs are necessary for exporting ani_amber, not sure why
-target_include_directories(ani_amber PRIVATE ./include ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(ani_amber PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-target_compile_options(ani_amber PRIVATE $<$<CONFIG:Debug>:"-g">)
+file(GLOB ANI_AMBER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
+add_library(torchani SHARED ${ANI_AMBER_SOURCES})
+set_target_properties(torchani PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED TRUE)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+# Seems like the include dirs are necessary for exporting torchani, not sure why
+target_include_directories(torchani PRIVATE ./include ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
+target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
 
 # Build unit tests
 add_subdirectory(test)
@@ -147,28 +139,34 @@ endif()
 # path prefix for all installation directories
 message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}")
 
-set(PROJECT_VERSION_FILE "${CMAKE_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
-set(PROJECT_CONFIG_FILE "${CMAKE_BINARY_DIR}/${PROJECT_NAME}Config.cmake")
-set(PROJECT_SOURCE_CONFIG_FILE "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in")
+set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
+set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}Config.cmake")
+set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in")
+set(PROJECT_TARGETS_PATH "${CMAKE_INSTALL_CONFIGDIR}/${PROJECT_NAME}Targets.cmake")
 set(PROJECT_INSTALL_CONFIGDIR "share/cmake/${PROJECT_NAME}")
-set(PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
-# Create the <pname>Config.cmake and <pname>ConfigVersion.cmake files
+set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+# Create
+# - <pname>Config.cmake
+# - <pname>ConfigVersion.cmake
+# - <proj-name>Targets.cmake
+# - <proj-name>Targets-release?.cmake
 # For use by downstream packages
+
 configure_package_config_file(
-    ${PROJECT_SOURCE_CONFIG_FILE}
-    ${PROJECT_CONFIG_FILE}
+    ${PROJECT_SOURCE_CONFIG_PATH}
+    ${PROJECT_BINARY_CONFIG_PATH}
     INSTALL_DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
 )
 write_basic_package_version_file(
-    ${PROJECT_VERSION_FILE}
+    ${PROJECT_BINARY_VERSION_PATH}
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
+    COMPATIBILITY ExactVersion
 )
 
 install(
     FILES
-        ${PROJECT_CONFIG_FILE}
-        ${PROJECT_VERSION_FILE}
+        ${PROJECT_BINARY_CONFIG_PATH}
+        ${PROJECT_BINARY_VERSION_PATH}
     DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
 )
 install(
@@ -177,7 +175,7 @@ install(
     DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
 )
 install(
-    TARGETS ani_amber
+    TARGETS torchani
     EXPORT "${PROJECT_NAME}Targets"
     LIBRARY
     DESTINATION ${PROJECT_INSTALL_LIBDIR}
