@@ -1,7 +1,7 @@
 build/*
 jit/*.pt
-lib/libtorch*
-lib/cudnn*
+external/libtorch*
+external/cudnn*
 spike/*
 *.x
 *.mod
