@@ -9,10 +9,14 @@ import torchani
 def _store_model(model: torch.nn.Module, name: str, title: str, path: Path) -> None:
     print(f"JIT compiling {title} to TorchScript")
     model.requires_grad_(False)
-    torch.jit.save(torch.jit.script(model), path.joinpath(f'{name}.pt').as_posix())
+    full_model_path = path / f'{name}.pt'
+    if not full_model_path.exists():
+        torch.jit.save(torch.jit.script(model), str(full_model_path))
     for j in range(len(model)):
+        jth_model_path = path / f'{name}_{j}.pt'
         script_model = torch.jit.script(model[j])
-        torch.jit.save(script_model, path.joinpath(f'{name}_{j}.pt').as_posix())
+        if not jth_model_path.exists():
+            torch.jit.save(script_model, str(jth_model_path))
     print("Done")
 
 
