@@ -1,8 +1,8 @@
 include_guard()
 
 function(set_cuda_toolkit_dirs)
-    set(options CONDA_CUDA)
-    set(oneValueArgs CUDA_VERSION)
+    set(options "")
+    set(oneValueArgs CONDA_CUDA CUDA_VERSION)
     set(multiValueArgs "")
     cmake_parse_arguments(
         _FN

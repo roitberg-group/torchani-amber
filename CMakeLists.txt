@@ -33,8 +33,8 @@ ensure_linux_build()
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
 option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
-option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
-option(CONDA_CUDA "Use CUDA toolkit from conda environment" ON)
+option(CONDA_CUDNN "Use the cuDNN from the conda environment" OFF)
+option(CONDA_CUDA "Use CUDA toolkit from conda environment" OFF)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
 
 set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
@@ -54,12 +54,12 @@ option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
 
 set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
-set(LIBTORCH_USES_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
+set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
 
 # Sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
 # If the requested version already exists it is not extracted
 download_and_extract_libtorch(
-    CXX11ABI ${LIBTORCH_USES_CXX11ABI}
+    CXX11ABI ${LIBTORCH_USE_CXX11ABI}
     LIBRARY_VERSION ${LIBTORCH_VERSION}
     CUDA_VERSION ${LIBTORCH_CUDA_VERSION}
 )
@@ -144,7 +144,6 @@ message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}
 set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
 set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}Config.cmake")
 set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in")
-set(PROJECT_TARGETS_PATH "${CMAKE_INSTALL_CONFIGDIR}/${PROJECT_NAME}Targets.cmake")
 set(PROJECT_INSTALL_CONFIGDIR "share/cmake/${PROJECT_NAME}")
 set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
 # Create
@@ -157,7 +156,6 @@ set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
 configure_package_config_file(
     ${PROJECT_SOURCE_CONFIG_PATH}
     ${PROJECT_BINARY_CONFIG_PATH}
-    PATH_VARS PROJECT_TARGETS_PATH
     INSTALL_DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
 )
 write_basic_package_version_file(
