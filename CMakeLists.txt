@@ -13,7 +13,8 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 # Append internal modules path and include internal modules
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+set(PUBLIC_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH ${PUBLIC_MODULES_DIR})
 include(Msg)
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
@@ -118,6 +119,7 @@ endif()
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 file(GLOB ANI_AMBER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${ANI_AMBER_SOURCES})
@@ -146,8 +148,8 @@ set(PROJECT_TARGETS_PATH "${CMAKE_INSTALL_CONFIGDIR}/${PROJECT_NAME}Targets.cmak
 set(PROJECT_INSTALL_CONFIGDIR "share/cmake/${PROJECT_NAME}")
 set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
 # Create
-# - <pname>Config.cmake
-# - <pname>ConfigVersion.cmake
+# - <proj-name>Config.cmake
+# - <proj-name>ConfigVersion.cmake
 # - <proj-name>Targets.cmake
 # - <proj-name>Targets-release?.cmake
 # For use by downstream packages
