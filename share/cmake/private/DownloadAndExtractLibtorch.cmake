@@ -44,27 +44,27 @@ function(download_and_extract_libtorch)
         message(STATUS "LibTorch - Downloading")
         file(
             DOWNLOAD
-                ${_LIBTORCH_URL}
-                ${_LIBTORCH_TMP_FILE}
+                "${_LIBTORCH_URL}"
+                "${_LIBTORCH_TMP_FILE}"
             SHOW_PROGRESS
         )
 
         message(STATUS "LibTorch - Extracting into ${_LIBTORCH_ROOT}")
         execute_process(
-            COMMAND ${CMAKE_COMMAND} -E tar xfz ${_LIBTORCH_TMP_FILE}
+            COMMAND ${CMAKE_COMMAND} -E tar xfz "${_LIBTORCH_TMP_FILE}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external"
         )
-        file(REMOVE ${_LIBTORCH_TMP_FILE})
+        file(REMOVE "${_LIBTORCH_TMP_FILE}")
 
         if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch")
             msg_error("LibTorch - Could not be correctly downloaded and extracted")
         else()
-            file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch" ${_LIBTORCH_ROOT})
+            file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/external/libtorch" "${_LIBTORCH_ROOT}")
             msg_success("LibTorch - Successfully downloaded and extracted")
         endif()
     endif()
     set(_LIBTORCH_LIBRARY_DIR "${_LIBTORCH_ROOT}/lib")
-    set(LIBTORCH_ROOT ${_LIBTORCH_ROOT} PARENT_SCOPE)
+    set(LIBTORCH_ROOT "${_LIBTORCH_ROOT}" PARENT_SCOPE)
     set(LIBTORCH_LIBRARY_DIR "${_LIBTORCH_LIBRARY_DIR}" PARENT_SCOPE)
     message(STATUS "LibTorch - Using version: ${_LIBTORCH_LIBRARY_VERSION}")
     message(STATUS "LibTorch - Compatible with CUDA: ${_LIBTORCH_CUDA_VERSION}")

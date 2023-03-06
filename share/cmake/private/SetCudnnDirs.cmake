@@ -27,9 +27,9 @@ function(set_cudnn_dirs)
     set(_CUDNN_LIBRARY "${_CUDNN_ROOT}/lib")
     set(_CUDNN_INCLUDE_DIR "${_CUDNN_ROOT}/include")
 
-    set(CUDNN_INCLUDE_DIR ${_CUDNN_INCLUDE_DIR} PARENT_SCOPE)
-    set(CUDNN_LIBRARY ${_CUDNN_LIBRARY} PARENT_SCOPE)
-    set(CUDNN_ROOT ${_CUDNN_ROOT} PARENT_SCOPE)
+    set(CUDNN_INCLUDE_DIR "${_CUDNN_INCLUDE_DIR}" PARENT_SCOPE)
+    set(CUDNN_LIBRARY "${_CUDNN_LIBRARY}" PARENT_SCOPE)
+    set(CUDNN_ROOT "${_CUDNN_ROOT}" PARENT_SCOPE)
 
     msg_success("cuDNN - Successfully set paths")
     message(STATUS "cuDNN - Using custom version: ${_FN_LIBRARY_VERSION}")
