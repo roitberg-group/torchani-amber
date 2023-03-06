@@ -9,12 +9,13 @@ project(
     DESCRIPTION "C++ wrapper for Torchani"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
+# CMake stdlib includes
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 # Append internal modules path and include internal modules
-set(PUBLIC_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
-list(APPEND CMAKE_MODULE_PATH ${PUBLIC_MODULES_DIR})
+set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
+list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
 include(Msg)
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
@@ -119,44 +120,83 @@ endif()
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 file(GLOB ANI_AMBER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${ANI_AMBER_SOURCES})
-set_target_properties(torchani PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED TRUE)
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+set_target_properties(
+    torchani
+    PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED TRUE
+        LINK_LIBRARIES ${TORCH_LIBRARIES}
+        INCLUDE_DIRECTORIES ./include ${TORCH_INCLUDE_DIRS}
+        COMPILE_OPTIONS $<$<CONFIG:Debug>:"-g"> ${TORCH_CXX_FLAGS}
+        INTERFACE_COMPILE_OPTIONS ${TORCH_CXX_FLAGS}
+        COMPILE_DEFINITIONS $<$<CONFIG:Debug>:"DEBUG">
+)
+#target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
 # Seems like the include dirs are necessary for exporting torchani, not sure why
-target_include_directories(torchani PRIVATE ./include ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
+#target_include_directories(torchani PRIVATE ./include ${TORCH_INCLUDE_DIRS})
+# I think setting target compile options is better, I believe public is needed
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")  # TODO: this is dirty
+#target_compile_options(torchani PUBLIC ${TORCH_CXX_FLAGS})
+
+#target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
+#target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
 
 # Build unit tests
 add_subdirectory(test)
 
 # Installation boilerplate for target
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    # default for unix is the /usr/local prefix
+    # Default prefix for Linux is /usr/local
     message(STATUS "CMake - Install location is set to the default for the system")
 endif()
+
 # path prefix for all installation directories
 message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}")
 
-set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
-set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${PROJECT_NAME}Config.cmake")
-set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in")
-set(PROJECT_INSTALL_CONFIGDIR "share/cmake/${PROJECT_NAME}")
-set(PROJECT_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+# Set dirs for project
+set(REL_PROJECT_CONFIGDIR "share/cmake/${PROJECT_NAME}")  # local configdir
+set(REL_PROJECT_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+set(REL_PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
+
+# Set stems for files
+set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config.cmake")
+set(PROJECT_VERSION_STEM "${PROJECT_NAME}ConfigVersion")
+set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
+
+# Set namespace
+set(PROJECT_TARGETS_NAMESPACE "${PROJECT_NAME}::")
+
+# Config file
+set(PROJECT_CONFIG_FNAME "${PROJECT_CONFIG_STEM}.cmake")
+set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}.in")
+set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}")
+
+# Version file
+set(PROJECT_VERSION_FNAME "${PROJECT_VERSION_STEM}.cmake")
+# Source version file does not exist, binary-tree version is created on the fly
+set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_VERSION_FNAME}")
+
+# Targets file
+set(PROJECT_TARGETS_FNAME "${PROJECT_TARGETS_STEM}.cmake")
+# Source targets file does not exist, binary-tree targets is created on the fly
+set(PROJECT_BINARY_TARGETS_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_INSTALL_CONFIGDIR}/${PROJECT_TARGETS_FNAME}")
+
 # Create
 # - <proj-name>Config.cmake
 # - <proj-name>ConfigVersion.cmake
 # - <proj-name>Targets.cmake
-# - <proj-name>Targets-release?.cmake
+# - <proj-name>Targets-*.cmake
+# - <proj-name>Targets.cmake (build-tree)
+# - <proj-name>Targets-*.cmake (build-tree)
 # For use by downstream packages
 
 configure_package_config_file(
     ${PROJECT_SOURCE_CONFIG_PATH}
     ${PROJECT_BINARY_CONFIG_PATH}
-    INSTALL_DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
+    INSTALL_DESTINATION ${REL_PROJECT_INSTALL_CONFIGDIR}
 )
 write_basic_package_version_file(
     ${PROJECT_BINARY_VERSION_PATH}
@@ -164,20 +204,29 @@ write_basic_package_version_file(
     COMPATIBILITY ExactVersion
 )
 
+# export is needed to consume the project from its build-tree, it will create
+# a Targets file in the build-tree, not only in the install-prefix
+export(
+    EXPORT ${PROJECT_TARGETS_STEM}
+    FILE ${PROJECT_BINARY_TARGETS_PATH}
+    NAMESPACE ${PROJECT_TARGETS_NAMESPACE}
+)
+
+install(
+    EXPORT ${PROJECT_TARGETS_STEM}
+    FILE ${PROJECT_TARGETS_FNAME}
+    NAMESPACE ${PROJECT_TARGETS_NAMESPACE}
+    DESTINATION ${REL_PROJECT_INSTALL_CONFIGDIR}
+)
 install(
     FILES
         ${PROJECT_BINARY_CONFIG_PATH}
         ${PROJECT_BINARY_VERSION_PATH}
-    DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
-)
-install(
-    EXPORT "${PROJECT_NAME}Targets"
-    NAMESPACE "${PROJECT_NAME}::"
-    DESTINATION ${PROJECT_INSTALL_CONFIGDIR}
+    DESTINATION ${REL_PROJECT_INSTALL_CONFIGDIR}
 )
 install(
     TARGETS torchani
-    EXPORT "${PROJECT_NAME}Targets"
+    EXPORT ${PROJECT_TARGETS_STEM}
     LIBRARY
-    DESTINATION ${PROJECT_INSTALL_LIBDIR}
+        DESTINATION ${REL_PROJECT_INSTALL_LIBDIR}
 )
