@@ -119,30 +119,31 @@ endif()
 
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 
-file(GLOB ANI_AMBER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
-add_library(torchani SHARED ${ANI_AMBER_SOURCES})
+file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
+set(TORCHANI_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
+add_library(torchani SHARED ${TORCHANI_SOURCES})
 set_target_properties(
     torchani
     PROPERTIES
         CXX_STANDARD 14
         CXX_STANDARD_REQUIRED TRUE
-        LINK_LIBRARIES ${TORCH_LIBRARIES}
-        INCLUDE_DIRECTORIES ./include ${TORCH_INCLUDE_DIRS}
-        COMPILE_OPTIONS $<$<CONFIG:Debug>:"-g"> ${TORCH_CXX_FLAGS}
-        INTERFACE_COMPILE_OPTIONS ${TORCH_CXX_FLAGS}
-        COMPILE_DEFINITIONS $<$<CONFIG:Debug>:"DEBUG">
+        INCLUDE_DIRECTORIES ${TORCHANI_INCLUDE_DIRS}
 )
 #target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
 # Seems like the include dirs are necessary for exporting torchani, not sure why
-#target_include_directories(torchani PRIVATE ./include ${TORCH_INCLUDE_DIRS})
 # I think setting target compile options is better, I believe public is needed
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")  # TODO: this is dirty
-#target_compile_options(torchani PUBLIC ${TORCH_CXX_FLAGS})
 
-#target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-#target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
+# Append to these always
+find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
+target_compile_options(torchani PUBLIC ${TORCH_CXX_FLAGS})
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(torchani PRIVATE ${TORCH_INCLUDE_DIRS})
+
+# Append these in Debug config
+target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
+target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
 
 # Build unit tests
 add_subdirectory(test)
@@ -162,7 +163,7 @@ set(REL_PROJECT_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_
 set(REL_PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
 
 # Set stems for files
-set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config.cmake")
+set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config")
 set(PROJECT_VERSION_STEM "${PROJECT_NAME}ConfigVersion")
 set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
 
@@ -204,19 +205,19 @@ write_basic_package_version_file(
     COMPATIBILITY ExactVersion
 )
 
+install(
+    EXPORT "${PROJECT_TARGETS_STEM}"
+    FILE "${PROJECT_TARGETS_FNAME}"
+    NAMESPACE "${PROJECT_TARGETS_NAMESPACE}"
+    DESTINATION "${REL_PROJECT_INSTALL_CONFIGDIR}"
+)
+
 # export is needed to consume the project from its build-tree, it will create
 # a Targets file in the build-tree, not only in the install-prefix
 export(
     EXPORT "${PROJECT_TARGETS_STEM}"
     FILE "${PROJECT_BINARY_TARGETS_PATH}"
     NAMESPACE "${PROJECT_TARGETS_NAMESPACE}"
-)
-
-install(
-    EXPORT "${PROJECT_TARGETS_STEM}"
-    FILE "${PROJECT_TARGETS_FNAME}"
-    NAMESPACE "${PROJECT_TARGETS_NAMESPACE}"
-    DESTINATION "${REL_PROJECT_INSTALL_CONFIGDIR}"
 )
 install(
     FILES
