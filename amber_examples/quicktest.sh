@@ -21,8 +21,8 @@ if [ ! -d "outputs" ]; then
 fi
 
 echo "############# Running Quick Test #############"
-echo "\n\npmemd CUDA"
-time pmemd\
+echo "\n\nsander CUDA"
+time sander\
     -O\
     -i ./inputs/quicktest.in\
     -p tripeptide.prmtop\

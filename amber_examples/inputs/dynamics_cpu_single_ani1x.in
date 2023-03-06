@@ -17,9 +17,13 @@
 
 &extpot
     extprog = "torchani"
+/
+
+&torchani
     use_double_precision = .false.
     use_cuda_device = .false.
-    cuda_device_index = -1
-    model_type = "ani1x"
-    model_index = -1
+    device_index = -1
+    torchani_model = "ani1x"
+    network_index = -1
+    use_torch_cell_list = .false.
 /

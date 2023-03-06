@@ -49,7 +49,7 @@ set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA verison LibTorch is compatib
 set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
-option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" OFF)
+option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" ON)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
@@ -137,7 +137,7 @@ set_target_properties(
 
 # Append to these always
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
-target_compile_options(torchani PUBLIC ${TORCH_CXX_FLAGS})
+target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS})
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani PRIVATE ${TORCH_INCLUDE_DIRS})
 

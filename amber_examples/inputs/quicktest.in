@@ -4,24 +4,30 @@
     ntx = 1
     ntpr = 1
     ntwx = 1
-    nstlim = 100
+    nstlim = 1000
     dt = 0.001
-    tempi = 300.0
-    temp0 = 300.0
-    cut = 8.0
-    ntt = 3  ! langevin thermostat
+    tempi = 50.0
+    temp0 = 50.0
+    cut = 9999.0
+    ntt = 3
+    ntc = 1
+    ntf = 1
     gamma_ln = 2.0
-    ig = 5541  ! seed set by hand for repeatability
+    ig = 5541
+    igb = 6
     iextpot = 1
 /
 
 &extpot
     extprog = "torchani"
+/
+
+&torchani
+    use_cuda_device = .false.
     use_double_precision = .true.
-    use_cuda_device = .true.
-    cuda_device_index = 0
-    model_type = "ani1x"
-    model_index = -1
-    !external_build_amber_cell_list = .true.
-    use_cell_list = .true.
+    use_torch_cell_list = .false.
+    use_external_neighborlist = .false.
+    device_index = -1
+    network_index = -1
+    torchani_model = "ani2x"
 /
