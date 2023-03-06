@@ -11,6 +11,22 @@ and [ANI-1ccx](https://www.nature.com/articles/s41467-019-10827-4) ensembles
 available to use as calculators. ANI-1x and ANI-1ccx support HCNO elements.
 ANI-2x supports in addition F, Cl and S.
 
+## NEW INTRUCTIONS
+
+```bash
+# (1) create a new conda environment
+conda env create -f ./environment.yaml
+# (2) activate the environment
+conda activate ani-amber
+# (3) build and install torchani
+cmake -Bbuild .
+cmake --build ./build
+sudo cmake --install ./build
+# (4) deactivate
+conda deactivate ani-amber
+# (5) compile amber (will automatically find torchani)
+```
+
 ## Requirements
 
 - Linux operating system
