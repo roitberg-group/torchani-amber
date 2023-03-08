@@ -314,6 +314,14 @@ torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
     return output;
 }
 
+std::vector<torch::Tensor> get_energy_qbc_output(std::vector<torch::jit::IValue>& inputs){
+  auto output = model.get_method("energies_qbcs")(inputs).toTuple();
+  torch::Tensor energy = output->elements()[1].toTensor();
+  torch::Tensor qbc = output->elements()[2].toTensor();
+  return {energy, qbc};
+}
+
+
 void torchani_energy_force_external_neighborlist_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -369,4 +377,22 @@ void torchani_energy_force_(
     torch::Tensor output = get_energy_output(inputs);
     calculate_forces(coordinates, output, forces, num_atoms);
     calculate_potential_energy(output, potential_energy);
+}
+
+void torchani_energy_force_qbc_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    double forces[][3],
+    double* potential_energy,
+    double* qbc
+){
+    int num_atoms = *num_atoms_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
+    auto output = get_energy_qbc_output(inputs);
+    calculate_forces(coordinates, output[0], forces, num_atoms);
+    calculate_potential_energy(output[0], potential_energy);
+    // TODO: Probably change name of this function, it just casts to double and
+    // cpu, and stores in the output variable
+    calculate_potential_energy(output[1], qbc);
 }

@@ -22,6 +22,17 @@ extern "C" void torchani_energy_force_(
     double* potential_energy
 );
 
+
+extern "C" void torchani_energy_force_qbc_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    double* qbc
+);
+
+
 extern "C" void torchani_energy_force_pbc_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
