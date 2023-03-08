@@ -12,7 +12,7 @@ static std::string file_path = __FILE__;
 static std::string file_directory = file_path.substr(0, file_path.find_last_of("/")) + "/";
 
 
-TEST_CASE("Call energy force CPU", "[CPU]"){
+TEST_CASE("Energy + force CPU", "[CPU]"){
     double coordinates[][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
     int atomic_numbers[] = {1, 6};
     int size = 2;
@@ -20,11 +20,11 @@ TEST_CASE("Call energy force CPU", "[CPU]"){
     double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
     double potential_energy;
     SECTION("Test on CPU double precision"){
-        int use_gpu = 0;
+        int use_cuda_device = 0;
         int device_index = -1;
         int use_double_precision = 1;
-        int model_type = 0;
-        int model_index = 0;
+        int torchani_model_index = 0;
+        int network_index = 0;
         int use_cell_list = 0;
         int use_external_neighborlist = 0;
         // This is hacky and needs fixing
@@ -42,11 +42,11 @@ TEST_CASE("Call energy force CPU", "[CPU]"){
         torchani_init_atom_types_(
             atomic_numbers,
             &size,
-            &use_gpu,
             &device_index,
+            &torchani_model_index,
+            &network_index,
             &use_double_precision,
-            &model_type,
-            &model_index,
+            &use_cuda_device,
             &use_cell_list,
             &use_external_neighborlist
         );
@@ -68,11 +68,11 @@ TEST_CASE("Call energy force CPU", "[CPU]"){
         }
     }
     SECTION("Test on CPU single precision"){
-        int use_gpu = 0;
+        int use_cuda_device = 0;
         int device_index = -1;
         int use_double_precision = 0;
-        int model_type = 0;
-        int model_index = 0;
+        int torchani_model_index = 0;
+        int network_index = 0;
         int use_cell_list = 0;
         int use_external_neighborlist = 0;
         // This is hacky and needs fixing
@@ -90,11 +90,11 @@ TEST_CASE("Call energy force CPU", "[CPU]"){
         torchani_init_atom_types_(
             atomic_numbers,
             &size,
-            &use_gpu,
             &device_index,
+            &torchani_model_index,
+            &network_index,
             &use_double_precision,
-            &model_type,
-            &model_index,
+            &use_cuda_device,
             &use_cell_list,
             &use_external_neighborlist
         );
