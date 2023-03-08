@@ -32,6 +32,13 @@ def _save_tests_to_file(file_path: Path, device: str) -> None:
 
 def _main() -> None:
     if torch.cuda.is_available():
+
+        # disable tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+
+        # disable fp16
+        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
         _save_tests_to_file(
             _TESTS_DIR / 'test_values_cuda.txt',
             "cuda"

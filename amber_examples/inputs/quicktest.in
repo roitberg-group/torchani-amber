@@ -23,9 +23,9 @@
 /
 
 &torchani
-    use_cuda_device = .false.
+    use_cuda_device = .true.
     use_double_precision = .true.
-    use_torch_cell_list = .false.
+    use_torch_cell_list = .true.
     use_external_neighborlist = .false.
     device_index = -1
     network_index = -1
