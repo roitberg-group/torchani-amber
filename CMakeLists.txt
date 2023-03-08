@@ -34,8 +34,8 @@ ensure_linux_build()
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
 option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
-option(CONDA_CUDNN "Use the cuDNN from the conda environment" OFF)
-option(CONDA_CUDA "Use CUDA toolkit from conda environment" OFF)
+option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
+option(CONDA_CUDA "Use CUDA toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
 
 set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
