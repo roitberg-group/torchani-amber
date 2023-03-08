@@ -18,6 +18,11 @@ ANI-2x supports in addition F, Cl and S.
 conda env create -f ./environment.yaml
 # (2) activate the environment
 conda activate ani-amber
+git submodule init
+git submodule update --recursive
+cd ./submodules/torchani_sandbox
+pip install -e
+cd ../../
 # (3) build and install torchani
 cmake -Bbuild .
 cmake --build ./build
