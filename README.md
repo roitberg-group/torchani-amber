@@ -16,20 +16,33 @@ ANI-2x supports in addition F, Cl and S.
 ```bash
 # (1) create a new conda environment
 conda env create -f ./environment.yaml
+
 # (2) activate the environment
 conda activate ani-amber
-git submodule init
-git submodule update --recursive
+
+# (3) Initialize the torchani submodule
+git submodule update --init --recursive  # --init is only needed the first time
 cd ./submodules/torchani_sandbox
 pip install -e
 cd ../../
-# (3) build and install torchani
-cmake -Bbuild .
-cmake --build ./build
-sudo cmake --install ./build
+
+# (3) build and install torchani, (can be done manually or with the included script)
+bash ./cmake.sh --conda  # the conda flag is not needed if you are not using conda
+
 # (4) deactivate
 conda deactivate ani-amber
-# (5) compile amber (will automatically find torchani)
+
+# (5) compile amber using cmake (amber will automatically find torchani)
+```
+
+## Manual cmake installation
+
+To use cmake manually follow the traditional steps
+
+```bash
+cmake -S. -B./build  # use --fresh for a fresh configure, or rm everything in ./build
+cmake --build ./build
+cmake --install ./build
 ```
 
 ## Requirements
