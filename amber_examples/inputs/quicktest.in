@@ -6,8 +6,8 @@
     ntwx = 1
     nstlim = 1000
     dt = 0.001
-    tempi = 50.0
-    temp0 = 50.0
+    tempi = 300.0
+    temp0 = 300.0
     cut = 9999.0
     ntt = 3
     ntc = 1
@@ -25,7 +25,7 @@
 &torchani
     use_cuda_device = .true.
     use_double_precision = .true.
-    use_torch_cell_list = .true.
+    use_torch_cell_list = .false.
     use_external_neighborlist = .false.
     device_index = -1
     network_index = -1

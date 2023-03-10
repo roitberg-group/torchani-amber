@@ -123,21 +123,22 @@ endif()
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 set(TORCHANI_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
+
+# torch libraries have to be force-linked since during runtime libnvrtc can't
+# be found otherwise
 set_target_properties(
     torchani
     PROPERTIES
         CXX_STANDARD 14
         CXX_STANDARD_REQUIRED TRUE
         INCLUDE_DIRECTORIES ${TORCHANI_INCLUDE_DIRS}
+        LINK_FLAGS "-Wl,--no-as-needed"
 )
-#target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
-# Seems like the include dirs are necessary for exporting torchani, not sure why
-# I think setting target compile options is better, I believe public is needed
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")  # TODO: this is dirty
 
 # Append to these always
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS})
+
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani PRIVATE ${TORCH_INCLUDE_DIRS})
 
@@ -148,10 +149,18 @@ target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
 # Build unit tests
 add_subdirectory(test)
 
+# Default prefix for Linux is /usr/local
+# Its better to use ~/.local since it is typically user-writable in Linux
+# systems and it is a new convention
+set(_CUSTOM_DEFAULT_INSTALL_REL_PREFIX "~/.local")
+
 # Installation boilerplate for target
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    # Default prefix for Linux is /usr/local
-    message(STATUS "CMake - Install location is set to the default for the system")
+
+    # expand tilde for cmake < 3.21
+    get_filename_component(_INSTALL_PREFIX "${_CUSTOM_DEFAULT_INSTALL_REL_PREFIX}" ABSOLUTE)
+    set(CMAKE_INSTALL_PREFIX "${_INSTALL_PREFIX}" CACHE PATH "Installation prefix" FORCE)
+    message(STATUS "CMake - Install location is set to the default ~/.local")
 endif()
 
 # path prefix for all installation directories
