@@ -141,11 +141,6 @@ void torchani_init_atom_types_(
   torch::globalContext().setAllowTF32CuDNN(false);
   torch::globalContext().setAllowFP16ReductionCuBLAS(false);
 
-  // Disable JIT optimizations
-  // torch::jit::setFusionStrategy({torch::jit::FusionBehavior::STATIC, 0});
-  //torch::jit::setGraphExecutorOptimize(false);
-  // torch::jit::getBailoutDepth() = 1;
-
   // The model is loaded from a JIT compiled file always.
   try {
       model = torch::jit::load(jit_model_path, torchani_device);
