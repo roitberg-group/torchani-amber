@@ -61,10 +61,12 @@ def _main() -> None:
             " In the future run 'python ./test/generate_test_values.py'\n"
             " This will generate the values."
         )
-    _save_tests_to_file(
-        _TESTS_DIR / 'test_values_cpu.txt',
-        "cpu",
-    )
+    for f in _jit_files:
+        _save_tests_to_file(
+            _TESTS_DIR / 'test_values_cpu.txt',
+            "cpu",
+            jit_model_file=f,
+        )
     print("Generated CPU test values.")
 
 
