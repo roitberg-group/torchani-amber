@@ -33,6 +33,9 @@ bash ./cmake.sh --conda  # the conda flag is not needed if you are not using con
 conda deactivate ani-amber
 
 # (5) compile amber using cmake (amber will automatically find torchani)
+
+# (6) You may have to add ~/.local/bin to your PATH,
+# hasn't already done so, since by default torchani is installed into ~/.local
 ```
 
 ## Manual cmake installation
