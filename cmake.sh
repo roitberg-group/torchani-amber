@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Usage: ./cmake.sh performs configure && build && install,
-# --conda flag uses conda cuda and conda cudnn
+# Usage: ./cmake.sh performs configure+generate && build && install,
+# --conda flag uses conda CUDA and conda cuDNN
 
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
@@ -20,9 +20,7 @@ cmake \
     -B"$_build_dir" \
     -DCONDA_CUDA=$_use_conda \
     -DCONDA_CUDNN=$_use_conda \
-&& \
-cmake \
+&& cmake \
     --build "$_build_dir" \
-&& \
-cmake \
+&& cmake \
     --install "$_build_dir"
