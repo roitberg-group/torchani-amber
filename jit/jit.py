@@ -1,26 +1,49 @@
+import typing as tp
 from pathlib import Path
 import argparse
+import warnings
 
 import torch
 
-import torchani
+# Disable annoying torchani warnings about MNP and cuAEV
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import torchani
 
 
-def _store_model(model: torch.nn.Module, name: str, title: str, path: Path) -> None:
+def _jit_compile_and_save_whole_model_and_submodels(
+    model: torchani.models.BuiltinModel, name: str, title: str, path: Path
+) -> None:
     print(f"JIT compiling {title} to TorchScript")
     model.requires_grad_(False)
-    full_model_path = path / f'{name}.pt'
-    if not full_model_path.exists():
-        torch.jit.save(torch.jit.script(model), str(full_model_path))
+    full_model_path = path / f"{name}.pt"
+    torch.jit.save(torch.jit.script(model), str(full_model_path))
     for j in range(len(model)):
-        jth_model_path = path / f'{name}_{j}.pt'
+        jth_model_path = path / f"{name}_{j}.pt"
         script_model = torch.jit.script(model[j])
-        if not jth_model_path.exists():
-            torch.jit.save(script_model, str(jth_model_path))
+        torch.jit.save(script_model, str(jth_model_path))
     print("Done")
 
 
-# Save all available builtin models to jit script files
+def _avoid_jit_optimizations():
+    print("Avoiding JIT optimizations")
+    # Avoid potential issues with JIT compilation by disabling these
+    torch._C._jit_set_profiling_executor(False)
+    torch._C._jit_set_profiling_mode(False)
+    torch._C._jit_override_can_fuse_on_cpu(False)
+    torch._C._jit_set_texpr_fuser_enabled(False)
+    torch._C._jit_set_nvfuser_enabled(False)
+
+
+# First construction of models will trigger download of the model data
+_MODELS = {
+    "ANI-1x": torchani.models.ANI1x,
+    "ANI-1ccx": torchani.models.ANI1ccx,
+    "ANI-2x": torchani.models.ANI2x,
+}
+
+
+# Save the jit-compiled version of all available builtin models
 def _main(
     avoid_optimizations: bool,
     external_cell_list: bool,
@@ -28,58 +51,35 @@ def _main(
 ) -> None:
     print("JIT compiling builtin models to TorchScript...")
     current_path = Path(__file__).resolve().parent
+
     if avoid_optimizations:
-        print("Avoiding JIT optimizations")
-        # avoid potential issues with JIT compilation by disabling
-        # internal torch optimizations
-        torch._C._jit_set_profiling_executor(False)
-        torch._C._jit_set_profiling_mode(False)
-        torch._C._jit_override_can_fuse_on_cpu(False)
-        torch._C._jit_set_texpr_fuser_enabled(False)
-        torch._C._jit_set_nvfuser_enabled(False)
-
-    # first construction of models will trigger download of the model data
-    model_map = {
-        "ANI-1x": torchani.models.ANI1x,
-        "ANI-1ccx": torchani.models.ANI1ccx,
-        "ANI-2x": torchani.models.ANI2x,
+        _avoid_jit_optimizations()
+    options = {
+        "": True,
+        "cell_list": torch_cell_list,
+        "external_cell_list": external_cell_list,
     }
-
-    for name, model_class in model_map.items():
-        str1 = name.split("-")[0]
-        str2 = name.split("-")[1]
-        model = model_class()
-        model.requires_grad_(False)
-        _store_model(model, f"{str1.lower()}{str2}", name, current_path)
-        if torch_cell_list:
-            print(f"JIT compiling {name} with Torch CellList to TorchScript...")
+    for name, Model in _MODELS.items():
+        str1, str2 = name.split("-")
+        for label, choice in options.items():
+            if not choice:
+                continue
+            print(f"JIT compiling {name} with choice {label or 'standard'} = {choice}")
+            suffix = "".join(["_", "_".join(label.split("_")[:-1])]) if label else ""
+            kwargs: tp.Dict[str, bool] = {}
+            if label:
+                kwargs.update({label: choice})
             try:
-                model_cell_list = model_class(cell_list=True)
+                model = Model(**kwargs)
             except Exception as e:
                 print(e)
-                print(f"Could not generate model {name} with torch cell list")
-                print(" Are you sure this is available in your torchani version?")
+                print(
+                    f"Could not generate model {name} with choice {label or 'standard'}"
+                )
+                print(" It may not be available in your torchani version?")
             model.requires_grad_(False)
-            _store_model(
-                model_cell_list,
-                f"{str1.lower()}{str2}_cell",
-                name,
-                current_path
-            )
-        if external_cell_list:
-            print(f"JIT compiling {name} with External CellList to TorchScript...")
-            try:
-                model_cell_list = model_class(cell_list=True)
-            except Exception as e:
-                print(e)
-                print(f"Could not generate model {name} with external cell list")
-                print(" Are you sure this is available in your torchani version?")
-            model.requires_grad_(False)
-            _store_model(
-                model_cell_list,
-                f"{str1.lower()}{str2}_external_cell",
-                name,
-                current_path
+            _jit_compile_and_save_whole_model_and_submodels(
+                model, f"{str1.lower()}{str2}{suffix}", name, current_path
             )
     print("Done with all models")
 
@@ -90,8 +90,4 @@ if __name__ == "__main__":
     parser.add_argument("--torch-cell-list", action="store_true", default=False)
     parser.add_argument("--external-cell-list", action="store_true", default=False)
     args = parser.parse_args()
-    _main(
-        args.avoid_optimizations,
-        args.external_cell_list,
-        args.torch_cell_list
-    )
+    _main(args.avoid_optimizations, args.external_cell_list, args.torch_cell_list)

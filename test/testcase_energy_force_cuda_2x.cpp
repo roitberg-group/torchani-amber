@@ -24,7 +24,7 @@ TEST_CASE("Energy + force CUDA 2x", "[CUDA]"){
         int device_index = 0;
         int use_double_precision = 1;
         int torchani_model_index = 2;
-        int network_index = -1;
+        int network_index = 0;
         int use_cell_list = 0;
         int use_external_neighborlist = 0;
         // This is hacky and needs fixing
@@ -72,7 +72,7 @@ TEST_CASE("Energy + force CUDA 2x", "[CUDA]"){
         int device_index = 0;
         int use_double_precision = 0;
         int torchani_model_index = 2;
-        int network_index = -1;
+        int network_index = 0;
         int use_cell_list = 0;
         int use_external_neighborlist = 0;
         // This is hacky and needs fixing

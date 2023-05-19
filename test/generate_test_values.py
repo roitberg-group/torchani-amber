@@ -4,7 +4,10 @@ from pathlib import Path
 
 import torch
 
-from torchani import units
+# Disable annoying torchani warnings about mnp and cuaev
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    from torchani import units
 
 
 def _save_jit_compiled_model_results_to_file(
