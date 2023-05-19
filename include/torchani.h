@@ -1,5 +1,5 @@
-#ifndef TORCHANI_AMBER_INTERFACE_SRC_TORCHANI_H_
-#define TORCHANI_AMBER_INTERFACE_SRC_TORCHANI_H_
+#ifndef TORCHANI_H_
+#define TORCHANI_H_
 
 
 extern "C" void torchani_init_atom_types_(
@@ -54,4 +54,4 @@ extern "C" void torchani_energy_force_external_neighborlist_(
     double* potential_energy
 );
 
-#endif  // TORCHANI_AMBER_INTERFACE_SRC_TORCHANI_H_
+#endif  // TORCHANI_H_
