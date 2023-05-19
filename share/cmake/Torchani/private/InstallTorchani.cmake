@@ -10,7 +10,7 @@ function(install_torchani)
         "${multiValueArgs}"
         ${ARGN}
     )
-    # this has to be run inside a conda environment
+    # This has to be run inside a conda environment
     # numpy
     message(STATUS "Numpy - Installing")
     execute_process(COMMAND conda install numpy -y)
