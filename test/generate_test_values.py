@@ -8,7 +8,7 @@ from torchani import units
 _TESTS_DIR = Path(__file__).resolve().parent.parent / 'test'
 _JIT_DIR = Path(__file__).resolve().parent.parent / "jit"
 
-_jit_files = [_JIT_DIR / 'ani1x_0.pt', _JIT_DIR / "ani2x.pt"]
+_jit_files = [_JIT_DIR / 'ani1x_0.pt', _JIT_DIR / "ani2x_0.pt"]
 
 
 def _save_tests_to_file(file_path: Path, device: str, jit_model_file: Path) -> None:
@@ -41,18 +41,11 @@ def _main() -> None:
         # disable fp16
         torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
         for f in _jit_files:
-            if "2x" in f.name:
-                _save_tests_to_file(
-                    _TESTS_DIR / 'test_values_cuda_2x.txt',
-                    "cuda",
-                    jit_model_file=f
-                )
-            else:
-                _save_tests_to_file(
-                    _TESTS_DIR / 'test_values_cuda.txt',
-                    "cuda",
-                    jit_model_file=f
-                )
+            _save_tests_to_file(
+                _TESTS_DIR / f'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
+                "cuda",
+                jit_model_file=f
+            )
         print("Generated CUDA test values")
     else:
         warnings.warn(
@@ -63,9 +56,9 @@ def _main() -> None:
         )
     for f in _jit_files:
         _save_tests_to_file(
-            _TESTS_DIR / 'test_values_cpu.txt',
+            _TESTS_DIR / 'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
             "cpu",
-            jit_model_file=f,
+            jit_model_file=f
         )
     print("Generated CPU test values.")
 
