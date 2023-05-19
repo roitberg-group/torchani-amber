@@ -56,7 +56,7 @@ def _main() -> None:
         )
     for f in _jit_files:
         _save_tests_to_file(
-            _TESTS_DIR / 'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
+            _TESTS_DIR / f'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
             "cpu",
             jit_model_file=f
         )
