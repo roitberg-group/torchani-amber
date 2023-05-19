@@ -1,3 +1,4 @@
+import typing as tp
 import warnings
 from pathlib import Path
 
@@ -5,48 +6,54 @@ import torch
 
 from torchani import units
 
-_TESTS_DIR = Path(__file__).resolve().parent.parent / 'test'
-_JIT_DIR = Path(__file__).resolve().parent.parent / "jit"
 
-_jit_files = [_JIT_DIR / 'ani1x_0.pt', _JIT_DIR / "ani2x_0.pt"]
-
-
-def _save_tests_to_file(file_path: Path, device: str, jit_model_file: Path) -> None:
-    model = torch.jit.load(str(jit_model_file), device).to(torch.double)
+def _save_jit_compiled_model_results_to_file(
+    file_path: Path, device: str, model_jit_file: Path
+) -> None:
+    model = torch.jit.load(str(model_jit_file), device).to(torch.double)
 
     coordinates = torch.tensor(
-                      [[[3., 3., 4.], [1.0, 2.0, 1.0]]],
-                      dtype=torch.double,
-                      requires_grad=True,
-                      device=device
-                  )
+        [[[3.0, 3.0, 4.0], [1.0, 2.0, 1.0]]],
+        dtype=torch.double,
+        requires_grad=True,
+        device=device,
+    )
     atomic_numbers = torch.tensor([[1, 6]], dtype=torch.long, device=device)
     input_ = (atomic_numbers, coordinates)
 
     energy = model(input_).energies * units.HARTREE_TO_KCALMOL
     force = -torch.autograd.grad(energy.sum(), coordinates)[0][0]
-    with open(file_path, 'w+') as f:
-        lines_ = [f'{energy.item()}\n']
-        lines_.extend([f'{v}\n' for v in force.flatten()])
+    with open(file_path, "w+") as f:
+        lines_ = [f"{energy.item()}\n"]
+        lines_.extend([f"{v}\n" for v in force.flatten()])
         f.writelines(lines_)
 
 
-def _main() -> None:
-    if torch.cuda.is_available():
+def _generate_cpu_or_cuda_values(
+    model_jit_files: tp.Iterable[Path], device: str, tests_dir: Path
+) -> None:
+    assert device in {"cuda", "cpu"}
+    for f in model_jit_files:
+        results_file = (
+            tests_dir / f'test_values_{device}{"_2x" if "2x" in f.name else ""}.txt'
+        )
+        _save_jit_compiled_model_results_to_file(
+            results_file,
+            device,
+            model_jit_file=f,
+        )
+    print(f"Generated {device.upper()} test values")
 
-        # disable tf32
+
+def _main(model_jit_files: tp.Iterable[Path], tests_dir: Path) -> None:
+    if torch.cuda.is_available():
+        # Disable tf32 for accuracy
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
 
-        # disable fp16
+        # Disable fp16 for accuracy
         torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
-        for f in _jit_files:
-            _save_tests_to_file(
-                _TESTS_DIR / f'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
-                "cuda",
-                jit_model_file=f
-            )
-        print("Generated CUDA test values")
+        _generate_cpu_or_cuda_values(model_jit_files, "cuda", tests_dir)
     else:
         warnings.warn(
             "WARNING: Couldn't generate CUDA test values, no CUDA device detected.\n"
@@ -54,14 +61,12 @@ def _main() -> None:
             " In the future run 'python ./test/generate_test_values.py'\n"
             " This will generate the values."
         )
-    for f in _jit_files:
-        _save_tests_to_file(
-            _TESTS_DIR / f'test_values_cpu{"_2x" if "2x" in f.name else ""}.txt',
-            "cpu",
-            jit_model_file=f
-        )
-    print("Generated CPU test values.")
+
+    _generate_cpu_or_cuda_values(model_jit_files, "cpu", tests_dir)
 
 
 if __name__ == "__main__":
-    _main()
+    tests_dir = Path(__file__).resolve().parent.parent / "test"
+    jit_dir = Path(__file__).resolve().parent.parent / "jit"
+    model_jit_files = [jit_dir / "ani1x_0.pt", jit_dir / "ani2x_0.pt"]
+    _main(model_jit_files, tests_dir)
