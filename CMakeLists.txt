@@ -2,6 +2,7 @@ cmake_minimum_required(
     VERSION 3.16
     FATAL_ERROR
 )
+
 project(
     Torchani
     LANGUAGES C CXX
@@ -9,53 +10,51 @@ project(
     DESCRIPTION "C++ wrapper for Torchani"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
-# CMake stdlib includes
+
+# CMake builtin includes
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-# Append internal modules path and include internal modules
+# Append private internal modules path
 set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
-include(Msg)
+
+# Internal includes
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
+include(Msg)
 include(DownloadAndExtractLibtorch)
 include(SetCudnnDirs)
 include(SetCudaToolkitDirs)
 include(InstallTorchani)
 include(JitCompileModels)
 
-# Fail if building in-source
-ensure_out_of_source_build()
-
-# Fail if not building on linux
-ensure_linux_build()
+ensure_out_of_source_build()  # fail with fatal error if out-of-source
+ensure_linux_build()  # fail with fatal error if non-linux
 
 # User options and flags
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
 option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
-option(CONDA_CUDA "Use CUDA toolkit from conda environment" ON)
-option(TORCHANI_INSTALL "Install numpy, PyTorch and TorchANI" OFF)
+option(CONDA_CUDA "Use CUDA Toolkit from conda environment" ON)
+option(TORCHANI_INSTALL "Install Numpy, PyTorch and TorchANI" OFF)
 
 set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
 set(PYTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version PyTorch is compatible with")
-
 set(CUDA_TOOLKIT_VERSION "11.6" CACHE STRING "CUDA Toolkit version to set CUDA vars")
 set(LIBTORCH_CUDNN_CUDA_VERSION "11.6" CACHE STRING "CUDA version cuDNN is compatible with")
 set(PYTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version PyTorch is compatible with")
-set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA verison LibTorch is compatible with")
-
+set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version LibTorch is compatible with")
 set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
 option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" ON)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
-option(JIT_TORCH_CELL_LIST "JIT-compile models with torch neighbor list" ON)
-option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use external neighbor list" OFF)
+option(JIT_TORCH_CELL_LIST "JIT-compile models with Torch neighbor List" ON)
+option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use External Neighbor List" OFF)
 
 set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
-set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Whether LibTorch exposes CXX11 ABI")
+set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Download a LibTorch version that exposes CXX11 ABI")
 
 # Sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
 # If the requested version already exists it is not extracted
@@ -67,8 +66,8 @@ download_and_extract_libtorch(
 list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR})  # RPATH?
 
-# CUDNN may be linked by LibTorch by providing it with the necessary paths
-# ("custom cuDNN"), or it may be directly extracted into the cuda toolkit dir,
+# cuDNN may be linked by LibTorch by providing it with the necessary paths
+# ("custom cuDNN"), or it may be directly extracted into the CUDA Toolkit dir,
 # in which case it is not needed to specify the paths.
 if (CUSTOM_CUDNN)
     # sets CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
@@ -117,30 +116,30 @@ endif()
 # Generate Makefiles, build a release version of the shared library and run
 # unit tests (CPU and CUDA if it is available)
 
-# LibTorch is a required dependency
-# sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 set(TORCHANI_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
 
-# torch libraries have to be force-linked since during runtime libnvrtc can't
+# Torch libraries have to be force-linked since during runtime libnvrtc can't
 # be found otherwise
 set_target_properties(
     torchani
     PROPERTIES
-        CXX_STANDARD 14
         CXX_STANDARD_REQUIRED TRUE
+        CXX_STANDARD 14
         INCLUDE_DIRECTORIES ${TORCHANI_INCLUDE_DIRS}
-        LINK_FLAGS "-Wl,--no-as-needed"
+        # LINK_FLAGS "LINKER:--no-as-needed"
 )
 
-# Append to these always
+# LibTorch is a required dependency
+# sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
-target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS})
 
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+# Append to these always
+target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS})
 target_include_directories(torchani PRIVATE ${TORCH_INCLUDE_DIRS})
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
 
 # Append these in Debug config
 target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
@@ -149,59 +148,52 @@ target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
 # Build unit tests
 add_subdirectory(test)
 
-# Default prefix for Linux is /usr/local
-# Its better to use ~/.local since it is typically user-writable in Linux
-# systems and it is a new convention
-set(_CUSTOM_DEFAULT_INSTALL_REL_PREFIX "~/.local")
-
 # Installation boilerplate for target
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
-    # expand tilde for cmake < 3.21
-    get_filename_component(_INSTALL_PREFIX "${_CUSTOM_DEFAULT_INSTALL_REL_PREFIX}" ABSOLUTE)
+# Override CMake's default prefix for all install files if unset by user
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    # Default CMake installation prefix for Linux is /usr/local. Its better to
+    # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
+    # Expand tilde for cmake < 3.21
+    get_filename_component(_INSTALL_PREFIX "~/.local" ABSOLUTE)  # resolve
     set(CMAKE_INSTALL_PREFIX "${_INSTALL_PREFIX}" CACHE PATH "Installation prefix" FORCE)
     message(STATUS "CMake - Install location is set to the default ~/.local")
 endif()
-
-# path prefix for all installation directories
 message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}")
 
-# Set dirs for project
+# Set dirs for project installation
+# Note that by default in unix the rel_project(_install)_configdir are the same
 set(REL_PROJECT_CONFIGDIR "share/cmake/${PROJECT_NAME}")  # local configdir
 set(REL_PROJECT_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
 set(REL_PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
 
-# Set stems for files
+# Set stems generated && configured shareable installation files
 set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config")
 set(PROJECT_VERSION_STEM "${PROJECT_NAME}ConfigVersion")
 set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
 
-# Set namespace
+# Set targets namespace
 set(PROJECT_TARGETS_NAMESPACE "${PROJECT_NAME}::")
 
-# Config file
+# PackageConfig file paths (input (source-tree) and output (binary-tree))
 set(PROJECT_CONFIG_FNAME "${PROJECT_CONFIG_STEM}.cmake")
 set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}.in")
 set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}")
 
-# Version file
+# PackageVersion file path (output (binary-tree) only, version file is generated on-the-fly)
 set(PROJECT_VERSION_FNAME "${PROJECT_VERSION_STEM}.cmake")
-# Source version file does not exist, binary-tree version is created on the fly
 set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_VERSION_FNAME}")
 
-# Targets file
+# Targets file (output (binary-tree) only, targets file is generated on-the-fly)
 set(PROJECT_TARGETS_FNAME "${PROJECT_TARGETS_STEM}.cmake")
-# Source targets file does not exist, binary-tree targets is created on the fly
 set(PROJECT_BINARY_TARGETS_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_INSTALL_CONFIGDIR}/${PROJECT_TARGETS_FNAME}")
 
-# Create
-# - <proj-name>Config.cmake
-# - <proj-name>ConfigVersion.cmake
-# - <proj-name>Targets.cmake
-# - <proj-name>Targets-*.cmake
-# - <proj-name>Targets.cmake (build-tree)
-# - <proj-name>Targets-*.cmake (build-tree)
-# For use by downstream packages
+# Create and install files for use by downstream packages
+# - <PkgName>Config.cmake (configure_package_config_file)
+# - <PkgName>ConfigVersion.cmake (write_basic_version_file)
+# ??
+# - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake  (install(EXPORT ...))
+# - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake (build-tree) (export(EXPORT ...))
 
 configure_package_config_file(
     "${PROJECT_SOURCE_CONFIG_PATH}"
@@ -221,8 +213,8 @@ install(
     DESTINATION "${REL_PROJECT_INSTALL_CONFIGDIR}"
 )
 
-# export is needed to consume the project from its build-tree, it will create
-# a Targets file in the build-tree, not only in the install-prefix
+# Export is needed to consume the project from its build-tree, it will create a
+# Targets file in the build-tree, not only in the install-prefix
 export(
     EXPORT "${PROJECT_TARGETS_STEM}"
     FILE "${PROJECT_BINARY_TARGETS_PATH}"
