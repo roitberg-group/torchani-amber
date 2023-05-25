@@ -293,7 +293,7 @@ void calculate_forces(
 
 void populate_atomic_charges(
     torch::Tensor& atomic_charges_tensor,
-    double* atomic_energies,
+    double* atomic_charges,
     int num_atoms
 ){
     atomic_charges_tensor = atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
@@ -413,8 +413,8 @@ void torchani_energy_force_atomic_charges_(
     torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
     auto output = get_energy_charges_output(inputs);
-    torch::Tensor energy = std::get<0>(output)
-    torch::Tensor atomic_charges_tensor = std::get<1>(output)
+    torch::Tensor energy = std::get<0>(output);
+    torch::Tensor atomic_charges_tensor = std::get<1>(output);
 
     calculate_forces(coordinates, energy, forces, num_atoms);
     calculate_potential_energy(energy, potential_energy);
