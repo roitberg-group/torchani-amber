@@ -48,7 +48,7 @@ set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version LibTorch is compatib
 set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
-option(JIT_AVOID_OPTIMIZATIONS "Avoid JIT optimizations" ON)
+option(JIT_DISABLE_OPTIMIZATIONS "Avoid JIT optimizations" ON)
 option(JIT_COMPILE_MODELS "JIT-compile all TorchANI models" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with Torch neighbor List" ON)
 option(JIT_EXTERNAL_CELL_LIST "JIT-compile models that use External Neighbor List" OFF)
@@ -105,7 +105,7 @@ endif()
 
 if(JIT_COMPILE_MODELS)
     jit_compile_models(
-        JIT_AVOID_OPTIMIZATIONS ${JIT_AVOID_OPTIMIZATIONS}
+        JIT_DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
         JIT_EXTERNAL_CELL_LIST ${JIT_EXTERNAL_CELL_LIST}
         JIT_TORCH_CELL_LIST ${JIT_TORCH_CELL_LIST}
     )

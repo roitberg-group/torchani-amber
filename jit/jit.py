@@ -12,21 +12,24 @@ with warnings.catch_warnings():
 
 
 def _jit_compile_and_save_whole_model_and_submodels(
-    model: torchani.models.BuiltinModel, name: str, title: str, path: Path
+    model: torchani.models.BuiltinModel,
+    name: str,
+    title: str,
+    path: Path
 ) -> None:
     print(f"JIT compiling {title} to TorchScript")
     model.requires_grad_(False)
     full_model_path = path / f"{name}.pt"
     torch.jit.save(torch.jit.script(model), str(full_model_path))
-    for j in range(len(model)):
+    for j, _ in enumerate(model):
         jth_model_path = path / f"{name}_{j}.pt"
         script_model = torch.jit.script(model[j])
         torch.jit.save(script_model, str(jth_model_path))
     print("Done")
 
 
-def _avoid_jit_optimizations():
-    print("Avoiding JIT optimizations")
+def _disable_jit_optimizations() -> None:
+    print("Disabling JIT optimizations")
     # Avoid potential issues with JIT compilation by disabling these
     torch._C._jit_set_profiling_executor(False)
     torch._C._jit_set_profiling_mode(False)
@@ -40,20 +43,21 @@ _MODELS = {
     "ANI-1x": torchani.models.ANI1x,
     "ANI-1ccx": torchani.models.ANI1ccx,
     "ANI-2x": torchani.models.ANI2x,
+    "ANI-mbis": torchani.models.ANI2xCharges,
 }
 
 
 # Save the jit-compiled version of all available builtin models
 def _main(
-    avoid_optimizations: bool,
+    disable_optimizations: bool,
     external_cell_list: bool,
     torch_cell_list: bool,
 ) -> None:
     print("JIT compiling builtin models to TorchScript...")
     current_path = Path(__file__).resolve().parent
 
-    if avoid_optimizations:
-        _avoid_jit_optimizations()
+    if disable_optimizations:
+        _disable_jit_optimizations()
     options = {
         "": True,
         "cell_list": torch_cell_list,
@@ -86,8 +90,8 @@ def _main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--avoid-optimizations", action="store_true", default=False)
+    parser.add_argument("--disable-optimizations", action="store_true", default=False)
     parser.add_argument("--torch-cell-list", action="store_true", default=False)
     parser.add_argument("--external-cell-list", action="store_true", default=False)
     args = parser.parse_args()
-    _main(args.avoid_optimizations, args.external_cell_list, args.torch_cell_list)
+    _main(args.disable_optimizations, args.external_cell_list, args.torch_cell_list)
