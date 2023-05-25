@@ -33,7 +33,7 @@ static std::unordered_map<int, std::string> torchani_model = {
     {0, "ani1x"},
     {1, "ani1ccx"},
     {2, "ani2x"},
-    {3, "ani-mbis"}
+    {3, "animbis"}
 };
 
 /**
@@ -385,7 +385,7 @@ void torchani_energy_force_pbc_(
 }
 
 /**
- * This function can only be called with the ani-mbis model
+ * This function can only be called with the animbis model
  */
 void torchani_energy_force_atomic_charges_(
     double coordinates_raw[][3],
@@ -405,7 +405,7 @@ void torchani_energy_force_atomic_charges_(
     if (cached_torchani_model_index != 3) {
         std::cerr
             << "Error in libtorchani\n"
-            << "Torchani model should be ani-mbis (index=3) to calculate charges"
+            << "Torchani model should be animbis (index=3) to calculate charges"
             << std::endl;
         std::exit(2);
     }
