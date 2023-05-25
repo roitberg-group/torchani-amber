@@ -14,6 +14,18 @@ extern "C" void torchani_init_atom_types_(
     int* use_external_neighborlist_raw
 );
 
+
+extern "C" void torchani_energy_force_atomic_charges_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    int* charges_type_raw,
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    double* atomic_charges
+);
+
+
 extern "C" void torchani_energy_force_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -42,6 +54,7 @@ extern "C" void torchani_energy_force_pbc_(
     double* potential_energy
 );
 
+
 // accept an external neighborlist and shifts
 extern "C" void torchani_energy_force_external_neighborlist_(
     double coordinates_raw[][3],
@@ -53,5 +66,4 @@ extern "C" void torchani_energy_force_external_neighborlist_(
     double forces[][3],
     double* potential_energy
 );
-
 #endif  // TORCHANI_H_

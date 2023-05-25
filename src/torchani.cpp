@@ -390,8 +390,7 @@ void torchani_energy_force_pbc_(
 void torchani_energy_force_atomic_charges_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
-    int* charges_type_raw
-    /* outputs */
+    int* charges_type_raw,
     double forces[][3],
     double* potential_energy,
     double* atomic_charges
