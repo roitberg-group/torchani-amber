@@ -31,12 +31,12 @@ TEST_CASE("Energy + Force + Charge CPU, MBIS", "[CPU]") {
         // This is hacky and needs fixing
         std::ifstream infile(file_directory + "test_values_cpu_mbis.txt");
         double value;
-        double test_values[7];
+        double test_values[9];
         if (!infile){
             std::cerr << "Can't open file with test values." << '\n';
             std::exit(-1);
         }
-        for (int j = 0; j != 8; ++j){
+        for (int j = 0; j != 9; ++j){
             infile >> value;
             test_values[j] = value;
         }
