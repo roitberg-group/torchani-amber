@@ -13,6 +13,7 @@
 #include "torchani.h"
 
 // Globals:
+static int cached_torchani_model_index = 0;
 static torch::jit::script::Module model;
 static torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
@@ -31,7 +32,8 @@ static std::unordered_map<int, std::string> torchani_model = {
     {-1, "custom"},
     {0, "ani1x"},
     {1, "ani1ccx"},
-    {2, "ani2x"}
+    {2, "ani2x"},
+    {3, "ani2x-mbis"}
 };
 
 /**
@@ -47,9 +49,10 @@ void torchani_set_device(
         // CPU device should always be -1
         if (device_index != -1) {
             std::cerr
-                << "Error in libtorchani, device index should be -1 for CPU "
+                << "Error in libtorchani\n"
+                << "Device index should be -1 for CPU"
                 << std::endl;
-            std::exit(-1);
+            std::exit(2);
         }
         torchani_device = torch::Device(torch::DeviceType::CPU, device_index);
     }
@@ -83,6 +86,7 @@ void torchani_init_atom_types_(
   // torchani_model should be a string but it is set to an int for compatibility
   // with C
   //
+  cached_torchani_model_index = *torchani_model_index_raw;
   int num_atoms = *num_atoms_raw;
   int device_index = *device_index_raw;
   int network_index = *network_index_raw;
@@ -146,10 +150,10 @@ void torchani_init_atom_types_(
       model = torch::jit::load(jit_model_path, torchani_device);
   } catch (const c10::Error& e) {
       std::cerr
-          << "Error in libtorchani, could not load model correctly from "
-          << jit_model_path
+          << "Error in libtorchani\n"
+          << "Could not load model correctly from path: " << jit_model_path
           << std::endl;
-      std::exit(-1);
+      std::exit(2);
   }
   // This is only necessary for double precision, since
   // the buffers / parameters are kFloat by default
@@ -286,6 +290,21 @@ void calculate_forces(
     }
 }
 
+
+void populate_atomic_charges(
+    torch::Tensor& atomic_charges_tensor,
+    double* atomic_energies,
+    int num_atoms
+){
+    atomic_charges_tensor = atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
+    auto atomic_charges_accessor = atomic_charges_tensor.accessor<double, 2>();
+
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        atomic_charges[atom] = atomic_charges_accessor[0][atom];
+    }
+}
+
+
 void calculate_potential_energy(
     torch::Tensor& output,
     double* potential_energy
@@ -307,6 +326,11 @@ torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
     // a 1D tensor that holds the potential energy
     torch::Tensor output = model.forward(inputs).toTuple()->elements()[1].toTensor();
     return output;
+}
+
+std::tuple<torch::Tensor, torch::Tensor> get_energy_charges_output(std::vector<torch::jit::IValue>& inputs) {
+    auto output = model.forward(inputs).toTuple();
+    return {output->elements()[1].toTensor(), output->elements()[2].toTensor()};
 }
 
 std::vector<torch::Tensor> get_energy_qbc_output(std::vector<torch::jit::IValue>& inputs){
@@ -358,6 +382,44 @@ void torchani_energy_force_pbc_(
     torch::Tensor output = get_energy_output(inputs);
     calculate_forces(coordinates, output, forces, num_atoms);
     calculate_potential_energy(output, potential_energy);
+}
+
+/**
+ * This function can only be called with the ani2x-mbis model
+ */
+void torchani_energy_force_atomic_charges_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    int* charges_type_raw
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    double* atomic_charges
+){
+    if (*charges_type_raw != 0) {
+        std::cerr
+            << "Error in libtorchani\n"
+            << "Charges type should be 0 (only currently supported value)"
+            << std::endl;
+        std::exit(2);
+    }
+    if (cached_torchani_model_index != 3) {
+        std::cerr
+            << "Error in libtorchani\n"
+            << "Torchani model should be ani2x-mbis (index=3) to calclate charges"
+            << std::endl;
+        std::exit(2);
+    }
+    int num_atoms = *num_atoms_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
+    auto output = get_energy_charges_output(inputs);
+    torch::Tensor energy = std::get<0>(output)
+    torch::Tensor atomic_charges_tensor = std::get<1>(output)
+
+    calculate_forces(coordinates, energy, forces, num_atoms);
+    calculate_potential_energy(energy, potential_energy);
+    populate_atomic_charges(atomic_charges_tensor, atomic_charges, num_atoms);
 }
 
 void torchani_energy_force_(
