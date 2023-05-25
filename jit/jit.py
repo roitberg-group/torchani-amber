@@ -11,6 +11,12 @@ with warnings.catch_warnings():
     import torchani
 
 
+def _reset_jit_bullshit():
+    torch._C._jit_clear_class_registry()
+    torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
+    torch.jit._state._clear_class_state()
+
+
 def _jit_compile_and_save_whole_model_and_submodels(
     model: torchani.models.BuiltinModel,
     name: str,
@@ -20,9 +26,11 @@ def _jit_compile_and_save_whole_model_and_submodels(
     print(f"JIT compiling {title} to TorchScript")
     model.requires_grad_(False)
     full_model_path = path / f"{name}.pt"
+    _reset_jit_bullshit()
     torch.jit.save(torch.jit.script(model), str(full_model_path))
     for j, _ in enumerate(model):
         jth_model_path = path / f"{name}_{j}.pt"
+        _reset_jit_bullshit()
         script_model = torch.jit.script(model[j])
         torch.jit.save(script_model, str(jth_model_path))
     print("Done")

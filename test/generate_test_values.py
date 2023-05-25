@@ -23,12 +23,14 @@ def _save_jit_compiled_model_results_to_file(
     )
     atomic_numbers = torch.tensor([[1, 6]], dtype=torch.long, device=device)
     input_ = (atomic_numbers, coordinates)
-
-    energy = model(input_).energies * units.HARTREE_TO_KCALMOL
+    output = model(input_)
+    energy = output.energies * units.HARTREE_TO_KCALMOL
     force = -torch.autograd.grad(energy.sum(), coordinates)[0][0]
     with open(file_path, "w+") as f:
         lines_ = [f"{energy.item()}\n"]
         lines_.extend([f"{v}\n" for v in force.flatten()])
+        if hasattr(output, "atomic_charges"):
+            lines_.extend([f"{v}\n" for v in output.atomic_charges.flatten()])
         f.writelines(lines_)
 
 
@@ -37,8 +39,15 @@ def _generate_cpu_or_cuda_values(
 ) -> None:
     assert device in {"cuda", "cpu"}
     for f in model_jit_files:
+        if "2x" in f.name:
+            suffix = "_2x"
+        elif "mbis" in f.name:
+            suffix = "_mbis"
+        else:
+            suffix = ""
+
         results_file = (
-            tests_dir / f'test_values_{device}{"_2x" if "2x" in f.name else ""}.txt'
+            tests_dir / f'test_values_{device}{suffix}.txt'
         )
         _save_jit_compiled_model_results_to_file(
             results_file,
@@ -71,5 +80,5 @@ def _main(model_jit_files: tp.Iterable[Path], tests_dir: Path) -> None:
 if __name__ == "__main__":
     tests_dir = Path(__file__).resolve().parent.parent / "test"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
-    model_jit_files = [jit_dir / "ani1x_0.pt", jit_dir / "ani2x_0.pt"]
+    model_jit_files = [jit_dir / "ani1x_0.pt", jit_dir / "ani2x_0.pt", jit_dir / "animbis_0.pt"]
     _main(model_jit_files, tests_dir)
