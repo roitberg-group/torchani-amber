@@ -116,30 +116,38 @@ endif()
 # unit tests (CPU and CUDA if it is available)
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
-set(TORCHANI_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
-
-# Torch libraries have to be force-linked since during runtime libnvrtc can't
-# be found otherwise
-#
-# Install rpath is hardcoded to be the same as the link path, to avoid
-# Issues if cuda is not installed system-wide
 
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
-
+# Install rpath is hardcoded to be the same as the link path, to avoid Issues
+# if the correct CUDA is not installed system-wide. If this is not done then
+# CMake tries to re-link the binaries at install-time, and prefers the system
+# CUDA, which may be bad.
+#
+# TODO: When doing this, both the build-tree and the install-tree binaries are
+# still linked to the CUDA driver library from the system (libcuda.so) by
+# default. This behavior seems to be a design choice of libtorch. I belive this
+# is ok, since the cuda driver is in principle unrelated to the CUDA Toolkit,
+# so I will leave it this way, but I'm documenting it here just in case.
+set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR})
 set_target_properties(
     torchani
     PROPERTIES
+        INSTALL_RPATH  "${TORCHANI_INSTALL_RPATH}"
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
 target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
 target_compile_features(torchani PRIVATE cxx_std_14)
 target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
+# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
+# can't be found otherwise, it may only be needed to force-link libnvrtc (and
+# maybe nvtoolsext?) but for now I force-link everything since it is easier
+# althought a bit dirtier.
 target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
-target_include_directories(torchani PRIVATE ${TORCHANI_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
+target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # Build unit tests
 add_subdirectory(test)
