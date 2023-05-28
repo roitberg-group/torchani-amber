@@ -11,31 +11,39 @@ and [ANI-1ccx](https://www.nature.com/articles/s41467-019-10827-4) ensembles
 available to use as calculators. ANI-1x and ANI-1ccx support HCNO elements.
 ANI-2x supports in addition F, Cl and S.
 
-## NEW INTRUCTIONS
+## Instructions
+
+To build from source using ``conda`` (or ``mamba``)follow these instructions:
 
 ```bash
-# (1) create a new conda environment
+# (1) create a new conda (or mamba) environment
 conda env create -f ./environment.yaml
 
 # (2) activate the environment
 conda activate ani-amber
 
-# (3) Initialize the torchani submodule
+# (3) Initialize the python torchani submodule
 git submodule update --init --recursive  # --init is only needed the first time
+
+# (4) Install the python torchani submodule
 cd ./submodules/torchani_sandbox
-pip install -e
+pip install -e .
 cd ../../
 
-# (3) build and install torchani, (can be done manually or with the included script)
-bash ./cmake.sh --conda  # the conda flag is not needed if you are not using conda
+# (5) Build and install libtorchani
+# This can be done manually or with the included script
+bash ./cmake.sh --conda --install # Conda flag is not needed if not using conda
 
-# (4) deactivate
+# (6) Deactivate the environment
 conda deactivate ani-amber
 
-# (5) compile amber using cmake (amber will automatically find torchani)
+# (7) You may have to add ~/.local/bin to your PATH, if it isn't already
+# there, since by default torchani is installed into ~/.local
+mkdir -P ~/.local/bin
+cat PATH="$HOME/.local/bin:$PATH" >> ~/.bashrc  # Or corresponding file of your shell
 
-# (6) You may have to add ~/.local/bin to your PATH,
-# hasn't already done so, since by default torchani is installed into ~/.local
+# (8) compile Amber using cmake (Amber will automatically find torchani)
+# Follow instructions in https://ambermd.org/
 ```
 
 ## Manual cmake installation
@@ -51,13 +59,13 @@ cmake --install ./build
 ## Requirements
 
 - Linux operating system
-- cmake 3.13 or higher
+- cmake 3.16 or higher
 - gcc 9.3.0
-- git (necessary to obtain the latest torchani version) (?)
+- git (necessary to obtain the latest torchani version)
 - catch2 (library for unit tests only, included in the distribution)
 - python 3.8 (for generating the models and some test data)
-- torchani (latest version, for generating the models and some test data)
-- Amber20 (23?)
+EAtorchani (latest version, for generating the models and some test data)
+- Amber23
 - LibTorch 1.13.1
 
 Through conda:
@@ -74,11 +82,10 @@ example, if `torch.__version__ == 1.13.1` for TorchANI, then LibTorch must also
 be 1.13.1, otherwise LibTorch may fail to load the model, or load it
 incorrectly.
 
-Note that libtorch has shared libraries in it so it be included
-with the binary.
-
-Note that the CUDA Toolkit, cuDNN and LibTorch dependencies exist even if
-you want to run CPU-only.
+NOTE: The library can be run CPU-only, but the CUDA Toolkit, cuDNN and LibTorch
+dependencies exist **even if you want to run CPU-only** this is a current
+limitation that will probably remain like this, there are no plans to address
+it.
 
 ## Installation
 
@@ -90,13 +97,6 @@ The following steps are necessary to install the library and link it correctly:
    [the NVIDIA CUDA downloads page](https://developer.nvidia.com/cuda-downloads) and
    [the NVIDIA cuDNN download page](https://developer.nvidia.com/cudnn) respectively.
 1. Run `./install.sh --amber --amberhome <AMBERHOME>`
-
-This installs the necessary python packages, downloads and extracts LibTorch
-and installs the `libtorchani` shared library and tests it. Afterwards it
-modifies the necessary Amber files, configures Amber for torchani with some
-default flags and builds pmemd and sander, then it runs some short simulations
-using ANI-1x and times them. For more information about manually doing some of
-the installation tasks read the section *Installation detail*.
 
 It may also be helpful to run `./install.sh --help`. Note: It is *highly
 recommended* that you run this script inside an encapsulated python environment
@@ -279,13 +279,14 @@ of this classes are not stable and subject to changing at any time so don't
 rely on this.
 
 To add a custom model you should JIT-compile it inside python and save it into
-a file called "custom.pt" which you should copy inside the `jit/` directory:
+a file under ``TORCHANI_ROOT/jit/custom.pt``, where ``TORCHANI_ROOT`` is the
+source root:
 
 ```python
 import torch
-import torchani
+from torchani.models import BuiltinModel
 
-class CustomModel(torchani.BuiltinModel):
+class CustomModel(BuiltinModel):
     ...
 
 custom_model = CustomModel()
