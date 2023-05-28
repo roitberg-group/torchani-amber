@@ -64,7 +64,6 @@ download_and_extract_libtorch(
     CUDA_VERSION ${LIBTORCH_CUDA_VERSION}
 )
 list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
-list(APPEND CMAKE_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR})  # RPATH?
 
 # cuDNN may be linked by LibTorch by providing it with the necessary paths
 # ("custom cuDNN"), or it may be directly extracted into the CUDA Toolkit dir,
@@ -122,28 +121,25 @@ add_library(torchani SHARED ${TORCHANI_SOURCES})
 
 # Torch libraries have to be force-linked since during runtime libnvrtc can't
 # be found otherwise
-set_target_properties(
-    torchani
-    PROPERTIES
-        CXX_STANDARD_REQUIRED TRUE
-        CXX_STANDARD 14
-        INCLUDE_DIRECTORIES ${TORCHANI_INCLUDE_DIRS}
-        # LINK_FLAGS "LINKER:--no-as-needed"
-)
+#
+# Install rpath is hardcoded to be the same as the link path, to avoid
+# Issues if cuda is not installed system-wide
 
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 
-# Append to these always
-target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS})
-target_include_directories(torchani PRIVATE ${TORCH_INCLUDE_DIRS})
+set_target_properties(
+    torchani
+    PROPERTIES
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+)
+target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
+target_compile_features(torchani PRIVATE cxx_std_14)
+target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES})
 target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
-
-# Append these in Debug config
-target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-target_compile_options(torchani PRIVATE $<$<CONFIG:Debug>:"-g">)
+target_include_directories(torchani PRIVATE ${TORCHANI_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
 
 # Build unit tests
 add_subdirectory(test)
