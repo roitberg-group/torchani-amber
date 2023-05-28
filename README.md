@@ -46,6 +46,23 @@ cat PATH="$HOME/.local/bin:$PATH" >> ~/.bashrc  # Or corresponding file of your 
 # Follow instructions in https://ambermd.org/
 ```
 
+## Note about CUDA and LD_LIBRARY_PATH
+
+Torchani is tested with a specific version of the CUDA Toolkit in which it runs
+correctly. It is recommended that the CUDA Toolkit be installed using conda (or
+mamba). When installing the library, however, the path's to the correct CUDA
+Toolkit's liked libraries may get overriden if the system has a different
+Toolkit available and LD_LIBRARY_PATH is set to point there (as the CUDA
+installation instructions unfortunately recommend).
+
+This should not cause problems in principle, since the libraries will
+supposedly only be overriden if compatible, but if this is problematic to you,
+it is recommended to wrap torchani in a script that removes the system's cuda
+libraries from LD_LIBRARY_PATH.
+
+Note that this situation is pretty rare, most probably you will not experience
+any issues regarding this.
+
 ## Manual cmake installation
 
 To use cmake manually follow the traditional steps
@@ -64,7 +81,7 @@ cmake --install ./build
 - git (necessary to obtain the latest torchani version)
 - catch2 (library for unit tests only, included in the distribution)
 - python 3.8 (for generating the models and some test data)
-EAtorchani (latest version, for generating the models and some test data)
+- torchani (latest version, for generating the models and some test data)
 - Amber23
 - LibTorch 1.13.1
 
