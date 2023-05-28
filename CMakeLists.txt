@@ -131,6 +131,9 @@ find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 # default. This behavior seems to be a design choice of libtorch. I belive this
 # is ok, since the cuda driver is in principle unrelated to the CUDA Toolkit,
 # so I will leave it this way, but I'm documenting it here just in case.
+#
+# TODO: Both, manual setup of the RPATH **and** specifying automatic link-path
+# usage are needed in order for this to properly work, I'm not 100 % sure why
 set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR})
 set_target_properties(
     torchani
