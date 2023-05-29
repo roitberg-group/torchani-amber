@@ -5,20 +5,9 @@ dependencies:
   # general
   - python=3.8.1
   - pip
-
-  # DL it is possible to just build a conda env with this to run torchani
   - pytorch::pytorch=1.13.1=py3.8_cuda11.6_cudnn8.3.2_0
-    #- cudnn=8.3.2
-  - nvidia::cudatoolkit=11.6
+  - nvidia/label/cuda-11.6.1::cuda
   - conda-forge::numpy=1.20
   - conda-forge::cudnn=8.3.2
-  # where can I get this from??
-  #- numpy=1.20
-  #- pytorch=1.13.1=py3.8_cuda11.7_cudnn8.5.0_0
-  ## 8.5.0 not available in conda-forge yet
-  #- conda-forge::cudnn=8.4.1
-  #- nvidia::cudatoolkit=11.7
-  # progress bars
-
   - conda-forge::tqdm  # progress bars
   # - pkbar
