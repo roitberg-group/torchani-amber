@@ -14,7 +14,9 @@ extern "C" void torchani_init_atom_types_(
     int* use_external_neighborlist_raw
 );
 
-
+/**
+ * Model index must be 3 (animbis) in order to use this function
+ */
 extern "C" void torchani_energy_force_atomic_charges_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -26,6 +28,9 @@ extern "C" void torchani_energy_force_atomic_charges_(
 );
 
 
+/**
+ * Model index must be 3 (animbis) in order to use this function
+ */
 extern "C" void torchani_energy_force_atomic_charges_with_derivatives_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -33,7 +38,10 @@ extern "C" void torchani_energy_force_atomic_charges_with_derivatives_(
     /* outputs */
     double forces[][3],
     double* potential_energy,
-    // Note that atomic_charge_derivatives is a [num_atoms x num_atoms x 3] array
+    // Note that atomic_charge_derivatives is a [num_atoms x num_atoms x 3]
+    // array In fortran, an array of shape [3, num_atoms, num_atoms] should be
+    // passed Where the element [i, j, k] is the derivative of the **charge on
+    // k-th atom** with respect to the **i-th position of the j-th atom**
     double* atomic_charge_derivatives,
     // Note that atomic_charges is a [num_atoms] array
     double* atomic_charges
