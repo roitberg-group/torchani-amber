@@ -4,7 +4,7 @@
 #include <cstdlib>
 
 #include "catch2.hpp"
-// This file must be linked to libtorchani
+
 #include "torchani.h"
 
 
@@ -18,7 +18,11 @@ TEST_CASE("Energy + Force + Charge CPU, MBIS", "[CPU]") {
     int size = 2;
     double forces[size][3];
     double atomic_charges[size];
+    double* atomic_charge_derivatives;
     double potential_energy;
+
+    atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
+
     SECTION("Test on CPU double precision"){
         int use_cuda_device = 0;
         int device_index = -1;
@@ -31,12 +35,12 @@ TEST_CASE("Energy + Force + Charge CPU, MBIS", "[CPU]") {
         // This is hacky and needs fixing
         std::ifstream infile(file_directory + "test_values_cpu_mbis.txt");
         double value;
-        double test_values[9];
+        double test_values[21];
         if (!infile){
             std::cerr << "Can't open file with test values." << '\n';
             std::exit(-1);
         }
-        for (int j = 0; j != 9; ++j){
+        for (int j = 0; j != 21; ++j){
             infile >> value;
             test_values[j] = value;
         }
@@ -68,8 +72,46 @@ TEST_CASE("Energy + Force + Charge CPU, MBIS", "[CPU]") {
             CHECK(forces[1][0] == Approx(test_values[4]));
             CHECK(forces[1][1] == Approx(test_values[5]));
             CHECK(forces[1][2] == Approx(test_values[6]));
+
             CHECK(atomic_charges[0] == Approx(test_values[7]));
             REQUIRE(atomic_charges[1] == Approx(test_values[8]));
         }
+
+        for (long j = 0; j != 10; ++j){
+            torchani_energy_force_atomic_charges_with_derivatives_(
+                coordinates,
+                &size,
+                &charges_type_raw,
+                /* outputs */
+                forces,
+                &potential_energy,
+                atomic_charge_derivatives,
+                atomic_charges
+            );
+            CHECK(potential_energy == Approx(test_values[0]));
+            CHECK(forces[0][0] == Approx(test_values[1]));
+            CHECK(forces[0][1] == Approx(test_values[2]));
+            CHECK(forces[0][2] == Approx(test_values[3]));
+            CHECK(forces[1][0] == Approx(test_values[4]));
+            CHECK(forces[1][1] == Approx(test_values[5]));
+            CHECK(forces[1][2] == Approx(test_values[6]));
+
+            CHECK(atomic_charges[0] == Approx(test_values[7]));
+            CHECK(atomic_charges[1] == Approx(test_values[8]));
+
+            CHECK(atomic_charge_derivatives[0] == Approx(test_values[9]));
+            CHECK(atomic_charge_derivatives[1] == Approx(test_values[10]));
+            CHECK(atomic_charge_derivatives[2] == Approx(test_values[11]));
+            CHECK(atomic_charge_derivatives[3] == Approx(test_values[12]));
+            CHECK(atomic_charge_derivatives[4] == Approx(test_values[13]));
+            CHECK(atomic_charge_derivatives[5] == Approx(test_values[14]));
+            CHECK(atomic_charge_derivatives[6] == Approx(test_values[15]));
+            CHECK(atomic_charge_derivatives[7] == Approx(test_values[16]));
+            CHECK(atomic_charge_derivatives[8] == Approx(test_values[17]));
+            CHECK(atomic_charge_derivatives[9] == Approx(test_values[18]));
+            CHECK(atomic_charge_derivatives[10] == Approx(test_values[19]));
+            REQUIRE(atomic_charge_derivatives[11] == Approx(test_values[20]));
+        }
     }
+    free(atomic_charge_derivatives);
 }

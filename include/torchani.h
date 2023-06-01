@@ -26,6 +26,20 @@ extern "C" void torchani_energy_force_atomic_charges_(
 );
 
 
+extern "C" void torchani_energy_force_atomic_charges_with_derivatives_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    int* charges_type_raw,
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    // Note that atomic_charge_derivatives is a [num_atoms x num_atoms x 3] array
+    double* atomic_charge_derivatives,
+    // Note that atomic_charges is a [num_atoms] array
+    double* atomic_charges
+);
+
+
 extern "C" void torchani_energy_force_(
     double coordinates_raw[][3],
     int* num_atoms_raw,

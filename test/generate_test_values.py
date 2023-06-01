@@ -25,12 +25,20 @@ def _save_jit_compiled_model_results_to_file(
     input_ = (atomic_numbers, coordinates)
     output = model(input_)
     energy = output.energies * units.HARTREE_TO_KCALMOL
-    force = -torch.autograd.grad(energy.sum(), coordinates)[0][0]
+    force = -torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0][0]
     with open(file_path, "w+") as f:
         lines_ = [f"{energy.item()}\n"]
         lines_.extend([f"{v}\n" for v in force.flatten()])
         if hasattr(output, "atomic_charges"):
-            lines_.extend([f"{v}\n" for v in output.atomic_charges.flatten()])
+            charges = output.atomic_charges.flatten()
+            lines_.extend([f"{v}\n" for v in charges])
+            for c in charges:
+                deriv_charges = torch.autograd.grad(
+                    c,
+                    coordinates,
+                    retain_graph=True
+                )[0]
+                lines_.extend([f"{v}\n" for v in deriv_charges.flatten()])
         f.writelines(lines_)
 
 
@@ -80,5 +88,9 @@ def _main(model_jit_files: tp.Iterable[Path], tests_dir: Path) -> None:
 if __name__ == "__main__":
     tests_dir = Path(__file__).resolve().parent.parent / "test"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
-    model_jit_files = [jit_dir / "ani1x_0.pt", jit_dir / "ani2x_0.pt", jit_dir / "animbis_0.pt"]
+    model_jit_files = [
+        jit_dir / "ani1x_0.pt",
+        jit_dir / "ani2x_0.pt",
+        jit_dir / "animbis_0.pt",
+    ]
     _main(model_jit_files, tests_dir)
