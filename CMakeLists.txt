@@ -156,11 +156,11 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # Build unit tests
 FetchContent_Declare(
     Catch2
-    PREFIX "${CMAKE_CURRENT_LIST_DIR}/external"
-    BINARY_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-build/"
-    STAMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-stamp/"
-    TMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-tmp/"
-    DOWNLOAD_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/"
+    PREFIX "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/"
+    BINARY_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/build/"
+    STAMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/stamp/"
+    TMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/tmp/"
+    DOWNLOAD_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/Catch2/"
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG 3f0283de7a9c43200033da996ff9093be3ac84dc
 )
