@@ -5,36 +5,37 @@
 #include <unordered_map>
 #include <vector>
 
-// Header for torch::autograd::grad, not included by default, necessary for forces
 #include <torch/csrc/jit/runtime/graph_executor.h>
-#include <torch/csrc/autograd/autograd.h>
+#include <torch/csrc/autograd/autograd.h>  // For forces
 #include <torch/script.h>
 
-#include "torchani.h"
+#include <torchani.h>
 
 // Globals:
-static int cached_torchani_model_index = 0;
-static torch::jit::script::Module model;
-static torch::Tensor torchani_atomic_numbers;
+namespace {
+int cached_torchani_model_index = 0;
+torch::jit::script::Module model;
+torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
-static double HARTREE_TO_KCALMOL = 627.5094738898777;
+double HARTREE_TO_KCALMOL = 627.5094738898777;
 // Default device is CPU
-static torch::Device torchani_device(torch::DeviceType::CPU, -1);
+torch::Device torchani_device(torch::DeviceType::CPU, -1);
 // Amber has PBC enabled in all directions for PME
-static torch::Tensor use_pbc = torch::tensor(
+torch::Tensor use_pbc = torch::tensor(
     {true, true, true},
     torch::TensorOptions()
       .dtype(torch::kBool)
       .device(torch::Device(torch::DeviceType::CPU, -1))
 );
-static torch::ScalarType torchani_precision = torch::kFloat;
-static std::unordered_map<int, std::string> torchani_model = {
+torch::ScalarType torchani_precision = torch::kFloat;
+std::unordered_map<int, std::string> torchani_model = {
     {-1, "custom"},
     {0, "ani1x"},
     {1, "ani1ccx"},
     {2, "ani2x"},
     {3, "animbis"}
 };
+}  // namespace anonymous
 
 
 /**

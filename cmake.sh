@@ -16,6 +16,7 @@ else
 fi
 
 cmake \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     --fresh \
     -S"$_src_dir" \
     -B"$_build_dir" \
