@@ -68,7 +68,7 @@ def _main(
         _disable_jit_optimizations()
     options = {
         "": True,
-        "cell_list": torch_cell_list,
+        "internal_cell_list": torch_cell_list,
         "external_cell_list": external_cell_list,
     }
     for name, Model in _MODELS.items():
@@ -80,7 +80,7 @@ def _main(
             suffix = "".join(["_", "_".join(label.split("_")[:-1])]) if label else ""
             kwargs: tp.Dict[str, bool] = {}
             if label:
-                kwargs.update({label: choice})
+                kwargs.update({label.replace("internal_", ""): choice})
             try:
                 model = Model(**kwargs)
             except Exception as e:

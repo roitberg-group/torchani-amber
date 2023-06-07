@@ -51,8 +51,12 @@ def _generate_cpu_or_cuda_values(
             suffix = "_2x"
         elif "mbis" in f.name:
             suffix = "_mbis"
-        else:
-            suffix = ""
+        elif "1x" in f.name:
+            suffix = "_1x"
+        elif "1ccx" in f.name:
+            suffix = "_1ccx"
+        if "_0" not in f.name:
+            suffix = f"{suffix}_ensemble"
 
         results_file = (
             tests_dir / f'test_values_{device}{suffix}.txt'
@@ -89,7 +93,12 @@ if __name__ == "__main__":
     tests_dir = Path(__file__).resolve().parent.parent / "test"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
     model_jit_files = [
+        jit_dir / "ani1x.pt",
+        jit_dir / "ani1ccx.pt",
+        jit_dir / "ani2x.pt",
+        jit_dir / "animbis.pt",
         jit_dir / "ani1x_0.pt",
+        jit_dir / "ani1ccx_0.pt",
         jit_dir / "ani2x_0.pt",
         jit_dir / "animbis_0.pt",
     ]

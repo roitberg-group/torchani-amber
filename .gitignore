@@ -1,8 +1,6 @@
 build/*
 jit/*.pt
-external/libtorch*
-external/cudnn*
-spike/*
+external/*
 *.x
 *.mod
 *.tar.gz
@@ -10,13 +8,16 @@ slurm_script*
 slurm.sh
 
 # don't save test values
-test/test_values_cpu.txt
-test/test_values_cuda.txt
-test/test_values_cpu_2x.txt
-test/test_values_cuda_2x.txt
+test/test_values*.txt
 
 # don't save outputs from tests
 amber_inputs/outputs/*
 
 # No swap files
 *.swp
+
+# No language server cache
+.ccls-cache
+
+# No clangd cache
+.cache

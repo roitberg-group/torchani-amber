@@ -20,6 +20,7 @@ set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/p
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
 
 # Internal includes
+include(FetchContent)
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
 include(Msg)
@@ -153,7 +154,21 @@ target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # Build unit tests
-add_subdirectory(test)
+FetchContent_Declare(
+    Catch2
+    PREFIX "${CMAKE_CURRENT_LIST_DIR}/external"
+    BINARY_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-build/"
+    STAMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-stamp/"
+    TMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2-tmp/"
+    DOWNLOAD_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/"
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG 3f0283de7a9c43200033da996ff9093be3ac84dc
+)
+
+FetchContent_MakeAvailable(Catch2)
+add_executable(unit_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
+target_include_directories(unit_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_link_libraries(unit_tests PRIVATE Catch2::Catch2WithMain torchani)
 
 # Installation boilerplate for target
 
