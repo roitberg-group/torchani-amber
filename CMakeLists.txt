@@ -166,9 +166,12 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(Catch2)
-add_executable(unit_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-target_include_directories(unit_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-target_link_libraries(unit_tests PRIVATE Catch2::Catch2WithMain torchani)
+add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
+target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani)
+include(CTest)
+include(Catch)
+catch_discover_tests(tests)
 
 # Installation boilerplate for target
 
