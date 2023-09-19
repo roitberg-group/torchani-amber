@@ -1,4 +1,3 @@
-import typing as tp
 from pathlib import Path
 import argparse
 import warnings
@@ -18,10 +17,7 @@ def _reset_jit_bullshit():
 
 
 def _jit_compile_and_save_whole_model_and_submodels(
-    model: torchani.models.BuiltinModel,
-    name: str,
-    title: str,
-    path: Path
+    model: torchani.models.BuiltinModel, name: str, title: str, path: Path
 ) -> None:
     print(f"JIT compiling {title} to TorchScript")
     model.requires_grad_(False)
@@ -29,7 +25,7 @@ def _jit_compile_and_save_whole_model_and_submodels(
     _reset_jit_bullshit()
     torch.jit.save(torch.jit.script(model), str(full_model_path))
     for j, _ in enumerate(model):
-        jth_model_path = path / f"{name}_{j}.pt"
+        jth_model_path = path / f"{name}-{j}.pt"
         _reset_jit_bullshit()
         script_model = torch.jit.script(model[j])
         torch.jit.save(script_model, str(jth_model_path))
@@ -48,58 +44,136 @@ def _disable_jit_optimizations() -> None:
 
 # First construction of models will trigger download of the model data
 _MODELS = {
-    "ANI-1x": torchani.models.ANI1x,
-    "ANI-1ccx": torchani.models.ANI1ccx,
-    "ANI-2x": torchani.models.ANI2x,
-    "ANI-mbis": torchani.models.ANI2xCharges,
+    "ANI1x": torchani.models.ANI1x,
+    "ANI1ccx": torchani.models.ANI1ccx,
+    "ANI2x": torchani.models.ANI2x,
+    "ANIdr": torchani.models.ANIdr,
+    "ANImbis": torchani.models.ANI2xCharges,
+}
+
+# This maps has kwargs -> suffix
+_SUFFIX_MAP = {
+    (): "standard",
+    ("cell_list",): "torch-cell-list",
+    ("external_cell_list",): "external-cell-list",
+    ("use_cuaev_interface", "use_cuda_interface"): "cuaev",
+    (
+        "use_cuaev_interface",
+        "use_cuda_interface",
+        "cell_list",
+    ): "cuaev-torch-cell-list",
+    (
+        "use_cuaev_interface",
+        "use_cuda_interface",
+        "external_cell_list",
+    ): "cuaev-external-cell-list",
 }
 
 
 # Save the jit-compiled version of all available builtin models
 def _main(
     disable_optimizations: bool,
-    external_cell_list: bool,
+    # normal network options
+    standard: bool,
     torch_cell_list: bool,
+    external_cell_list: bool,
+    # cuaev options
+    cuaev: bool,
+    cuaev_torch_cell_list: bool,
+    cuaev_external_cell_list: bool,
 ) -> None:
     print("JIT compiling builtin models to TorchScript...")
     current_path = Path(__file__).resolve().parent
 
     if disable_optimizations:
         _disable_jit_optimizations()
+
     options = {
-        "": True,
-        "internal_cell_list": torch_cell_list,
-        "external_cell_list": external_cell_list,
+        (): standard,
+        ("cell_list",): torch_cell_list,
+        ("external_cell_list",): external_cell_list,
+        ("use_cuaev_interface", "use_cuda_interface"): cuaev,
+        (
+            "use_cuaev_interface",
+            "use_cuda_interface",
+            "cell_list",
+        ): cuaev_torch_cell_list,
+        (
+            "use_cuaev_interface",
+            "use_cuda_interface",
+            "external_cell_list",
+        ): cuaev_external_cell_list,
     }
+
     for name, Model in _MODELS.items():
-        str1, str2 = name.split("-")
-        for label, choice in options.items():
+        for labels, choice in options.items():
             if not choice:
                 continue
-            print(f"JIT compiling {name} with choice {label or 'standard'} = {choice}")
-            suffix = "".join(["_", "_".join(label.split("_")[:-1])]) if label else ""
-            kwargs: tp.Dict[str, bool] = {}
-            if label:
-                kwargs.update({label.replace("internal_", ""): choice})
+            print(f"JIT compiling {name} with choice {labels or 'standard'} = {choice}")
+            kwargs = {label: True for label in labels}
             try:
                 model = Model(**kwargs)
             except Exception as e:
                 print(e)
                 print(
-                    f"Could not generate model {name} with choice {label or 'standard'}"
+                    f"Could not generate {name} with choice {labels or 'standard'}"
+                    " It may not be available in your torchani version"
                 )
-                print(" It may not be available in your torchani version?")
+            suffix = _SUFFIX_MAP[labels]
             model.requires_grad_(False)
             _jit_compile_and_save_whole_model_and_submodels(
-                model, f"{str1.lower()}{str2}{suffix}", name, current_path
+                model,
+                f"{name.lower()}-{suffix}",
+                name,
+                current_path,
             )
     print("Done with all models")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--disable-optimizations", action="store_true", default=False)
-    parser.add_argument("--torch-cell-list", action="store_true", default=False)
-    parser.add_argument("--external-cell-list", action="store_true", default=False)
+    parser.add_argument(
+        "--disable-optimizations",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--external-cell-list",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--cuaev-external-cell-list",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--standard",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--torch-cell-list",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--cuaev",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--cuaev-torch-cell-list",
+        action="store_true",
+        default=True,
+    )
     args = parser.parse_args()
-    _main(args.disable_optimizations, args.external_cell_list, args.torch_cell_list)
+    _main(
+        disable_optimizations=args.disable_optimizations,
+        standard=args.standard,
+        external_cell_list=args.external_cell_list,
+        torch_cell_list=args.torch_cell_list,
+        cuaev=args.cuaev,
+        cuaev_torch_cell_list=args.cuaev_torch_cell_list,
+        cuaev_external_cell_list=args.cuaev_external_cell_list,
+    )

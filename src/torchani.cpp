@@ -33,7 +33,8 @@ std::unordered_map<int, std::string> torchani_model = {
     {0, "ani1x"},
     {1, "ani1ccx"},
     {2, "ani2x"},
-    {3, "animbis"}
+    {3, "animbis"},
+    {4, "anidr"}
 };
 }  // namespace anonymous
 
@@ -83,33 +84,48 @@ void torchani_init_atom_types_(
     int* use_double_precision_raw,
     int* use_cuda_device_raw,
     int* use_cell_list_raw,
-    int* use_external_neighborlist_raw
+    int* use_external_neighborlist_raw,
+    int* use_cuaev_raw
 ) {
   // use_cuda_device and use_double_precision should be a bool but it is
   // set to an int pointer for compatibility with C / Fortran
   // torchani_model should be a string but it is set to an int for compatibility
   // with C
-  //
   cached_torchani_model_index = *torchani_model_index_raw;
   int num_atoms = *num_atoms_raw;
   int device_index = *device_index_raw;
   int network_index = *network_index_raw;
   bool use_external_neighborlist = static_cast<bool>(*use_external_neighborlist_raw);
   bool use_cell_list = static_cast<bool>(*use_cell_list_raw);
+  bool use_cuaev = static_cast<bool>(*use_cuaev_raw);
   bool use_cuda_device = static_cast<bool>(*use_cuda_device_raw);
   bool use_double_precision = static_cast<bool>(*use_double_precision_raw);
   std::string model_jit_fname;
-  std::string cell_name = "";
+  std::string suffix = "standard";
 
-  if (use_cell_list) {
-      cell_name = "_internal_cell";
-  } else if (use_external_neighborlist) {
-      cell_name = "_external_cell";
+  if (use_cuaev and not use_cuda_device) {
+        std::cerr
+            << "Error in libtorchani\n"
+            << "A CUDA capable device should be selected to use the cuaev extension"
+            << std::endl;
+        std::exit(2);
+  }
+
+  if (use_cell_list and not use_cuaev) {
+      suffix = "-torch-cell-list";
+  } else if (use_external_neighborlist and not use_cuaev) {
+      suffix = "-external-cell-list";
+  } else if (use_cell_list and use_cuaev) {
+      suffix = "-cuaev-torch-cell-list";
+  } else if (use_external_neighborlist and use_cuaev) {
+      suffix = "-cuaev-external-cell-list";
+  } else {
+      suffix = "-standard";
   }
   if (network_index == -1) {
-      model_jit_fname = torchani_model[*torchani_model_index_raw] + cell_name +  ".pt";
+      model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix +  ".pt";
   } else {
-      model_jit_fname = torchani_model[*torchani_model_index_raw] + cell_name + "_" +
+      model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + "-" +
                           std::to_string(network_index) + ".pt";
   }
 

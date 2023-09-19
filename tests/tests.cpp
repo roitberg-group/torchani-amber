@@ -82,6 +82,7 @@ TEST_CASE("C bindings") {
         // tests for the cell too
         int use_cell_list = 0;
         int use_external_neighborlist = 0;
+        int use_cuaev = 0;
 
         // output
         double potential_energy;
@@ -95,7 +96,8 @@ TEST_CASE("C bindings") {
             &use_double,
             &use_cuda_device,
             &use_cell_list,
-            &use_external_neighborlist
+            &use_external_neighborlist,
+            &use_cuaev
         );
 
         std::string file_path = file_directory
