@@ -19,7 +19,7 @@ def _reset_jit_bullshit():
 def _jit_compile_and_save_whole_model_and_submodels(
     model: torchani.models.BuiltinModel, name: str, title: str, path: Path
 ) -> None:
-    print(f"JIT compiling {title} to TorchScript")
+    print(f"-- JIT - Compiling {title} to TorchScript")
     model.requires_grad_(False)
     full_model_path = path / f"{name}.pt"
     _reset_jit_bullshit()
@@ -33,7 +33,7 @@ def _jit_compile_and_save_whole_model_and_submodels(
 
 
 def _disable_jit_optimizations() -> None:
-    print("Disabling JIT optimizations")
+    print("-- JIT - Disabling optimizations")
     # Avoid potential issues with JIT compilation by disabling these
     torch._C._jit_set_profiling_executor(False)
     torch._C._jit_set_profiling_mode(False)
@@ -82,7 +82,7 @@ def _main(
     cuaev_torch_cell_list: bool,
     cuaev_external_cell_list: bool,
 ) -> None:
-    print("JIT compiling builtin models to TorchScript...")
+    print("-- JIT - Compiling builtin models to TorchScript")
     current_path = Path(__file__).resolve().parent
 
     if disable_optimizations:
@@ -109,15 +109,14 @@ def _main(
         for labels, choice in options.items():
             if not choice:
                 continue
-            print(f"JIT compiling {name} with choice {labels or 'standard'} = {choice}")
+            print(f"-- JIT - Compiling {name} with {labels or 'standard'}")
             kwargs = {label: True for label in labels}
             try:
                 model = Model(**kwargs)
             except Exception as e:
                 print(e)
                 print(
-                    f"Could not generate {name} with choice {labels or 'standard'}"
-                    " It may not be available in your torchani version"
+                    f"-- JIT - Could not compile {name} with {labels or 'standard'}"
                 )
             suffix = _SUFFIX_MAP[labels]
             model.requires_grad_(False)
@@ -127,7 +126,7 @@ def _main(
                 name,
                 current_path,
             )
-    print("Done with all models")
+    print("-- JIT - Done compiling")
 
 
 if __name__ == "__main__":
