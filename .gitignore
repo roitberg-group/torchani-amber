@@ -11,7 +11,7 @@ slurm.sh
 test/test_values*.txt
 
 # don't save outputs from tests
-amber_inputs/outputs/*
+amber_examples/outputs/*
 
 # No swap files
 *.swp
