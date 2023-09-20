@@ -63,6 +63,7 @@ set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
 set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
 
 option(JIT_DISABLE_OPTIMIZATIONS "Avoid TorchScript when compiling models optimizations" ON)
+option(JIT_FORCE_RECOMPILE "Force JIT recompilation of all models" OFF)
 option(JIT_COMPILE_MODELS "JIT-compile TorchANI models" ON)
 option(JIT_STANDARD "JIT-compile standard models" ON)
 option(JIT_TORCH_CELL_LIST "JIT-compile models with Torch cell list" ON)

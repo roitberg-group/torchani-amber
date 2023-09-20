@@ -1,4 +1,5 @@
 include_guard()
+include(Msg)
 # JIT compile all Torchani models
 # (requires torchani and torch to be in PYTHONPATH or inside a conda environment)
 function(jit_compile_models)
@@ -6,6 +7,7 @@ function(jit_compile_models)
     set(
         oneValueArgs
         JIT_DISABLE_OPTIMIZATIONS
+        JIT_FORCE_RECOMPILE
         JIT_STANDARD
         JIT_EXTERNAL_CELL_LIST
         JIT_TORCH_CELL_LIST
@@ -25,6 +27,9 @@ function(jit_compile_models)
     set(CMD python "${CMAKE_SOURCE_DIR}/jit/jit.py")
     if(_FN_JIT_DISABLE_OPTIMIZATIONS)
         list(APPEND CMD "--disable-optimizations")
+    endif()
+    if(_FN_JIT_FORCE_RECOMPILE)
+        list(APPEND CMD "--force-recompile")
     endif()
     if(_FN_JIT_STANDARD)
         list(APPEND CMD "--standard")
@@ -46,4 +51,5 @@ function(jit_compile_models)
     endif()
     message(STATUS "JIT - Compiling models")
     execute_process(COMMAND ${CMD})
+    msg_success("JIT - Finished compilation")
 endfunction()

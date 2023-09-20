@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Usage: ./cmake.sh performs "configure + generate" && build && install,
-# --conda flag uses conda CUDA and conda cuDNN
+# --no-conda flag avoids conda CUDA and conda cuDNN
 # --install flag does automatic installation
 
 # The directory of this script, taken from:
@@ -9,10 +9,10 @@
 _src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 _build_dir="$_src_dir/build"
 
-if [ "${1}" = "--conda" ] || [ "${2}" = "--conda" ]; then
-    _use_conda=ON
-else
+if [ "${1}" = "--no-conda" ] || [ "${2}" = "--no-conda" ]; then
     _use_conda=OFF
+else
+    _use_conda=ON
 fi
 
 cmake \
