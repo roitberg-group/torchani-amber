@@ -127,7 +127,7 @@ def _main(
                 continue
             console.print(
                 f"-- JIT - Compiling {name} "
-                f"{'with' + str(labels) if labels else 'standard'}"
+                f"{'with ' + str(labels) if labels else 'standard'}"
             )
             kwargs = {label: True for label in labels}
             try:
@@ -136,7 +136,7 @@ def _main(
                 console.print(f"-- JIT - {e}", style="yellow")
                 console.print(
                     f"-- JIT - Could not compile {name} "
-                    f"{'with' + str(labels) if labels else 'standard'}",
+                    f"{'with ' + str(labels) if labels else 'standard'}",
                     style="yellow",
                 )
             suffix = _SUFFIX_MAP[labels]
