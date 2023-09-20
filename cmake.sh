@@ -2,7 +2,7 @@
 
 # Usage: ./cmake.sh performs "configure + generate" && build && install,
 # --no-conda flag avoids conda CUDA and conda cuDNN
-# --install flag does automatic installation
+# --no-install flag skips automatic installation
 
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
@@ -24,6 +24,8 @@ cmake \
 && cmake \
     --build "$_build_dir"
 
-if [ "${2}" = "--install" ] || [ "${1}" = "--install" ]; then
+if [ "${2}" = "--no-install" ] || [ "${1}" = "--no-install" ]; then
+    :
+else
     cmake --install "$_build_dir"
 fi
