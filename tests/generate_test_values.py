@@ -11,7 +11,9 @@ with warnings.catch_warnings():
 
 
 def _save_jit_compiled_model_results_to_file(
-    file_path: Path, device: str, model_jit_file: Path
+    file_path: Path,
+    device: str,
+    model_jit_file: Path,
 ) -> None:
     model = torch.jit.load(str(model_jit_file), device).to(torch.double)
 
@@ -26,7 +28,7 @@ def _save_jit_compiled_model_results_to_file(
     output = model(input_)
     energy = output.energies * units.HARTREE_TO_KCALMOL
     force = -torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0][0]
-    with open(file_path, "w+") as f:
+    with open(file_path, mode="w") as f:
         lines_ = [f"{energy.item()}\n"]
         lines_.extend([f"{v}\n" for v in force.flatten()])
         if hasattr(output, "atomic_charges"):
@@ -43,33 +45,37 @@ def _save_jit_compiled_model_results_to_file(
 
 
 def _generate_cpu_or_cuda_values(
-    model_jit_files: tp.Iterable[Path], device: str, tests_dir: Path
+    model_jit_files: tp.Iterable[Path],
+    device: str,
+    tests_dir: Path,
 ) -> None:
     assert device in {"cuda", "cpu"}
     for f in model_jit_files:
-        if "2x" in f.name:
-            suffix = "_2x"
-        elif "mbis" in f.name:
-            suffix = "_mbis"
-        elif "1x" in f.name:
+        if "1x" in f.name:
             suffix = "_1x"
+        elif "2x" in f.name:
+            suffix = "_2x"
         elif "1ccx" in f.name:
             suffix = "_1ccx"
-        if "_0" not in f.name:
+        elif "mbis" in f.name:
+            suffix = "_mbis"
+        elif "dr" in f.name:
+            suffix = "_dr"
+        if "-0" not in f.name:
             suffix = f"{suffix}_ensemble"
 
-        results_file = (
-            tests_dir / f'test_values_{device}{suffix}.txt'
-        )
         _save_jit_compiled_model_results_to_file(
-            results_file,
+            tests_dir / f'test_values_{device}{suffix}.txt',
             device,
             model_jit_file=f,
         )
     print(f"Generated {device.upper()} test values")
 
 
-def _main(model_jit_files: tp.Iterable[Path], tests_dir: Path) -> None:
+def _main(
+    model_jit_files: tp.Iterable[Path],
+    tests_dir: Path,
+) -> None:
     if torch.cuda.is_available():
         # Disable tf32 for accuracy
         torch.backends.cuda.matmul.allow_tf32 = False
@@ -90,16 +96,18 @@ def _main(model_jit_files: tp.Iterable[Path], tests_dir: Path) -> None:
 
 
 if __name__ == "__main__":
-    tests_dir = Path(__file__).resolve().parent.parent / "test"
+    tests_dir = Path(__file__).resolve().parent.parent / "tests"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
     model_jit_files = [
-        jit_dir / "ani1x.pt",
-        jit_dir / "ani1ccx.pt",
-        jit_dir / "ani2x.pt",
-        jit_dir / "animbis.pt",
-        jit_dir / "ani1x_0.pt",
-        jit_dir / "ani1ccx_0.pt",
-        jit_dir / "ani2x_0.pt",
-        jit_dir / "animbis_0.pt",
+        jit_dir / "ani1x-standard.pt",
+        jit_dir / "ani1ccx-standard.pt",
+        jit_dir / "ani2x-standard.pt",
+        jit_dir / "animbis-standard.pt",
+        jit_dir / "anidr-standard.pt",
+        jit_dir / "ani1x-standard-0.pt",
+        jit_dir / "ani1ccx-standard-0.pt",
+        jit_dir / "ani2x-standard-0.pt",
+        jit_dir / "animbis-standard-0.pt",
+        jit_dir / "anidr-standard-0.pt",
     ]
     _main(model_jit_files, tests_dir)
