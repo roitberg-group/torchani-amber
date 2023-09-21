@@ -155,7 +155,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--disable-optimizations",
         action="store_true",
-        default=False,
+        default=True,
     )
     parser.add_argument(
         "--external-cell-list",
