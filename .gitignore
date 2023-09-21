@@ -19,5 +19,8 @@ amber_examples/outputs/*
 # No language server cache
 .ccls-cache
 
+# No mypy cache
+.mypy-cache
+
 # No clangd cache
 .cache
