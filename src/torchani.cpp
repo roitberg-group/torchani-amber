@@ -83,7 +83,7 @@ void torchani_init_atom_types_(
     int* network_index_raw,
     int* use_double_precision_raw,
     int* use_cuda_device_raw,
-    int* use_cell_list_raw,
+    int* use_torch_cell_list_raw,
     int* use_external_neighborlist_raw,
     int* use_cuaev_raw
 ) {
@@ -96,7 +96,7 @@ void torchani_init_atom_types_(
   int device_index = *device_index_raw;
   int network_index = *network_index_raw;
   bool use_external_neighborlist = static_cast<bool>(*use_external_neighborlist_raw);
-  bool use_cell_list = static_cast<bool>(*use_cell_list_raw);
+  bool use_cell_list = static_cast<bool>(*use_torch_cell_list_raw);
   bool use_cuaev = static_cast<bool>(*use_cuaev_raw);
   bool use_cuda_device = static_cast<bool>(*use_cuda_device_raw);
   bool use_double_precision = static_cast<bool>(*use_double_precision_raw);
@@ -161,10 +161,10 @@ void torchani_init_atom_types_(
   torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
 
   // Disable TF32 and FP16 for accuracy
+  torch::jit::setGraphExecutorOptimize(false);
   torch::globalContext().setAllowTF32CuBLAS(false);
   torch::globalContext().setAllowTF32CuDNN(false);
   torch::globalContext().setAllowFP16ReductionCuBLAS(false);
-
   // The model is loaded from a JIT compiled file always.
   try {
       model = torch::jit::load(jit_model_path, torchani_device);
@@ -466,6 +466,11 @@ void torchani_energy_force_pbc_(
     double pbc_box[][3],
     double* potential_energy
 ) {
+    // Disable TF32 and FP16 for accuracy
+    torch::jit::setGraphExecutorOptimize(false);
+    torch::globalContext().setAllowTF32CuBLAS(false);
+    torch::globalContext().setAllowTF32CuDNN(false);
+    torch::globalContext().setAllowFP16ReductionCuBLAS(false);
     int num_atoms = *num_atoms_raw;
     torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
     // Inputs are setup with PBC
@@ -573,6 +578,11 @@ void torchani_energy_force_(
     double forces[][3],
     double* potential_energy
 ) {
+    // Disable TF32 and FP16 for accuracy
+    torch::jit::setGraphExecutorOptimize(false);
+    torch::globalContext().setAllowTF32CuBLAS(false);
+    torch::globalContext().setAllowTF32CuDNN(false);
+    torch::globalContext().setAllowFP16ReductionCuBLAS(false);
     int num_atoms = *num_atoms_raw;
     torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
