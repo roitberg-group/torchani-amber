@@ -18,6 +18,8 @@ include(GNUInstallDirs)
 # Append private internal modules path
 set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
+# Use conda packages in current environment?
+list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
 
 # TODO: Fix this hack
 # These global flag hacks are needed for the cuAEV interface
@@ -47,6 +49,7 @@ ensure_out_of_source_build()  # fail with fatal error if out-of-source
 ensure_linux_build()  # fail with fatal error if non-linux
 
 # User options and flags
+option(LOCAL_INSTALL "Install into /usr/local" ON)
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
 option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
@@ -141,7 +144,12 @@ endif()
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
-set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR} "/home/ignacio/.local/lib/Torchani")
+if(LOCAL_INSTALL)
+    set(TORCHANI_LOCAL_LIB $ENV{USER}/.local/lib/Torchani)
+else()
+    set(TORCHANI_LOCAL_LIB /usr/local/lib/Torchani)
+endif()
+set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR} ${TORCHANI_LOCAL_LIB})
 
 # The cuAEV extension lib needs the Python headers and libraries
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
@@ -161,7 +169,9 @@ set_target_properties(
         INSTALL_RPATH  "${TORCHANI_INSTALL_RPATH}"
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
-target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
+target_link_options(cuaev PRIVATE "LINKER:--no-as-needed")
+target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib ${CMAKE_CURRENT_LIST_DIR}/external/libtorch1.13.1-cxx11-abi-cuda11.6/lib)
+target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES} nvrtc-builtins)
 target_include_directories(cuaev PRIVATE ${CUAEV_FPATH} ${Python_INCLUDE_DIRS})
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
@@ -189,7 +199,8 @@ set_target_properties(
 target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
 target_compile_features(torchani PRIVATE cxx_std_14)
 target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev)
+target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib ${CMAKE_CURRENT_LIST_DIR}/external/libtorch1.13.1-cxx11-abi-cuda11.6/lib)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
 # TODO: Torch libraries have to be force-linked since during runtime libnvrtc
 # can't be found otherwise, it may only be needed to force-link libnvrtc (and
 # maybe nvtoolsext?) but for now I force-link everything since it is easier
@@ -224,10 +235,14 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     # Default CMake installation prefix for Linux is /usr/local. Its better to
     # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
     # Expand tilde for cmake < 3.21
-    get_filename_component(_INSTALL_PREFIX "~/.local" ABSOLUTE)  # resolve
-    set(CMAKE_INSTALL_PREFIX "${_INSTALL_PREFIX}" CACHE PATH "Installation prefix" FORCE)
-    message(STATUS "CMake - Install location is set to the default ~/.local")
 endif()
+if(LOCAL_INSTALL)
+    set(LOCAL_PREFIX /home/$ENV{USER}/.local)
+    message(STATUS "CMake - Install location is set to ~/.local")
+else()
+    set(LOCAL_PREFIX /usr/local)
+endif()
+set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
 message(STATUS "CMake - Install location initialized to: ${CMAKE_INSTALL_PREFIX}")
 
 # Set dirs for project installation
