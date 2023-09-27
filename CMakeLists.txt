@@ -231,11 +231,12 @@ catch_discover_tests(tests)
 # Installation boilerplate for target
 
 # Override CMake's default prefix for all install files if unset by user
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    # Default CMake installation prefix for Linux is /usr/local. Its better to
-    # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
-    # Expand tilde for cmake < 3.21
-endif()
+# if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+# endif()
+
+# # Default CMake installation prefix for Linux is /usr/local. Its better to
+# # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
+# # Expand tilde for cmake < 3.21
 if(LOCAL_INSTALL)
     set(LOCAL_PREFIX /home/$ENV{USER}/.local)
     message(STATUS "CMake - Install location is set to ~/.local")
