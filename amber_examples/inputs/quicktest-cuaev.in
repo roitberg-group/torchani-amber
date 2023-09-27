@@ -15,7 +15,7 @@
     gamma_ln = 2.0
     ig = 5541
     igb = 6
-    iextpot = 1
+    iextpot = 2
 /
 
 &extpot
