@@ -31,12 +31,12 @@ function(set_cudnn_dirs)
     set(CUDNN_LIBRARY "${_CUDNN_LIBRARY}" PARENT_SCOPE)
     set(CUDNN_ROOT "${_CUDNN_ROOT}" PARENT_SCOPE)
 
-    msg_success("cuDNN - Successfully set paths")
     message(STATUS "cuDNN - Using custom version: ${_FN_LIBRARY_VERSION}")
     message(STATUS "cuDNN - Compatible with CUDA: ${_FN_CUDA_VERSION}")
     message(STATUS "cuDNN - root dir: ${_CUDNN_ROOT}")
     message(STATUS "cuDNN - include dir: ${_CUDNN_INCLUDE_DIR}")
     message(STATUS "cuDNN - library dir: ${_CUDNN_LIBRARY}")
+    msg_success("cuDNN - Successfully set paths")
 
     # Probably not needed
     # if(EXISTS "${_CUDNN_LIBARARY}/libcudnn.so.8")

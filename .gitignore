@@ -11,13 +11,16 @@ slurm.sh
 test/test_values*.txt
 
 # don't save outputs from tests
-amber_inputs/outputs/*
+amber_examples/outputs/*
 
 # No swap files
 *.swp
 
 # No language server cache
 .ccls-cache
+
+# No mypy cache
+.mypy-cache
 
 # No clangd cache
 .cache

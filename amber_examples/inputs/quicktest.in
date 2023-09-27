@@ -15,7 +15,7 @@
     gamma_ln = 2.0
     ig = 5541
     igb = 6
-    iextpot = 1
+    iextpot = 2
 /
 
 &extpot
@@ -24,7 +24,8 @@
 
 &torchani
     use_cuda_device = .true.
-    use_double_precision = .true.
+    use_cuaev = .false.
+    use_double_precision = .false.
     use_torch_cell_list = .false.
     use_external_neighborlist = .false.
     device_index = -1

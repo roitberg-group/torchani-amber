@@ -12,7 +12,7 @@
     ntt = 3  ! langevin thermostat
     gamma_ln = 2.0
     ig = 5541  ! seed set by hand for repeatability
-    iextpot = 1
+    iextpot = 2
 /
 
 &extpot

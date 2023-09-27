@@ -64,19 +64,21 @@ TEST_CASE("C bindings") {
         std::string model_suffix = std::get<2>(model_spec);
         INFO("Testing model: " << "ani" << model_suffix);
 
-        using DeviceSpec = std::tuple<int, int, std::string>;
+        using DeviceSpec = std::tuple<int, int, int, std::string>;
         auto device_spec = GENERATE(
-            table<int, int, std::string>(
+            table<int, int, int, std::string>(
                 {
-                    DeviceSpec{0, -1, "_cpu"},  // CPU
-                    DeviceSpec{1, 0, "_cuda"}  // CUDA
+                    DeviceSpec{0, -1, 0, "_cpu"},  // CPU
+                    DeviceSpec{1, 0, 0, "_cuda"},  // CUDA
+                    DeviceSpec{1, 0, 1, "_cuda"}  // CUDA + cuAEV
                 }
             )
         );
         // TODO: Ability to skip cuda tests
         int use_cuda_device = std::get<0>(device_spec);
         int device_index = std::get<1>(device_spec);
-        std::string device_suffix = std::get<2>(device_spec);
+        int use_cuaev = std::get<2>(device_spec); // Only enabled for cuda devices
+        std::string device_suffix = std::get<3>(device_spec);
         INFO("Testing model on device: " << "device" << device_suffix);
         // TODO: Cell seems to be too small for pbc, but this should generate
         // tests for the cell too
@@ -95,7 +97,8 @@ TEST_CASE("C bindings") {
             &use_double,
             &use_cuda_device,
             &use_cell_list,
-            &use_external_neighborlist
+            &use_external_neighborlist,
+            &use_cuaev
         );
 
         std::string file_path = file_directory
