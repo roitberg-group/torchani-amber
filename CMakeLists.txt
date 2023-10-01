@@ -145,7 +145,7 @@ endif()
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
 if(LOCAL_INSTALL)
-    set(TORCHANI_LOCAL_LIB $ENV{USER}/.local/lib/Torchani)
+    set(TORCHANI_LOCAL_LIB /home/$ENV{USER}/.local/lib/Torchani)
 else()
     set(TORCHANI_LOCAL_LIB /usr/local/lib/Torchani)
 endif()
