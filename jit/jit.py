@@ -63,6 +63,7 @@ _MODELS = {
     "ANI1ccx": torchani.models.ANI1ccx,
     "ANI2x": torchani.models.ANI2x,
     "ANIdr": torchani.models.ANIdr,
+    "ANIala": torchani.models.ANIala,
     "ANImbis": torchani.models.ANI2xCharges,
 }
 
@@ -141,6 +142,8 @@ def _main(
                 )
             suffix = _SUFFIX_MAP[labels]
             model.requires_grad_(False)
+            if name == "ANIala":
+                name = "custom"
             _jit_compile_and_save_whole_model_and_submodels(
                 model,
                 f"{name.lower()}-{suffix}",
