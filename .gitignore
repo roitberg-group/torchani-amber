@@ -1,6 +1,5 @@
 build/*
 jit/*.pt
-external/*
 ! external/README.md
 *.x
 *.mod
