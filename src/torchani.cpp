@@ -672,8 +672,8 @@ void torchani_data_for_monitored_mlmm_(
     auto output = get_energy_charges_output(inputs);
     torch::Tensor energy_tensor = std::get<0>(output);
     torch::Tensor atomic_charges_tensor = std::get<1>(output);
-    auto output = get_energy_qbc_output(inputs);
-    torch::Tensor qbc_tensor = std::get<1>(output);
+    auto output_qbc = get_energy_qbc_output(inputs);
+    torch::Tensor qbc_tensor = std::get<1>(output_qbc);
 
     calculate_and_populate_forces(
         coordinates,

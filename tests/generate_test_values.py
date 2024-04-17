@@ -28,9 +28,13 @@ def _save_jit_compiled_model_results_to_file(
     output = model(input_)
     energy = output.energies * units.HARTREE_TO_KCALMOL
     force = -torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0][0]
+    qbcs = model.energies_qbcs(input_).qbcs
+    qbc_deriv = torch.autograd.grad(qbcs.sum(), coordinates, retain_graph=True)[0][0]
     with open(file_path, mode="w") as f:
         lines_ = [f"{energy.item()}\n"]
         lines_.extend([f"{v}\n" for v in force.flatten()])
+        lines_ = [f"{qbcs.item()}\n"]
+        lines_.extend([f"{v}\n" for v in qbc_deriv.flatten()])
         if hasattr(output, "atomic_charges"):
             charges = output.atomic_charges.flatten()
             lines_.extend([f"{v}\n" for v in charges])
