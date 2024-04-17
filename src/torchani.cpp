@@ -329,6 +329,32 @@ void calculate_and_populate_charge_derivatives(
 }
 
 
+void calculate_and_populate_qbc_derivatives(
+    torch::Tensor& coordinates,
+    torch::Tensor& qbc,
+    double qbc_derivatives[][3],
+    bool retain_graph,
+    int num_atoms
+) {
+    std::vector<torch::Tensor> qbc_vec = {qbc.sum()};
+    std::vector<torch::Tensor> coord_vec = {coordinates};
+    torch::Tensor torchani_qbc_derivatives = torch::autograd::grad(
+        qbc_vec,
+        coord_vec,
+        /* grad_outputs= */{},
+        /* retain_graph= */retain_graph
+    )[0] * HARTREE_TO_KCALMOL;
+    torchani_qbc_derivatives = torchani_qbc_derivatives.to(torch::kCPU, torch::kDouble);
+
+    auto torchani_qbc_derivatives_a = torchani_qbc_derivatives.accessor<double, 3>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            qbc_derivatives[atom][c] = torchani_qbc_derivatives_a[0][atom][c];
+        }
+    }
+}
+
+
 void calculate_and_populate_forces(
     torch::Tensor& coordinates,
     torch::Tensor& output,
@@ -513,7 +539,13 @@ void torchani_energy_force_atomic_charges_(
     torch::Tensor energy = std::get<0>(output);
     torch::Tensor atomic_charges_tensor = std::get<1>(output);
 
-    calculate_and_populate_forces(coordinates, energy, forces, false, num_atoms);
+    calculate_and_populate_forces(
+        coordinates,
+        energy,
+        forces,
+        false,
+        num_atoms
+    );
     populate_potential_energy(energy, potential_energy);
     populate_atomic_charges(atomic_charges_tensor, atomic_charges, num_atoms);
 }
@@ -606,4 +638,71 @@ void torchani_energy_force_qbc_(
     calculate_and_populate_forces(coordinates, output[0], forces, false, num_atoms);
     populate_potential_energy(output[0], potential_energy);
     populate_qbc(output[1], qbc);
+}
+
+void torchani_data_for_monitored_mlmm_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    int* charges_type_raw,
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    double* atomic_charge_derivatives,
+    double* atomic_charges,
+    double* qbc,
+    double* qbc_derivatives,
+) {
+    if (*charges_type_raw != 0) {
+        std::cerr
+            << "Error in libtorchani\n"
+            << "Charges type should be 0 (only currently supported value)"
+            << std::endl;
+        std::exit(2);
+    }
+    if (cached_torchani_model_index != 3) {
+        std::cerr
+            << "Error in libtorchani\n"
+            << "Torchani model should be animbis (index=3) to calculate charges"
+            << std::endl;
+        std::exit(2);
+    }
+    int num_atoms = *num_atoms_raw;
+    torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
+    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
+    auto output = get_energy_charges_output(inputs);
+    torch::Tensor energy_tensor = std::get<0>(output);
+    torch::Tensor atomic_charges_tensor = std::get<1>(output);
+    auto output = get_energy_qbc_output(inputs);
+    torch::Tensor qbc_tensor = std::get<1>(output);
+
+    calculate_and_populate_forces(
+        coordinates,
+        energy_tensor,
+        forces,
+        true,
+        num_atoms
+    );
+    calculate_and_populate_qbc_derivatives(
+        coordinates,
+        qbc_tensor,
+        qbc_derivatives,
+        true,
+        num_atoms
+    );
+    calculate_and_populate_charge_derivatives(
+        coordinates,
+        atomic_charges_tensor,
+        atomic_charge_derivatives,
+        num_atoms
+    );
+    populate_potential_energy(
+        energy_tensor,
+        potential_energy
+    );
+    populate_atomic_charges(
+        atomic_charges_tensor,
+        atomic_charges,
+        num_atoms
+    );
+    populate_qbc(qbc_tensor, qbc);
 }

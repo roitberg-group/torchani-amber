@@ -48,6 +48,27 @@ extern "C" void torchani_energy_force_atomic_charges_with_derivatives_(
     double* atomic_charges
 );
 
+/**
+ * Model index must be 3 (animbis) in order to use this function
+ */
+extern "C" void torchani_data_for_monitored_mlmm_(
+    double coordinates_raw[][3],
+    int* num_atoms_raw,
+    int* charges_type_raw,
+    /* outputs */
+    double forces[][3],
+    double* potential_energy,
+    // Note that atomic_charge_derivatives is a [num_atoms x num_atoms x 3]
+    // array In fortran, an array of shape [3, num_atoms, num_atoms] should be
+    // passed Where the element [i, j, k] is the derivative of the **charge on
+    // k-th atom** with respect to the **i-th position of the j-th atom**
+    double* atomic_charge_derivatives,
+    // Note that atomic_charges is a [num_atoms] array
+    double* atomic_charges,
+    double* qbc,
+    double* qbc_derivatives
+);
+
 
 extern "C" void torchani_energy_force_(
     double coordinates_raw[][3],
