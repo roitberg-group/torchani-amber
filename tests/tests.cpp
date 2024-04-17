@@ -37,6 +37,8 @@ TEST_CASE("C bindings") {
     int atomic_numbers[] = {1, 6};
     int size = 2;
     double forces[size][3];
+    double qbc;
+    double qbc_deriv[size][3];
     int charges_type_raw = 0;
     double atomic_charges[size];
     double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
@@ -138,15 +140,15 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(forces[1][1], test_values[5], use_double);
                 FLOAT_EQ(forces[1][2], test_values[6], use_double);
             }
-        } else {
-            double test_values[21];
-            for (int j = 0; j != 21; ++j) {
+        } else if (network_index == -1) {
+            double test_values[28];
+            for (int j = 0; j != 28; ++j) {
                 infile >> test_values[j];
             }
             double* atomic_charge_derivatives;
             atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
             for (long j = 0; j != 10; ++j){
-                torchani_energy_force_atomic_charges_with_derivatives_(
+                torchani_data_for_monitored_mlmm_(
                     coordinates,
                     &size,
                     &charges_type_raw,
@@ -154,7 +156,9 @@ TEST_CASE("C bindings") {
                     forces,
                     &potential_energy,
                     atomic_charge_derivatives,
-                    atomic_charges
+                    atomic_charges,
+                    &qbc,
+                    qbc_deriv
                 );
                 FLOAT_EQ(potential_energy, test_values[0], use_double);
                 FLOAT_EQ(forces[0][0], test_values[1], use_double);
@@ -163,20 +167,27 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(forces[1][0], test_values[4], use_double);
                 FLOAT_EQ(forces[1][1], test_values[5], use_double);
                 FLOAT_EQ(forces[1][2], test_values[6], use_double);
-                FLOAT_EQ(atomic_charges[0], test_values[7], use_double);
-                FLOAT_EQ(atomic_charges[1], test_values[8], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[0], test_values[9], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[1], test_values[10], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[2], test_values[11], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[3], test_values[12], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[4], test_values[13], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[5], test_values[14], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[6], test_values[15], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[7], test_values[16], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[8], test_values[17], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[9], test_values[18], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[10], test_values[19], use_double);
-                FLOAT_EQ(atomic_charge_derivatives[11], test_values[20], use_double);
+                FLOAT_EQ(qbc, test_values[7], use_double);
+                FLOAT_EQ(qbc_deriv[0][0], test_values[8], use_double);
+                FLOAT_EQ(qbc_deriv[0][1], test_values[9], use_double);
+                FLOAT_EQ(qbc_deriv[0][2], test_values[10], use_double);
+                FLOAT_EQ(qbc_deriv[1][0], test_values[11], use_double);
+                FLOAT_EQ(qbc_deriv[1][1], test_values[12], use_double);
+                FLOAT_EQ(qbc_deriv[1][2], test_values[13], use_double);
+                FLOAT_EQ(atomic_charges[0], test_values[14], use_double);
+                FLOAT_EQ(atomic_charges[1], test_values[15], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[0], test_values[16], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[1], test_values[17], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[2], test_values[18], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[3], test_values[19], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[4], test_values[20], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[5], test_values[21], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[6], test_values[22], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[7], test_values[23], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[8], test_values[24], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[9], test_values[25], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[10], test_values[26], use_double);
+                FLOAT_EQ(atomic_charge_derivatives[11], test_values[27], use_double);
             }
             free(atomic_charge_derivatives);
         }
