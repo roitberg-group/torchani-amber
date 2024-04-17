@@ -66,7 +66,7 @@ extern "C" void torchani_data_for_monitored_mlmm_(
     // Note that atomic_charges is a [num_atoms] array
     double* atomic_charges,
     double* qbc,
-    double* qbc_derivatives
+    double qbc_derivatives[][3]
 );
 
 

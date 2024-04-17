@@ -650,7 +650,7 @@ void torchani_data_for_monitored_mlmm_(
     double* atomic_charge_derivatives,
     double* atomic_charges,
     double* qbc,
-    double* qbc_derivatives,
+    double qbc_derivatives[][3]
 ) {
     if (*charges_type_raw != 0) {
         std::cerr
@@ -672,8 +672,7 @@ void torchani_data_for_monitored_mlmm_(
     auto output = get_energy_charges_output(inputs);
     torch::Tensor energy_tensor = std::get<0>(output);
     torch::Tensor atomic_charges_tensor = std::get<1>(output);
-    auto output_qbc = get_energy_qbc_output(inputs);
-    torch::Tensor qbc_tensor = std::get<1>(output_qbc);
+    torch::Tensor qbc_tensor = get_energy_qbc_output(inputs)[1];
 
     calculate_and_populate_forces(
         coordinates,

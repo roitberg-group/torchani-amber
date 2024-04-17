@@ -140,7 +140,7 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(forces[1][1], test_values[5], use_double);
                 FLOAT_EQ(forces[1][2], test_values[6], use_double);
             }
-        } else {
+        } else if (network_index == -1) {
             double test_values[28];
             for (int j = 0; j != 28; ++j) {
                 infile >> test_values[j];
@@ -157,7 +157,7 @@ TEST_CASE("C bindings") {
                     &potential_energy,
                     atomic_charge_derivatives,
                     atomic_charges,
-                    qbc,
+                    &qbc,
                     qbc_deriv
                 );
                 FLOAT_EQ(potential_energy, test_values[0], use_double);
