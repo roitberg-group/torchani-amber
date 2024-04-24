@@ -16,6 +16,7 @@ amber_examples/outputs/*
 
 # No swap files
 *.swp
+*.swo
 
 # No language server cache
 .ccls-cache
