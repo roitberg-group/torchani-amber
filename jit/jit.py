@@ -140,6 +140,7 @@ def _main(
                     f"{'with ' + str(labels) if labels else 'standard'}",
                     style="yellow",
                 )
+                continue
             suffix = _SUFFIX_MAP[labels]
             model.requires_grad_(False)
             if name == "ANIala":
