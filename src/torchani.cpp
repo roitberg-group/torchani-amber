@@ -14,7 +14,7 @@
 // Globals:
 namespace {
 int cached_torchani_model_index = 0;
-torch::jit::script::Module model;
+torch::jit::Module model;
 torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
