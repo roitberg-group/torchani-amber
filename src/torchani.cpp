@@ -19,13 +19,13 @@ torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 // Default device is CPU
-torch::Device torchani_device(torch::DeviceType::CPU, -1);
+torch::Device torchani_device{torch::kCPU, -1};
 // Amber has PBC enabled in all directions for PME
 torch::Tensor use_pbc = torch::tensor(
     {true, true, true},
     torch::TensorOptions()
         .dtype(torch::kBool)
-        .device(torch::Device(torch::DeviceType::CPU, -1))
+        .device(torch::Device(torch::kCPU, -1))
 );
 torch::ScalarType torchani_precision = torch::kFloat;
 std::unordered_map<int, std::string> torchani_model = {
@@ -43,7 +43,7 @@ std::unordered_map<int, std::string> torchani_model = {
  * */
 void torchani_set_device(bool use_cuda_device, int device_index) {
     if (use_cuda_device) {
-        torchani_device = torch::Device(torch::DeviceType::CUDA, device_index);
+        torchani_device = torch::Device(torch::kCUDA, device_index);
     } else {
         // CPU device should always be -1
         if (device_index != -1) {
@@ -51,7 +51,7 @@ void torchani_set_device(bool use_cuda_device, int device_index) {
                       << "Device index should be -1 for CPU" << std::endl;
             std::exit(2);
         }
-        torchani_device = torch::Device(torch::DeviceType::CPU, device_index);
+        torchani_device = torch::Device(torch::kCPU, device_index);
     }
 }
 
