@@ -1,5 +1,5 @@
 cmake_minimum_required(
-    VERSION 3.16
+    VERSION 3.24
     FATAL_ERROR
 )
 
@@ -21,21 +21,25 @@ list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
 # Use conda packages in current environment?
 list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
 
-# TODO: Fix this hack
-# These global flag hacks are needed for the cuAEV interface
-## speed up mathmatics
-string(APPEND CMAKE_CUDA_FLAGS " -use_fast_math")
-string(APPEND CMAKE_CUDA_FLAGS " -DTORCHANI_OPT")
-# use cub in a safe manner, see:
-# https://github.com/pytorch/pytorch/pull/55292
-# https://github.com/pytorch/pytorch/pull/66219
-string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_QUALIFIER=::cuaev::cub")
-string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_PREFIX='namespace cuaev {'")
-string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_POSTFIX=}")
+# libtorch include paths
+# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include
+# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/torch/csrc/api/include
+# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/TH
+# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/THC
+# /nvme1/ignacio/Conda/envs/ani-amber/include
 
+# libtorch Library paths
+# ['/nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/lib']
+# >>> torch.utils.cpp_extension.library_paths(cuda=True)
+# ['/nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/lib', '/nvme1/ignacio/Conda/envs/ani-amber/lib']
 
-# Internal includes
+# actually conda_prefix/lib and conda_prefix/include should be enough
+# Actually torch provides already TorchConfig in /share/cmake/Torch
+
+# Builtin modules
 include(FetchContent)
+
+# Internal modules
 include(EnsureLinuxBuild)
 include(EnsureOutOfSourceBuild)
 include(Msg)
@@ -49,22 +53,29 @@ ensure_out_of_source_build()  # fail with fatal error if out-of-source
 ensure_linux_build()  # fail with fatal error if non-linux
 
 # User options and flags
-option(LOCAL_INSTALL "Install into /usr/local" ON)
+option(LOCAL_INSTALL "Install in ~/.local" ON)
 option(CUSTOM_CUDNN "Explicitly specify the cuDNN location" ON)
 option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
 option(CONDA_CUDA "Use CUDA Toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install Numpy, PyTorch and TorchANI" OFF)
+option(DOWNLOAD_AND_EXTRACT_LIBTORCH "Download the LibTorch library and extract it locally" OFF)
 
-set(LIBTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version to use for LibTorch")
-set(PYTORCH_CUDNN_VERSION "8.3.2" CACHE STRING "cuDNN version PyTorch is compatible with")
-set(CUDA_TOOLKIT_VERSION "11.6" CACHE STRING "CUDA Toolkit version to set CUDA vars")
-set(LIBTORCH_CUDNN_CUDA_VERSION "11.6" CACHE STRING "CUDA version cuDNN is compatible with")
-set(PYTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version PyTorch is compatible with")
-set(LIBTORCH_CUDA_VERSION "11.6" CACHE STRING "CUDA version LibTorch is compatible with")
-set(PYTORCH_VERSION "1.13.1" CACHE STRING "PyTorch version to use for TorchANI")
-set(LIBTORCH_VERSION "1.13.1" CACHE STRING "LibTorch version to use")
+set(CUDA_TOOLKIT_VERSION "11.8" CACHE STRING "CUDA Toolkit version to set CUDA vars")
 
+# PyTorch backend versions
+set(PYTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version PyTorch is compatible with")
+set(PYTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA version PyTorch is compatible with")
+set(PYTORCH_VERSION "2.3.0" CACHE STRING "PyTorch version to use for TorchANI")
+set(PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Python version PyTorch is compatible with")
+
+# Libtorch backend versions (only needed if using an external libtorch)
+set(LIBTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version to use for LibTorch")
+set(LIBTORCH_CUDNN_CUDA_VERSION "11.8" CACHE STRING "CUDA version cuDNN is compatible with")
+set(LIBTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA version LibTorch is compatible with")
+set(LIBTORCH_VERSION "2.3.0" CACHE STRING "LibTorch version to use")
+
+# JIT options
 option(JIT_DISABLE_OPTIMIZATIONS "Avoid TorchScript when compiling models optimizations" ON)
 option(JIT_FORCE_RECOMPILE "Force JIT recompilation of all models" OFF)
 option(JIT_COMPILE_MODELS "JIT-compile TorchANI models" ON)
@@ -75,19 +86,23 @@ option(JIT_CUAEV "JIT-compile models with cuAEV extension" ON)
 option(JIT_CUAEV_TORCH_CELL_LIST "JIT-compile models with Torch cell list" ON)
 option(JIT_CUAEV_EXTERNAL_CELL_LIST "JIT-compile models with external cell list and cuAEV extension" OFF)
 
-set(PYTORCH_PYTHON_VERSION "3.8" CACHE STRING "Python version PyTorch is compatible with")
 set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Download a LibTorch version that exposes CXX11 ABI")
 
 # Sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
 # If the requested version already exists it is not extracted
-download_and_extract_libtorch(
-    CXX11ABI ${LIBTORCH_USE_CXX11ABI}
-    LIBRARY_VERSION ${LIBTORCH_VERSION}
-    CUDA_VERSION ${LIBTORCH_CUDA_VERSION}
-)
+if(DOWNLOAD_AND_EXTRACT_LIBTORCH)
+    download_and_extract_libtorch(
+      CXX11ABI ${LIBTORCH_USE_CXX11ABI}
+      LIBRARY_VERSION ${LIBTORCH_VERSION}
+      CUDA_VERSION ${LIBTORCH_CUDA_VERSION}
+    )
+else()
+    msg_info("Skipped LibTorch download. Will use PyTorch directly (this is preferred)")
+endif()
+
 list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 
-# cuDNN may be linked by LibTorch by providing it with the necessary paths
+# cuDNN may be linked by providing its location
 # ("custom cuDNN"), or it may be directly extracted into the CUDA Toolkit dir,
 # in which case it is not needed to specify the paths.
 if (CUSTOM_CUDNN)
@@ -144,6 +159,10 @@ endif()
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
+
+# The cuAEV extension lib is a required dep, and needs the Python headers and libraries
+find_package(Python REQUIRED COMPONENTS Interpreter Development)
+
 if(LOCAL_INSTALL)
     set(TORCHANI_LOCAL_LIB /home/$ENV{USER}/.local/lib/Torchani)
 else()
@@ -151,17 +170,44 @@ else()
 endif()
 set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR} ${TORCHANI_LOCAL_LIB})
 
-# The cuAEV extension lib needs the Python headers and libraries
-find_package(Python REQUIRED COMPONENTS Interpreter Development)
-# Cuaev lib is a required dependency
-set(CUAEV_FPATH "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+# Now build both libcuaev and libtorchanis
+#
+# NOTE: In both cases the install rpath is hardcoded to be the same as the link path,
+# to avoid issues if the correct CUDA is not installed system-wide. If this is
+# not done then CMake tries to re-link the binaries at install-time, and
+# prefers the system CUDA, which may be bad.
+#
+# NOTE: When doing this, both the build-tree and the install-tree binaries are
+# still linked to the CUDA driver library from the system (libcuda.so) by
+# default. This behavior seems to be a design choice of libtorch. I belive this
+# is ok, since the cuda driver is in principle unrelated to the CUDA Toolkit,
+# so I will leave it this way, but I'm documenting it here just in case.
+#
+# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
+# can't be found otherwise, it may only be needed to force-link libnvrtc (and
+# maybe nvtoolsext?) but for now I force-link everything since it is easier
+# althought a bit dirtier.
+
+# TODO: These global flag hacks are needed for the cuAEV interface
+## speed up mathmatics
+# string(APPEND CMAKE_CUDA_FLAGS " -use_fast_math")
+# string(APPEND CMAKE_CUDA_FLAGS " -DTORCHANI_OPT")
+# # use cub in a safe manner, see:
+# # https://github.com/pytorch/pytorch/pull/55292
+# # https://github.com/pytorch/pytorch/pull/66219
+# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_QUALIFIER=::cuaev::cub")
+# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_PREFIX='namespace cuaev {'")
+# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_POSTFIX=}")
+# check if this fixes the hack
+
+set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
     cuaev
     SHARED
-    "${CUAEV_FPATH}/cuaev.cpp"
-    "${CUAEV_FPATH}/aev.cu"
-    "${CUAEV_FPATH}/aev.h"
-    "${CUAEV_FPATH}/cuaev_cub.cuh"
+    "${CUAEV_ROOT}/cuaev.cpp"
+    "${CUAEV_ROOT}/aev.cu"
+    "${CUAEV_ROOT}/aev.h"
+    "${CUAEV_ROOT}/cuaev_cub.cuh"
 )
 set_target_properties(
     cuaev
@@ -169,27 +215,36 @@ set_target_properties(
         INSTALL_RPATH  "${TORCHANI_INSTALL_RPATH}"
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
-target_link_options(cuaev PRIVATE "LINKER:--no-as-needed")
-target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib ${CMAKE_CURRENT_LIST_DIR}/external/libtorch1.13.1-cxx11-abi-cuda11.6/lib)
+set(CUAEV_CUDA_COMPILE_OPTIONS
+    "-use_fast_math"
+)
+target_compile_options(
+    cuaev
+    PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUDA_COMPILE_OPTIONS}>
+)
+set(CUAEV_CUDA_COMPILE_DEFINITIONS
+    "TORCHANI_OPT"
+    "CUB_NS_QUALIFIER=::cuaev::cub"
+    "CUB_NS_PREFIX='namespace cuaev {'"
+    "CUB_NS_POSTFIX=}"
+)
+target_compile_definitions(
+    cuaev
+    PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUDA_COMPILE_DEFINITIONS}>
+)
+target_link_options(
+    cuaev
+    PRIVATE
+        "LINKER:--no-as-needed"
+)
+target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES} nvrtc-builtins)
-target_include_directories(cuaev PRIVATE ${CUAEV_FPATH} ${Python_INCLUDE_DIRS})
+target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
-
-# Install rpath is hardcoded to be the same as the link path, to avoid Issues
-# if the correct CUDA is not installed system-wide. If this is not done then
-# CMake tries to re-link the binaries at install-time, and prefers the system
-# CUDA, which may be bad.
-#
-# TODO: When doing this, both the build-tree and the install-tree binaries are
-# still linked to the CUDA driver library from the system (libcuda.so) by
-# default. This behavior seems to be a design choice of libtorch. I belive this
-# is ok, since the cuda driver is in principle unrelated to the CUDA Toolkit,
-# so I will leave it this way, but I'm documenting it here just in case.
-#
-# TODO: Both, manual setup of the RPATH **and** specifying automatic link-path
-# usage are needed in order for this to properly work, I'm not 100 % sure why
 set_target_properties(
     torchani
     PROPERTIES
@@ -197,15 +252,11 @@ set_target_properties(
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
 target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
-target_compile_features(torchani PRIVATE cxx_std_14)
+target_compile_features(torchani PRIVATE cxx_std_17)
 target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
-target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib ${CMAKE_CURRENT_LIST_DIR}/external/libtorch1.13.1-cxx11-abi-cuda11.6/lib)
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
-# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
-# can't be found otherwise, it may only be needed to force-link libnvrtc (and
-# maybe nvtoolsext?) but for now I force-link everything since it is easier
-# althought a bit dirtier.
 target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
+target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # Build unit tests
@@ -219,7 +270,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG 3f0283de7a9c43200033da996ff9093be3ac84dc
 )
-
 FetchContent_MakeAvailable(Catch2)
 add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
@@ -228,18 +278,12 @@ include(CTest)
 include(Catch)
 catch_discover_tests(tests)
 
-# Installation boilerplate for target
+# Execute target installation boilerplate
 
-# Override CMake's default prefix for all install files if unset by user
-# if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-# endif()
-
-# # Default CMake installation prefix for Linux is /usr/local. Its better to
-# # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
-# # Expand tilde for cmake < 3.21
+# Default CMake installation prefix for Linux is /usr/local. Its better to
+# use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
 if(LOCAL_INSTALL)
     set(LOCAL_PREFIX /home/$ENV{USER}/.local)
-    message(STATUS "CMake - Install location is set to ~/.local")
 else()
     set(LOCAL_PREFIX /usr/local)
 endif()
@@ -252,7 +296,7 @@ set(REL_PROJECT_CONFIGDIR "share/cmake/${PROJECT_NAME}")  # local configdir
 set(REL_PROJECT_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
 set(REL_PROJECT_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
 
-# Set stems generated && configured shareable installation files
+# Set stems of generated and configured shareable installation files
 set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config")
 set(PROJECT_VERSION_STEM "${PROJECT_NAME}ConfigVersion")
 set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
@@ -260,23 +304,22 @@ set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
 # Set targets namespace
 set(PROJECT_TARGETS_NAMESPACE "${PROJECT_NAME}::")
 
-# PackageConfig file paths (input (source-tree) and output (binary-tree))
+# Set PackageConfig file paths (input (source-tree) and output (binary-tree))
 set(PROJECT_CONFIG_FNAME "${PROJECT_CONFIG_STEM}.cmake")
 set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}.in")
 set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_CONFIG_FNAME}")
 
-# PackageVersion file path (output (binary-tree) only, version file is generated on-the-fly)
+# Set PackageVersion file path (output (binary-tree) only, version file is generated on-the-fly)
 set(PROJECT_VERSION_FNAME "${PROJECT_VERSION_STEM}.cmake")
 set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_CONFIGDIR}/${PROJECT_VERSION_FNAME}")
 
-# Targets file (output (binary-tree) only, targets file is generated on-the-fly)
+# Set targets file path (output (binary-tree) only, targets file is generated on-the-fly)
 set(PROJECT_TARGETS_FNAME "${PROJECT_TARGETS_STEM}.cmake")
 set(PROJECT_BINARY_TARGETS_PATH "${CMAKE_BINARY_DIR}/${REL_PROJECT_INSTALL_CONFIGDIR}/${PROJECT_TARGETS_FNAME}")
 
 # Create and install files for use by downstream packages
 # - <PkgName>Config.cmake (configure_package_config_file)
 # - <PkgName>ConfigVersion.cmake (write_basic_version_file)
-# ??
 # - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake  (install(EXPORT ...))
 # - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake (build-tree) (export(EXPORT ...))
 
@@ -312,7 +355,9 @@ install(
     DESTINATION "${REL_PROJECT_INSTALL_CONFIGDIR}"
 )
 install(
-    TARGETS torchani cuaev
+    TARGETS
+        torchani
+        cuaev
     EXPORT "${PROJECT_TARGETS_STEM}"
     LIBRARY
         DESTINATION "${REL_PROJECT_INSTALL_LIBDIR}"

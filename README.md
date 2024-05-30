@@ -13,28 +13,34 @@ ANI-2x supports in addition F, Cl and S.
 
 ## Instructions
 
-To build from source using ``conda`` (or ``mamba``)follow these instructions:
+The main supported way to build and install the torchani interface is using `CMake`,
+and calling it from inside a `conda` (or `mamba`) environment. The necessary
+steps are described next, but if you know what you are doing feel free to use your
+own procedure.
 
 ```bash
-# (1) create a new conda (or mamba) environment
+# (0) Clone this repo and cd into it
+git clone --recurse-submodules git@github.com:roitberg-group/torchani-amber.git
+cd torchani-amber
+
+# (1) Create a new conda (or mamba) environment
+# This environment will contain:
+# - torchani's required dependencies, including pytorch
+# - CUDA Toolkit and cuDNN libraries necessary to build the extensions and interface
 conda env create -f ./environment.yaml
 
-# (2) activate the environment
+# (2) Activate the environment
 conda activate ani-amber
 
-# (3) Initialize the python torchani submodule
-git submodule update --init --recursive  # --init is only needed the first time
-
 # (4) Install the python torchani submodule
-cd ./submodules/torchani_sandbox
-pip install -e .
-cd ../../
+pip install -v --no-deps --no-build-isolation -e ./submodules/torchani_sandbox/
 
-# (5) Build and install libtorchani
-# This can be done manually or with the included script
-bash ./cmake.sh --conda --install # Conda flag is not needed if not using conda
+# (5) Build and install libtorchani using the cmake.sh script
+bash ./cmake.sh
+# Alternatively, this can be done by invoking cmake manually with:
+# cmake -S. -B./build && cmake --build ./build && cmake --install ./build
 
-# (6) Deactivate the environment
+# (6) Deactivate the environment.
 conda deactivate ani-amber
 
 # (7) You may have to add ~/.local/bin to your PATH, if it isn't already
@@ -42,18 +48,25 @@ conda deactivate ani-amber
 mkdir -P ~/.local/bin
 cat PATH="$HOME/.local/bin:$PATH" >> ~/.bashrc  # Or corresponding file of your shell
 
-# (8) compile Amber using cmake (Amber will automatically find torchani)
+# (8) compile Amber using cmake (Amber will automatically find torchani and link it
+# to its md engines, SANDER and PMEMD)
 # Follow instructions in https://ambermd.org/
 ```
 
+## Note about the conda environment
+
+You don't need to run things inside the `ani-amber` environment since the built
+artifacts have the path to the needed libraries baked in, but *don't remove
+it*, since this will remove the installed libraries from your system
+
 ## Note about CUDA and LD_LIBRARY_PATH
 
-Torchani is tested with a specific version of the CUDA Toolkit in which it runs
-correctly. It is recommended that the CUDA Toolkit be installed using conda (or
-mamba). When installing the library, however, the path's to the correct CUDA
-Toolkit's liked libraries may get overriden if the system has a different
-Toolkit available and LD_LIBRARY_PATH is set to point there (as the CUDA
-installation instructions unfortunately recommend).
+Torchani is tested with a specific version of the CUDA Toolkit.. It is
+recommended that the CUDA Toolkit be installed using conda (or mamba). When
+installing the library, however, the path's to the correct CUDA Toolkit's liked
+libraries may get overriden if the system has a different Toolkit available and
+LD_LIBRARY_PATH is set to point there (as the CUDA installation instructions
+unfortunately recommend).
 
 This should not cause problems in principle, since the libraries will
 supposedly only be overriden if compatible, but if this is problematic to you,
@@ -63,32 +76,22 @@ libraries from LD_LIBRARY_PATH.
 Note that this situation is pretty rare, most probably you will not experience
 any issues regarding this.
 
-## Manual cmake installation
-
-To use cmake manually follow the traditional steps
-
-```bash
-cmake -S. -B./build  # use --fresh for a fresh configure, or rm everything in ./build
-cmake --build ./build
-cmake --install ./build
-```
-
 ## Requirements
 
 - Linux operating system
 - cmake 3.16 or higher
 - gcc 9.3.0
-- git (necessary to obtain the latest torchani version)
+- git
 - catch2 (library for unit tests only, included in the distribution)
 - python 3.8 (for generating the models and some test data)
 - torchani (latest version, for generating the models and some test data)
-- Amber23
-- LibTorch 1.13.1
+- Amber24
+- LibTorch 2.3.0
 
 Through conda:
 
 - PyTorch 1.13.1
-- CUDA Toolkit 11.6
+- CUDA Toolkit 11.8
 - cuDNN 8.3.2
 
 ## LibTorch / PyTorch compatibility

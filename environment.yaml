@@ -5,10 +5,10 @@ channels:
   - https://conda.anaconda.org/pytorch
   - https://conda.anaconda.org/nvidia
 dependencies:
-  - python=3.8.1
+  - python=3.10
   - pip
 
-  # Required dependencies for torchani:
+  # Required dependencies of the torchani python package:
   - numpy>=1.24
   - pytorch=2.3
   - pytorch-cuda=11.8
@@ -16,9 +16,8 @@ dependencies:
   - h5py  # HDF5 backend for datasets
   - tqdm  # progress bar util
 
-  # Needed for building cuaev / libtorch
+  # Extra dependencies needed to build libcuaev and libtorchani
   - nvidia::cuda-libraries-dev=11.8
   - nvidia::cuda-nvcc=11.8
-
-  # pretty-printing
-  - rich
+  - conda-forge::cudnn=8.9.7
+  - cmake>=3.24
