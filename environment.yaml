@@ -7,20 +7,18 @@ channels:
 dependencies:
   - python=3.8.1
   - pip
-  - mkl=2024.0.0
-  - pytorch::pytorch=1.13.1=py3.8_cuda11.6_cudnn8.3.2_0
-  - nvidia::libcusolver-dev=11.4.0
-  - conda-forge::cudatoolkit=11.6
-  - conda-forge::numpy=1.21
-  - conda-forge::cudnn=8.3.2.44=hed8a83a_0
-  - conda-forge::tqdm
 
-# Ani-specific (not all are required)
+  # Required dependencies for torchani:
+  - numpy>=1.24
+  - pytorch=2.3
+  - pytorch-cuda=11.8
+  - typing_extensions>=4.0.0
+  - h5py  # HDF5 backend for datasets
+  - tqdm  # progress bar util
+
+  # Needed for building cuaev / libtorch
+  - nvidia::cuda-libraries-dev=11.8
+  - nvidia::cuda-nvcc=11.8
+
+  # pretty-printing
   - rich
-  - pkbar
-  - lark-parser
-  - pyyaml
-  - requests
-  - ase
-  - h5py
-  - tqdm
