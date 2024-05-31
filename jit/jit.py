@@ -54,7 +54,10 @@ def _disable_jit_optimizations() -> None:
     torch._C._jit_set_profiling_mode(False)
     torch._C._jit_override_can_fuse_on_cpu(False)
     torch._C._jit_set_texpr_fuser_enabled(False)
-    torch._C._jit_set_nvfuser_enabled(False)
+    if tuple(map(int, torch.__version__.split("."))) < (2, 3):
+        # Avoid nvfuser bugs for old pytorch versions
+        # https://github.com/pytorch/pytorch/issues/84510)
+        torch._C._jit_set_nvfuser_enabled(False)
 
 
 # First construction of models will trigger download of the model data
@@ -63,8 +66,8 @@ _MODELS = {
     "ANI1ccx": torchani.models.ANI1ccx,
     "ANI2x": torchani.models.ANI2x,
     "ANIdr": torchani.models.ANIdr,
-    "ANIala": torchani.models.ANIala,
-    "ANImbis": torchani.models.ANI2xCharges,
+    # "ANIala": torchani.models.ANIala,
+    # "ANImbis": torchani.models.ANI2xCharges, TODO: Add this model again
 }
 
 # This maps has kwargs -> suffix
@@ -131,6 +134,9 @@ def _main(
                 f"{'with ' + str(labels) if labels else 'standard'}"
             )
             kwargs = {label: True for label in labels}
+            cell_list = kwargs.pop("cell_list", False)
+            if cell_list:
+                kwargs["neighborlist"] = "cell_list"
             try:
                 model = Model(**kwargs)
             except Exception as e:

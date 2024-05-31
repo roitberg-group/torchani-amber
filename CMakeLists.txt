@@ -18,23 +18,6 @@ include(GNUInstallDirs)
 # Append private internal modules path
 set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
-# Use conda packages in current environment?
-list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-
-# libtorch include paths
-# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include
-# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/torch/csrc/api/include
-# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/TH
-# /nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/include/THC
-# /nvme1/ignacio/Conda/envs/ani-amber/include
-
-# libtorch Library paths
-# ['/nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/lib']
-# >>> torch.utils.cpp_extension.library_paths(cuda=True)
-# ['/nvme1/ignacio/Conda/envs/ani-amber/lib/python3.8/site-packages/torch/lib', '/nvme1/ignacio/Conda/envs/ani-amber/lib']
-
-# actually conda_prefix/lib and conda_prefix/include should be enough
-# Actually torch provides already TorchConfig in /share/cmake/Torch
 
 # Builtin modules
 include(FetchContent)
@@ -59,21 +42,24 @@ option(CUSTOM_CUDA "Explicitly set CUDA root variable" ON)
 option(CONDA_CUDNN "Use the cuDNN from the conda environment" ON)
 option(CONDA_CUDA "Use CUDA Toolkit from conda environment" ON)
 option(TORCHANI_INSTALL "Install Numpy, PyTorch and TorchANI" OFF)
-option(DOWNLOAD_AND_EXTRACT_LIBTORCH "Download the LibTorch library and extract it locally" OFF)
+option(DOWNLOAD_AND_EXTRACT_LIBTORCH "Download LibTorch library and extract locally" OFF)
 
 set(CUDA_TOOLKIT_VERSION "11.8" CACHE STRING "CUDA Toolkit version to set CUDA vars")
 
 # PyTorch backend versions
-set(PYTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version PyTorch is compatible with")
-set(PYTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA version PyTorch is compatible with")
-set(PYTORCH_VERSION "2.3.0" CACHE STRING "PyTorch version to use for TorchANI")
-set(PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Python version PyTorch is compatible with")
+set(PYTORCH_VERSION "2.3.0" CACHE STRING "PyTorch version to use")
+set(PYTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version for PyTorch")
+set(PYTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA Toolkit version for PyTorch")
+set(PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Python version for PyTorch")
 
 # Libtorch backend versions (only needed if using an external libtorch)
-set(LIBTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version to use for LibTorch")
-set(LIBTORCH_CUDNN_CUDA_VERSION "11.8" CACHE STRING "CUDA version cuDNN is compatible with")
-set(LIBTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA version LibTorch is compatible with")
 set(LIBTORCH_VERSION "2.3.0" CACHE STRING "LibTorch version to use")
+set(LIBTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version for LibTorch")
+set(LIBTORCH_CUDA_VERSION "11.8" CACHE STRING "CUDA Toolkit version for LibTorch")
+set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Download a LibTorch version that exposes CXX11 ABI")
+
+# cuDNN options
+set(LIBTORCH_CUDNN_CUDA_VERSION "11.8" CACHE STRING "CUDA version cuDNN is compatible with")
 
 # JIT options
 option(JIT_DISABLE_OPTIMIZATIONS "Avoid TorchScript when compiling models optimizations" ON)
@@ -86,11 +72,14 @@ option(JIT_CUAEV "JIT-compile models with cuAEV extension" ON)
 option(JIT_CUAEV_TORCH_CELL_LIST "JIT-compile models with Torch cell list" ON)
 option(JIT_CUAEV_EXTERNAL_CELL_LIST "JIT-compile models with external cell list and cuAEV extension" OFF)
 
-set(LIBTORCH_USE_CXX11ABI TRUE CACHE BOOL "Download a LibTorch version that exposes CXX11 ABI")
+# Use conda packages in current environment
+list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+# Make sure CMake can find conda torch
+list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX}/lib/python${PYTORCH_PYTHON_VERSION}/site-packages/torch)
 
-# Sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
-# If the requested version already exists it is not extracted
 if(DOWNLOAD_AND_EXTRACT_LIBTORCH)
+    # If the requested version already exists it is not extracted
+    # Also sets LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR, LIBTORCH_INCLUDE_DIR
     download_and_extract_libtorch(
       CXX11ABI ${LIBTORCH_USE_CXX11ABI}
       LIBRARY_VERSION ${LIBTORCH_VERSION}
@@ -99,7 +88,6 @@ if(DOWNLOAD_AND_EXTRACT_LIBTORCH)
 else()
     msg_info("Skipped LibTorch download. Will use PyTorch directly (this is preferred)")
 endif()
-
 list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 
 # cuDNN may be linked by providing its location
@@ -125,7 +113,7 @@ if(CUSTOM_CUDA)
         CUDA_VERSION ${CUDA_TOOLKIT_VERSION}
     )
 else()
-    msg_warn("Skip setting CUDA dirs, make sure correct CUDA Toolkit is used")
+    msg_warn("Skip setting CUDA dirs, make sure cmake finds the correct CUDA Toolkit")
 endif()
 
 if(TORCHANI_INSTALL)
@@ -153,12 +141,9 @@ else()
     msg_warn("Skipping JIT compilation of models, make sure JIT models are available")
 endif()
 
-# Generate Makefiles, build a release version of the shared library and run
-# unit tests (CPU and CUDA if it is available)
-
 # LibTorch is a required dependency
 # sets TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-find_package(Torch ${LIBTORCH_VERSION} EXACT QUIET REQUIRED)
+find_package(Torch ${LIBTORCH_VERSION} EXACT REQUIRED)
 
 # The cuAEV extension lib is a required dep, and needs the Python headers and libraries
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
@@ -188,19 +173,14 @@ set(TORCHANI_INSTALL_RPATH ${LIBTORCH_LIBRARY_DIR} ${CUDA_TOOLKIT_ROOT_DIR} ${TO
 # maybe nvtoolsext?) but for now I force-link everything since it is easier
 # althought a bit dirtier.
 
-# TODO: These global flag hacks are needed for the cuAEV interface
-## speed up mathmatics
-# string(APPEND CMAKE_CUDA_FLAGS " -use_fast_math")
-# string(APPEND CMAKE_CUDA_FLAGS " -DTORCHANI_OPT")
-# # use cub in a safe manner, see:
-# # https://github.com/pytorch/pytorch/pull/55292
-# # https://github.com/pytorch/pytorch/pull/66219
-# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_QUALIFIER=::cuaev::cub")
-# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_PREFIX='namespace cuaev {'")
-# string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_POSTFIX=}")
-# check if this fixes the hack
-
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+# This is needed to safely use cub:
+# https://github.com/pytorch/pytorch/pull/55292
+# https://github.com/pytorch/pytorch/pull/66219
+# TODO: These flags should not be global, but not sure how to do that
+string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_QUALIFIER=::cuaev::cub")
+string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_PREFIX='namespace cuaev {'")
+string(APPEND CMAKE_CUDA_FLAGS " -DCUB_NS_POSTFIX=}")
 add_library(
     cuaev
     SHARED
@@ -215,30 +195,12 @@ set_target_properties(
         INSTALL_RPATH  "${TORCHANI_INSTALL_RPATH}"
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
-set(CUAEV_CUDA_COMPILE_OPTIONS
-    "-use_fast_math"
-)
-target_compile_options(
-    cuaev
-    PRIVATE
-        $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUDA_COMPILE_OPTIONS}>
-)
-set(CUAEV_CUDA_COMPILE_DEFINITIONS
-    "TORCHANI_OPT"
-    "CUB_NS_QUALIFIER=::cuaev::cub"
-    "CUB_NS_PREFIX='namespace cuaev {'"
-    "CUB_NS_POSTFIX=}"
-)
-target_compile_definitions(
-    cuaev
-    PRIVATE
-        $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUDA_COMPILE_DEFINITIONS}>
-)
-target_link_options(
-    cuaev
-    PRIVATE
-        "LINKER:--no-as-needed"
-)
+target_compile_features(cuaev PRIVATE cxx_std_17)
+# TORCHANI_OPT and "-use_fast_math" make calculations faster in libcuaev.so.
+# TORCHANI_OPT commands libcuaev to use cuda intrinsics for cos, sin, etc.
+target_compile_definitions(cuaev PRIVATE TORCHANI_OPT)
+target_compile_options(cuaev PRIVATE "-use_fast_math")
+target_link_options(cuaev PRIVATE "LINKER:--no-as-needed")
 target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES} nvrtc-builtins)
 target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
@@ -251,7 +213,24 @@ set_target_properties(
         INSTALL_RPATH  "${TORCHANI_INSTALL_RPATH}"
         INSTALL_RPATH_USE_LINK_PATH TRUE
 )
-target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
+# target_compile_options(torchani PRIVATE ${TORCH_CXX_FLAGS} $<$<CONFIG:Debug>:"-g">)
+target_compile_options(
+    torchani
+    PRIVATE
+        ${TORCH_CXX_FLAGS}
+        -g
+        -pedantic
+        -Wall
+        -Wextra
+        -Wcast-align
+        -Wcast-qual
+        -Wdisabled-optimization
+        -Winit-self
+        -Wmissing-include-dirs
+        -Woverloaded-virtual
+        -Wredundant-decls
+        -Wshadow
+)
 target_compile_features(torchani PRIVATE cxx_std_17)
 target_compile_definitions(torchani PRIVATE $<$<CONFIG:Debug>:"DEBUG">)
 target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
@@ -259,23 +238,28 @@ target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
-# Build unit tests
-FetchContent_Declare(
-    Catch2
-    PREFIX "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/"
-    BINARY_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/build/"
-    STAMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/stamp/"
-    TMP_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/tmp/"
-    DOWNLOAD_DIR "${CMAKE_CURRENT_LIST_DIR}/external/Catch2/Catch2/"
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG 3f0283de7a9c43200033da996ff9093be3ac84dc
-)
-FetchContent_MakeAvailable(Catch2)
+# Build Catch2 subproject (unit test framework) and Torchani unit tests
+# TODO: Catch2 needs to be compiled with the same GLIBCXX_ABI
+# as torch. Manually adding public "target_compile_options" to the Catch2
+# liberaries is the dirty way I found to do this. There may be a better way to
+# do it but I'm not sure how to otherwise propagate these flags to the
+# subproject. Also, note that flags can't be set on alias targets (such as
+# Catch2::Catch2WithMain), they have to be set on "Catch2WithMain" directly, and
+# they have to be set on both, "Catch2" and "Catch2WithMain", since for some reason
+# CMake doesn't propagate the flags between these libraries either.
+include(CTest)
+set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
+add_subdirectory(${CATCH2_ROOT})
+target_compile_options(Catch2WithMain PUBLIC ${TORCH_CXX_FLAGS})
+target_compile_options(Catch2 PUBLIC ${TORCH_CXX_FLAGS})
+# Make Catch2 provided cmake-modules available
+list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras" )
+include(Catch)
+
 add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_options(tests PUBLIC ${TORCH_CXX_FLAGS})
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani cuaev)
-include(CTest)
-include(Catch)
 catch_discover_tests(tests)
 
 # Execute target installation boilerplate

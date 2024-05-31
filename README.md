@@ -34,6 +34,8 @@ conda activate ani-amber
 
 # (4) Install the python torchani submodule
 pip install -v --no-deps --no-build-isolation -e ./submodules/torchani_sandbox/
+# (optional) install the cuaev extension
+pip install -v --no-deps --no-build-isolation --editable . --global-option="--ext"
 
 # (5) Build and install libtorchani using the cmake.sh script
 bash ./cmake.sh
