@@ -24,3 +24,10 @@ dependencies:
 
   # pretty printing
   - rich
+
+  # dev, not required
+  - mypy
+  - pre-commit  # runs pre commit/push hooks
+  - black  # code formatter
+  - flake8  # pep8 linter
+  - autoflake  # remove unused imports / variables
