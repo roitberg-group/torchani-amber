@@ -203,9 +203,10 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development)
 #
 # NOTE: When doing this, both the build-tree and the install-tree binaries are
 # still linked to the CUDA driver library from the system (libcuda.so) by
-# default. This behavior seems to be a design choice of libtorch. I belive this
-# is ok, since the cuda driver is in principle unrelated to the CUDA Toolkit,
-# so I will leave it this way, but I'm documenting it here just in case.
+# default. This behavior seems to be a design choice of Conda, since envs don't
+# have a "real" libcuda.so, just a "stub" libcuda.so. I belive this is ok,
+# since the cuda driver is unrelated to the CUDA Toolkit, but I'm documenting
+# it here for completeness.
 #
 # TODO: Torch libraries have to be force-linked since during runtime libnvrtc
 # can't be found otherwise, it may only be needed to force-link libnvrtc (and
