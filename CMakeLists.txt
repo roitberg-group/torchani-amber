@@ -29,13 +29,14 @@ include(CudnnHelper)
 include(CudaToolkitHelper)
 include(TorchScriptUtils)
 
-OutOfSourceBuild_ensure()  # fail with fatal error if out-of-source
-LinuxBuild_ensure()  # fail with fatal error if non-linux
+OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
+LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
 # General: options and flags
 option(DO_LOCAL_INSTALL "Install in ~/.local instead of /usr/local" ON)
 set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Requires 'USE_ACTIVE_CONDA_PYTORCH=OFF' and 'INSTALL_CUSTOM_LIBTORCH=ON'")
 
+# TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
 set(REQUIRED_TORCH_VERSION "2.3.0" CACHE STRING "Request this version of PyTorch/LibTorch")
 option(USE_ACTIVE_CONDA_PYTORCH "Use PyTorch from active conda environment" ON)
@@ -56,10 +57,10 @@ if(COMPILE_WITH_CXX11ABI)
         msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' needed to compile with the CXX11ABI")
     endif()
 else()
-    msg_info("NOTE: All binaries will be compiled with the pre-C++11 ABI")
-    msg_info("Linking to binaries compiled with the C++11 ABI will not be possible")
-    msg_info("If you need this feature then reconfigure with the following options:")
-    msg_info("-DUSE_ACTIVE_CONDA_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON")
+    message(STATUS "NOTE: All binaries will be compiled with the pre-C++11 ABI")
+    message(STATUS "Linking to binaries compiled with the C++11 ABI will not be possible")
+    message(STATUS "If you need this feature then reconfigure with the following options:")
+    message(STATUS "-DUSE_ACTIVE_CONDA_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON")
 endif()
 
 # cuDNN: Options and flags
@@ -90,9 +91,20 @@ option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if j
 # PyTorch/LibTorch setup
 if(USE_ACTIVE_CONDA_PYTORCH)
     msg_info("Will use PyTorch from active Conda env")
-    # TODO: Detect PyTorch's location using Python directly
+    # Detect PyTorch's location using Python directly
+    message(STATUS "Trying to import PyTorch and find its path")
+    execute_process(
+        COMMAND python -c "import torch; from pathlib import Path; print(Path(torch.__file__).resolve().parent, end='')"
+        OUTPUT_VARIABLE ACTIVE_CONDA_TORCH_ROOT
+        RESULT_VARIABLE CONDA_TORCH_FAILED
+    )
+    if(CONDA_TORCH_FAILED)
+        msg_error("Could not find torch in the active Conda env")
+    else()
+        msg_success("Successfully found PyTorch in the active Conda env")
+    endif()
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-    list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX}/lib/python${CUSTOM_PYTORCH_PYTHON_VERSION}/site-packages/torch)
+    list(APPEND CMAKE_PREFIX_PATH ${ACTIVE_CONDA_TORCH_ROOT})
 elseif(INSTALL_CUSTOM_LIBTORCH)
     msg_info("Will download and install user-specified LibTorch")
     # NOTE: If the requested version already exists it is *not* extracted
@@ -113,9 +125,17 @@ else()
         CUDNN_VERSION ${CUSTOM_PYTORCH_CUDNN_VERSION}
         CUDA_VERSION ${REQUIRED_TORCH_CUDA_VERSION}
     )
-    # TODO: Detect PyTorch's location using Python directly
+    # Detect PyTorch's location using Python directly
+    execute_process(
+        COMMAND python -c "import torch; from pathlib import Path; print(Path(torch.__file__).resolve().parent, end='')"
+        OUTPUT_VARIABLE ACTIVE_CONDA_TORCH_ROOT
+        RESULT_VARIABLE CONDA_TORCH_FAILED
+    )
+    if(CONDA_TORCH_FAILED)
+        msg_error("Could not find torch in the active Conda env")
+    endif()
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-    list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX}/lib/python${CUSTOM_PYTORCH_PYTHON_VERSION}/site-packages/torch)
+    list(APPEND CMAKE_PREFIX_PATH ${ACTIVE_CONDA_TORCH_ROOT})
 endif()
 
 # cuDNN setup
@@ -164,7 +184,7 @@ else()
     msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
 endif()
 
-msg_info("The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
+message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
 # LibTorch is a required dependency
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
@@ -275,7 +295,7 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
 #
-# TODO: Catch2 needs to be compiled with the same GLIBCXX_ABI
+# NOTE: Catch2 needs to be compiled with the same GLIBCXX_ABI
 # as torch. Manually adding public "target_compile_options" to the Catch2
 # liberaries is the dirty way I found to do this. There may be a better way to
 # do it but I'm not sure how to otherwise propagate these flags to the
@@ -308,7 +328,7 @@ else()
     set(LOCAL_PREFIX /usr/local)
 endif()
 set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
-msg_info("Install location set to: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
 
 # Set dirs for project installation
 # Note that by default in unix the project_relative(_install)_configdir are the same
