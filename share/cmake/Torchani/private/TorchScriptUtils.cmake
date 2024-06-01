@@ -1,7 +1,7 @@
 include_guard()
-include(Msg)
 # JIT compile all Torchani models
 # (requires torchani and torch to be in PYTHONPATH or inside a conda environment)
+# All messages are delegated to the underlying python process
 function(TorchScriptUtils_jit_compile_models)
     set(options "")
     set(
@@ -33,7 +33,5 @@ function(TorchScriptUtils_jit_compile_models)
     if(_FN_WITH_CUAEV)
         list(APPEND CMD "--cuaev")
     endif()
-    message(STATUS "TorchScript - JIT Compiling models")
     execute_process(COMMAND ${CMD})
-    msg_success("TorchScript - Finished JIT compilation")
 endfunction()

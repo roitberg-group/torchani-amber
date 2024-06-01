@@ -56,12 +56,10 @@ if(COMPILE_WITH_CXX11ABI)
         msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' needed to compile with the CXX11ABI")
     endif()
 else()
-    msg_info("All binaries will be compiled with the pre-C++11 ABI")
+    msg_info("NOTE: All binaries will be compiled with the pre-C++11 ABI")
     msg_info("Linking to binaries compiled with the C++11 ABI will not be possible")
     msg_info("If you need this feature then reconfigure with the following options:")
-    msg_info("    USE_ACTIVE_CONDA_PYTORCH=OFF")
-    msg_info("    INSTALL_CUSTOM_LIBTORCH=ON")
-    msg_info("    COMPILE_WITH_CXX11ABI=ON")
+    msg_info("-DUSE_ACTIVE_CONDA_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON")
 endif()
 
 # cuDNN: Options and flags
@@ -91,7 +89,7 @@ option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if j
 
 # PyTorch/LibTorch setup
 if(USE_ACTIVE_CONDA_PYTORCH)
-    msg_info("Will use PyTorch from active conda env (this is preferred)")
+    msg_info("Will use PyTorch from active Conda env")
     # TODO: Detect PyTorch's location using Python directly
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX}/lib/python${CUSTOM_PYTORCH_PYTHON_VERSION}/site-packages/torch)
@@ -107,7 +105,7 @@ elseif(INSTALL_CUSTOM_LIBTORCH)
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 else()
     # Fallback to installing PyTorch with conda from cmake
-    msg_info("Will download and install user-specified PyTorch using conda")
+    msg_info("Will download and install user-specified PyTorch using Conda")
     # Don't set any vars
     PytorchHelper_download_and_install(
         LIB_VERSION ${REQUIRED_TORCH_VERSION}
@@ -122,15 +120,15 @@ endif()
 
 # cuDNN setup
 if(USE_ACTIVE_CONDA_CUDNN)
-    msg_info("Will use cuDNN from active conda env if needed (this is preferred)")
+    msg_info("Will use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    CudnnHelper_set_conda_dirs()
+    CudnnHelper_set_conda_paths()
     list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
 elseif(SELECT_CUSTOM_CUDNN)
     msg_info("Will use user-specified cuDNN if needed")
     msg_info("Will assume cuDNN is located in ./external/cudnn<version>-cuda<version>")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    CudnnHelper_set_custom_dirs(
+    CudnnHelper_set_custom_paths(
         LIB_VERSION ${CUSTOM_CUDNN_VERSION}
         CUDA_VERSION ${CUSTOM_CUDNN_CUDA_VERSION}
     )
@@ -143,18 +141,19 @@ endif()
 
 # CUDA Toolkit setup
 if(USE_ACTIVE_CONDA_CUDA_TOOLKIT)
-    msg_info("Will use CUDA Toolkit from active conda env (this is preferred)")
+    msg_info("Will use CUDA Toolkit from active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    CudaToolkitHelper_set_conda_dirs()
+    CudaToolkitHelper_set_conda_paths()
 else()
     msg_info("Will use user-specified CUDA Toolkit")
     msg_info("Will assume CUDA Toolkit is located in /usr/local/cuda-<version>")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    CudaToolkitHelper_set_custom_dirs(TOOLKIT_VERSION ${CUDA_TOOLKIT_VERSION})
+    CudaToolkitHelper_set_custom_paths(TOOLKIT_VERSION ${CUDA_TOOLKIT_VERSION})
 endif()
 
 # TODO: Disabling JIT optimizations during scripting probably does nothing
 if(JIT_COMPILE_MODELS)
+    msg_info("Will attempt to JIT-compile ANI models")
     TorchScriptUtils_jit_compile_models(
         FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
         DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
@@ -162,7 +161,7 @@ if(JIT_COMPILE_MODELS)
         WITH_EXTERNAL_NEIGHBORLIST ${JIT_COMPILE_WITH_EXTERNAL_NEIGHBORLIST}
     )
 else()
-    msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile TorchANI models")
+    msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
 endif()
 
 msg_info("The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")

@@ -8,7 +8,8 @@ import warnings
 from tqdm import tqdm
 from rich.console import Console
 
-console = Console(highlight=False)
+# Force terminal is needed to display color output in CMake
+console = Console(highlight=False, force_terminal=True)
 JIT_DIR = Path(__file__).resolve().parent
 
 
@@ -104,12 +105,10 @@ def _check_which_models_need_compilation(
                 spec.model_indices = needed_indices
                 specs.append(spec)
     if specs:
-        console.print(
-            "JIT - Will attempt to compile the following models:", style="cyan"
-        )
+        console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
             _name = [
-                f"{s.cls}({'cuAEV' if s.use_cuda_ops else 'pyAEV'}, {s.neighborlist})"
+                f"-- {s.cls}({'cuAEV' if s.use_cuda_ops else 'pyAEV'}, {s.neighborlist})"  # noqa
             ]
             if None in s.model_indices:
                 _name.append("full-ensemble")
@@ -195,7 +194,7 @@ if __name__ == "__main__":
         # If we actually need to compile something we import torch and torchani
         # here, since the imports are slow, otherwise we skip the immports
         console.print(
-            "JIT - Importing torch in order to JIT-compile models...", style="cyan"
+            "JIT - Importing torch in order to JIT-compile models...",
         )
         import torch
 
@@ -205,21 +204,21 @@ if __name__ == "__main__":
             import torchani
         if args.disable_optimizations:
             console.print(
-                "JIT - Disabling optimizations before scripting", style="cyan"
+                "-- JIT - Disabling optimizations before scripting",
             )
             _disable_jit_optimizations()
 
     success = True
-    console.print("JIT - Compiling models", style="cyan")
+    console.print("-- JIT - Starting to compile models")
     for spec in tqdm(model_specs, leave=False):
         success = _jit_compile_and_save_models_in_spec(spec)
 
     if success:
         if model_specs:
-            console.print("JIT - Done!", style="green")
+            console.print("-- JIT - Done", style="green")
         else:
-            console.print("JIT - Done! (nothing to compile)", style="green")
+            console.print("-- JIT - Done (nothing to compile)", style="green")
     else:
         console.print(
-            "JIT - Done, but failed to instantiate some models", style="yellow"
+            "-- JIT - Done, but failed to instantiate some models", style="yellow"
         )
