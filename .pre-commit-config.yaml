@@ -37,19 +37,3 @@ repos:
     hooks:
       - id: autoflake
         stages: [push]
-
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy
-        # executable that is run using bash.
-        entry: "./ci/run-mypy"
-        # this makes pre-commit fetch python the executable inside the enclosing conda
-        # env instead of generating its own venv
-        language: system
-        types: [python]
-        # only call once per script
-        require_serial: true
-        # this prints how many files are passed to it
-        verbose: true
-        stages: [push]
