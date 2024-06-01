@@ -1,2 +1,1 @@
-# External dependencies of the torchani-amber interface
-
+# Custom LibTorch and cuDNN binaries

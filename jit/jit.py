@@ -1,16 +1,127 @@
+from dataclasses import dataclass
+import typing as tp
+from copy import deepcopy
 from pathlib import Path
 import argparse
 import warnings
 
-import torch
+from tqdm import tqdm
 from rich.console import Console
 
-# Disable annoying torchani warnings about MNP and cuAEV
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    import torchani
+console = Console(highlight=False)
+JIT_DIR = Path(__file__).resolve().parent
 
-console = Console()
+
+@dataclass
+class ModelSpec:
+    cls: str
+    neighborlist: str
+    use_cuda_ops: bool
+    model_indices: tp.List[tp.Optional[int]]
+
+    @property
+    def kwargs(self) -> tp.Dict[str, tp.Any]:
+        _kwargs: tp.Dict[str, tp.Any] = {"neighborlist": self.neighborlist}
+        if self.cls == "ANIdr":
+            _kwargs["use_cuda_ops"] = self.use_cuda_ops
+            return _kwargs
+        _kwargs["use_cuda_extension"] = self.use_cuda_ops
+        _kwargs["use_cuaev_interface"] = self.use_cuda_ops
+        return _kwargs
+
+    def file_path(self, index: tp.Optional[int]) -> Path:
+        if index not in self.model_indices:
+            raise ValueError(
+                f"Index must be one of the allowed model indices {self.model_indices}"
+            )
+        parts = []
+        if self.use_cuda_ops:
+            parts.append("cuaev")
+
+        if self.neighborlist == "cell_list":
+            parts.append("celllist")
+        elif self.neighborlist == "full_pairwise":
+            parts.append("stdlist")
+        elif self.neighborlist == "external":
+            parts.append("externlist")
+
+        if index is not None:
+            parts.append(str(index))
+        suffix = "-".join(parts)
+        return Path(JIT_DIR / f"{self.cls.lower()}-{suffix}.pt")
+
+
+def _check_which_models_need_compilation(
+    force_recompilation: bool,
+    external_neighborlist: bool,
+    cuaev: bool,
+) -> tp.List[ModelSpec]:
+    model_names_and_sizes = {
+        "ANI1x": 8,
+        "ANI1ccx": 8,
+        "ANI2x": 8,
+        "ANIdr": 7,
+        # "ANIala": 1,
+        # "ANImbis": 8,
+    }
+    model_kwargs: tp.List[tp.Dict[str, tp.Any]] = [
+        {
+            "neighborlist": "full_pairwise",
+            "use_cuda_ops": False,
+        },
+        {
+            "neighborlist": "cell_list",
+            "use_cuda_ops": False,
+        },
+    ]
+    if external_neighborlist:
+        model_kwargs.append(
+            {
+                "neighborlist": "external",
+                "use_cuda_ops": False,
+            }
+        )
+
+    if cuaev:
+        _model_kwargs = deepcopy(model_kwargs)
+        for d in _model_kwargs:
+            d.update({"use_cuda_ops": True})
+        model_kwargs.extend(_model_kwargs)
+
+    specs = []
+    for name, size in model_names_and_sizes.items():
+        idxs: tp.List[tp.Optional[int]] = [None]
+        if size > 1:
+            idxs.extend(range(size))
+        for kwargs in model_kwargs:
+            spec = ModelSpec(cls=name, model_indices=idxs, **kwargs)
+            needed_indices = []
+            for idx in spec.model_indices:
+                file_path = spec.file_path(idx)
+                if not file_path.exists() or force_recompilation:
+                    needed_indices.append(idx)
+            if needed_indices:
+                spec.model_indices = needed_indices
+                specs.append(spec)
+    if specs:
+        console.print(
+            "JIT - Will attempt to compile the following models:", style="cyan"
+        )
+        for s in specs:
+            _name = [
+                f"{s.cls}({'cuAEV' if s.use_cuda_ops else 'pyAEV'}, {s.neighborlist})"
+            ]
+            if None in s.model_indices:
+                _name.append("full-ensemble")
+            single_networks = []
+            for idx in s.model_indices:
+                if idx is None:
+                    continue
+                single_networks.append(str(idx))
+            if single_networks:
+                _name.append(f"single-networks:{','.join(single_networks)}")
+            console.print(", ".join(_name))
+    return specs
 
 
 def _reset_jit_registry():
@@ -19,36 +130,28 @@ def _reset_jit_registry():
     torch.jit._state._clear_class_state()
 
 
-def _jit_compile_and_save_whole_model_and_submodels(
-    model: torchani.models.BuiltinModel,
-    name: str,
-    title: str,
-    path: Path,
-    force_recompile: bool = False,
-) -> None:
-    console.print(f"-- JIT - Compiling {title} to TorchScript")
+def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
+    # First construction of models will trigger download of the model data if needed
+    try:
+        model = getattr(torchani.models, spec.cls)(**spec.kwargs)
+    except Exception as e:
+        console.print(f"-- JIT - {e}", style="yellow")
+        console.print(f"-- JIT - Failed to instantiate {spec}", style="yellow")
+        return False
+    # TODO: Is this needed?
     model.requires_grad_(False)
-    full_model_path = path / f"{name}.pt"
-    _reset_jit_registry()
-    skip_all = True
-    if force_recompile or not full_model_path.is_file():
-        torch.jit.save(torch.jit.script(model), str(full_model_path))
-        skip_all = False
-    for j, _ in enumerate(model):
-        jth_model_path = path / f"{name}-{j}.pt"
+    indices = deepcopy(spec.model_indices)
+    if None in indices:
+        indices.remove(None)
         _reset_jit_registry()
-        if force_recompile or not jth_model_path.is_file():
-            script_model = torch.jit.script(model[j])
-            torch.jit.save(script_model, str(jth_model_path))
-            skip_all = False
-    if skip_all:
-        console.print("-- JIT - Skipped, already present")
-    else:
-        console.print("-- JIT - Done")
+        torch.jit.save(torch.jit.script(model), spec.file_path(None))
+    for index in indices:
+        _reset_jit_registry()
+        torch.jit.save(torch.jit.script(model[index]), spec.file_path(index))
+    return True
 
 
 def _disable_jit_optimizations() -> None:
-    console.print("-- JIT - Disabling optimizations")
     # Avoid potential issues with JIT compilation by disabling these
     torch._C._jit_set_profiling_executor(False)
     torch._C._jit_set_profiling_mode(False)
@@ -60,106 +163,6 @@ def _disable_jit_optimizations() -> None:
         torch._C._jit_set_nvfuser_enabled(False)
 
 
-# First construction of models will trigger download of the model data
-_MODELS = {
-    "ANI1x": torchani.models.ANI1x,
-    "ANI1ccx": torchani.models.ANI1ccx,
-    "ANI2x": torchani.models.ANI2x,
-    "ANIdr": torchani.models.ANIdr,
-    # "ANIala": torchani.models.ANIala,
-    # "ANImbis": torchani.models.ANI2xCharges, TODO: Add this model again
-}
-
-# This maps has kwargs -> suffix
-_SUFFIX_MAP = {
-    (): "standard",
-    ("cell_list",): "torch-cell-list",
-    ("external_cell_list",): "external-cell-list",
-    ("use_cuaev_interface", "use_cuda_extension"): "cuaev",
-    (
-        "use_cuaev_interface",
-        "use_cuda_extension",
-        "cell_list",
-    ): "cuaev-torch-cell-list",
-    (
-        "use_cuaev_interface",
-        "use_cuda_extension",
-        "external_cell_list",
-    ): "cuaev-external-cell-list",
-}
-
-
-# Save the jit-compiled version of all available builtin models
-def _main(
-    disable_optimizations: bool,
-    force_recompile: bool,
-    # normal network options
-    standard: bool,
-    torch_cell_list: bool,
-    external_cell_list: bool,
-    # cuaev options
-    cuaev: bool,
-    cuaev_torch_cell_list: bool,
-    cuaev_external_cell_list: bool,
-) -> None:
-    console.print("-- JIT - Compiling builtin models to TorchScript")
-    current_path = Path(__file__).resolve().parent
-
-    if disable_optimizations:
-        _disable_jit_optimizations()
-
-    options = {
-        (): standard,
-        ("cell_list",): torch_cell_list,
-        ("external_cell_list",): external_cell_list,
-        ("use_cuaev_interface", "use_cuda_extension"): cuaev,
-        (
-            "use_cuaev_interface",
-            "use_cuda_extension",
-            "cell_list",
-        ): cuaev_torch_cell_list,
-        (
-            "use_cuaev_interface",
-            "use_cuda_extension",
-            "external_cell_list",
-        ): cuaev_external_cell_list,
-    }
-
-    for name, Model in _MODELS.items():
-        for labels, choice in options.items():
-            if not choice:
-                continue
-            console.print(
-                f"-- JIT - Compiling {name} "
-                f"{'with ' + str(labels) if labels else 'standard'}"
-            )
-            kwargs = {label: True for label in labels}
-            cell_list = kwargs.pop("cell_list", False)
-            if cell_list:
-                kwargs["neighborlist"] = "cell_list"
-            try:
-                model = Model(**kwargs)
-            except Exception as e:
-                console.print(f"-- JIT - {e}", style="yellow")
-                console.print(
-                    f"-- JIT - Could not compile {name} "
-                    f"{'with ' + str(labels) if labels else 'standard'}",
-                    style="yellow",
-                )
-                continue
-            suffix = _SUFFIX_MAP[labels]
-            model.requires_grad_(False)
-            if name == "ANIala":
-                name = "custom"
-            _jit_compile_and_save_whole_model_and_submodels(
-                model,
-                f"{name.lower()}-{suffix}",
-                name,
-                current_path,
-                force_recompile,
-            )
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -168,48 +171,55 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--external-cell-list",
+        "--external-neighborlist",
         action="store_true",
         default=False,
     )
     parser.add_argument(
-        "--cuaev-external-cell-list",
+        "--force",
         action="store_true",
         default=False,
-    )
-    parser.add_argument(
-        "--standard",
-        action="store_true",
-        default=True,
-    )
-    parser.add_argument(
-        "--force-recompile",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
-        "--torch-cell-list",
-        action="store_true",
-        default=True,
     )
     parser.add_argument(
         "--cuaev",
         action="store_true",
         default=True,
     )
-    parser.add_argument(
-        "--cuaev-torch-cell-list",
-        action="store_true",
-        default=True,
-    )
     args = parser.parse_args()
-    _main(
-        disable_optimizations=args.disable_optimizations,
-        force_recompile=args.force_recompile,
-        standard=args.standard,
-        external_cell_list=args.external_cell_list,
-        torch_cell_list=args.torch_cell_list,
+    model_specs = _check_which_models_need_compilation(
+        force_recompilation=args.force,
+        external_neighborlist=args.external_neighborlist,
         cuaev=args.cuaev,
-        cuaev_torch_cell_list=args.cuaev_torch_cell_list,
-        cuaev_external_cell_list=args.cuaev_external_cell_list,
     )
+    if model_specs:
+        # If we actually need to compile something we import torch and torchani
+        # here, since the imports are slow, otherwise we skip the immports
+        console.print(
+            "JIT - Importing torch in order to JIT-compile models...", style="cyan"
+        )
+        import torch
+
+        # Disable some annoying torchani warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import torchani
+        if args.disable_optimizations:
+            console.print(
+                "JIT - Disabling optimizations before scripting", style="cyan"
+            )
+            _disable_jit_optimizations()
+
+    success = True
+    console.print("JIT - Compiling models", style="cyan")
+    for spec in tqdm(model_specs, leave=False):
+        success = _jit_compile_and_save_models_in_spec(spec)
+
+    if success:
+        if model_specs:
+            console.print("JIT - Done!", style="green")
+        else:
+            console.print("JIT - Done! (nothing to compile)", style="green")
+    else:
+        console.print(
+            "JIT - Done, but failed to instantiate some models", style="yellow"
+        )
