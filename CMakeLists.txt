@@ -15,6 +15,9 @@ project(
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
+# Dump build database into compile_commands.json
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Make private internal modules accessible
 set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})

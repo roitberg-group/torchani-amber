@@ -16,7 +16,6 @@ else
 fi
 
 cmake \
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -S"$_src_dir" \
     -B"$_build_dir" \
     -DUSE_ACTIVE_CONDA_PYTORCH=$_use_conda \
