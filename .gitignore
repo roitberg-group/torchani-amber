@@ -1,6 +1,7 @@
 build/*
 jit/*.pt
 external/*
+.mypy_cache/
 ! external/README.md
 *.x
 *.mod

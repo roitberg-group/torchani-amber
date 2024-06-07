@@ -93,33 +93,42 @@ void torchani_init_atom_types_(
     bool use_cuda_device = static_cast<bool>(*use_cuda_device_raw);
     bool use_double_precision = static_cast<bool>(*use_double_precision_raw);
     std::string model_jit_fname;
-    std::string suffix = "standard";
+    std::string suffix = "";
 
     if (use_cuaev and not use_cuda_device) {
         std::cerr
             << "Error in libtorchani\n"
-            << "A CUDA capable device should be selected to use the cuaev extension"
+            << "A CUDA capable device must be selected to use the cuaev extension"
             << std::endl;
         std::exit(2);
     }
-
-    if (use_cell_list and not use_cuaev) {
-        suffix = "-torch-cell-list";
-    } else if (use_external_neighborlist and not use_cuaev) {
-        suffix = "-external-cell-list";
-    } else if (use_cell_list and use_cuaev) {
-        suffix = "-cuaev-torch-cell-list";
-    } else if (use_external_neighborlist and use_cuaev) {
-        suffix = "-cuaev-external-cell-list";
+    if (use_cuaev) {
+        if (use_cell_list) {
+            suffix = "-cuaev-celllist";
+        } else if (use_external_neighborlist) {
+            suffix = "-cuaev-externlist";
+        } else {
+            suffix = "-cuaev-stdlist";
+        }
     } else {
-        suffix = "-standard";
+        if (use_cell_list) {
+            suffix = "-celllist";
+        } else if (use_external_neighborlist) {
+            suffix = "-externlist";
+        } else {
+            suffix = "-stdlist";
+        }
     }
+
     if (network_index == -1) {
         model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + ".pt";
     } else {
         model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + "-" +
             std::to_string(network_index) + ".pt";
     }
+    #ifdef DEBUG
+    std::cout << model_jit_fname << '\n';
+    #endif
 
     torchani_set_device(use_cuda_device, device_index);
     torchani_set_precision(use_double_precision);
@@ -142,6 +151,9 @@ void torchani_init_atom_types_(
     torchani_atomic_numbers = torch::from_blob(
         atomic_numbers, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
+    #ifdef DEBUG
+    std::cout << jit_model_path << '\n';
+    #endif
     torchani_atomic_numbers = torchani_atomic_numbers.to(torchani_device);
     torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
     // This is necessary since torch has to use this tensor to index internally,
@@ -149,12 +161,21 @@ void torchani_init_atom_types_(
     // to be performed.
     // Also, torchani needs an extra dimension as batch dimension
     torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
+    #ifdef DEBUG
+    std::cout << "Initialized torchani with atomic numbers:" << '\n';
+    std::cout << torchani_atomic_numbers << '\n';
+    #endif
 
     // Disable TF32 and FP16 for accuracy
     torch::jit::setGraphExecutorOptimize(false);
     torch::globalContext().setAllowTF32CuBLAS(false);
     torch::globalContext().setAllowTF32CuDNN(false);
     torch::globalContext().setAllowFP16ReductionCuBLAS(false);
+
+    #ifdef DEBUG
+    std::cout << "Disabled JIT optimizations" << '\n';
+    #endif
+
     // The model is loaded from a JIT compiled file always.
     try {
         model = torch::jit::load(jit_model_path, torchani_device);
@@ -164,12 +185,22 @@ void torchani_init_atom_types_(
                   << std::endl;
         std::exit(2);
     }
+    #ifdef DEBUG
+    std::cout << "Loaded JIT-compiled model" << '\n';
+    #endif
+
     // This is only necessary for double precision, since
     // the buffers / parameters are kFloat by default
     model.to(torchani_precision);
+    #ifdef DEBUG
+    std::cout << "Cast model to the specified precision" << '\n';
+    #endif
     // Long tensors are recast to kLong, this is necessary because
     // to(torch::kDouble) also casts buffers to double (or float)
     model.get_method("_recast_long_buffers")({});
+    #ifdef DEBUG
+    std::cout << "Finalized Torchani Initialization" << '\n';
+    #endif
 }
 
 std::vector<torch::jit::IValue> setup_inputs_pbc_external_neighborlist(
@@ -395,7 +426,7 @@ torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
 std::tuple<torch::Tensor, torch::Tensor> get_energy_charges_output(
     std::vector<torch::jit::IValue>& inputs
 ) {
-    auto output = model.forward(inputs).toTuple();
+    auto output = model.get_method("energies_and_atomic_charges")(inputs).toTuple();
     return {output->elements()[1].toTensor(), output->elements()[2].toTensor()};
 }
 

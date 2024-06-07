@@ -2,3 +2,6 @@
 	path = submodules/torchani_sandbox
 	url = git@github.com:roitberg-group/torchani_sandbox.git
 	branch = feature/ipickering/raw-charges-model
+[submodule "submodules/Catch2"]
+	path = submodules/Catch2
+	url = git@github.com:catchorg/Catch2.git
