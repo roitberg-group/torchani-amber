@@ -426,7 +426,7 @@ torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
 std::tuple<torch::Tensor, torch::Tensor> get_energy_charges_output(
     std::vector<torch::jit::IValue>& inputs
 ) {
-    auto output = model.forward(inputs).toTuple();
+    auto output = model.get_method("energies_and_atomic_charges")(inputs).toTuple();
     return {output->elements()[1].toTensor(), output->elements()[2].toTensor()};
 }
 

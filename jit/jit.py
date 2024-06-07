@@ -23,7 +23,7 @@ class ModelSpec:
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
         _kwargs: tp.Dict[str, tp.Any] = {"neighborlist": self.neighborlist}
-        if self.cls == "ANIdr":
+        if self.cls in ("ANIdr", "ANImbis"):
             _kwargs["use_cuda_ops"] = self.use_cuda_ops
             return _kwargs
         _kwargs["use_cuda_extension"] = self.use_cuda_ops
@@ -62,8 +62,8 @@ def _check_which_models_need_compilation(
         "ANI1ccx": 8,
         "ANI2x": 8,
         "ANIdr": 7,
-        # "ANIala": 1,
-        # "ANImbis": 8,
+        "ANIala": 1,
+        "ANImbis": 8,
     }
     model_kwargs: tp.List[tp.Dict[str, tp.Any]] = [
         {

@@ -53,11 +53,11 @@ TEST_CASE("C bindings") {
                     ModelSpec{0, 0, "_1x"},
                     ModelSpec{1, 0, "_1ccx"},
                     ModelSpec{2, 0, "_2x"},
-                    // ModelSpec{3, 0, "_mbis"},
+                    ModelSpec{3, 0, "_mbis"},
                     ModelSpec{0, -1, "_1x_ensemble"},
                     ModelSpec{1, -1, "_1ccx_ensemble"},
-                    ModelSpec{2, -1, "_2x_ensemble"}
-                    // ModelSpec{3, -1, "_mbis_ensemble"}
+                    ModelSpec{2, -1, "_2x_ensemble"},
+                    ModelSpec{3, -1, "_mbis_ensemble"}
                 }
             )
         );
