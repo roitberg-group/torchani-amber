@@ -19,6 +19,7 @@ dependencies:
   # Extra dependencies needed to build libcuaev and libtorchani
   - nvidia::cuda-libraries-dev=11.8
   - nvidia::cuda-nvcc=11.8
+  - nvidia::cuda-cccl=11.8
   - conda-forge::cudnn=8.9.7
   - cmake>=3.24
 
