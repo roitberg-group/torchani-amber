@@ -269,6 +269,10 @@ An example `mdin` input file could be:
 /
 ```
 
+## Usage in an ML/MM framework
+
+See the [**README**](./mlmm/README.md) file in the mlmm folder.
+
 ## Limitations
 
 The interface is provided as is, with no guarantees that it will work with any
@@ -315,3 +319,4 @@ torch.jit.save(torch.jit.script(custom_model), './jit/custom.pt')
 
 The custom model can then be loaded by setting `model_type = "custom"` in the
 `extpot` namelist.
+
