@@ -602,34 +602,44 @@ void torchani_data_for_monitored_mlmm_(
     double* qbc,
     double qbc_derivatives[][3]
 ) {
-    if (*charges_type_raw != 0) {
-        std::cerr << "Error in libtorchani\n"
-                  << "Charges type should be 0 (only currently supported value)"
-                  << std::endl;
-        std::exit(2);
-    }
-    if (cached_torchani_model_index != 3) {
-        std::cerr << "Error in libtorchani\n"
-                  << "Torchani model should be animbis (index=3) to calculate charges"
-                  << std::endl;
-        std::exit(2);
-    }
+    int charges_type = *charges_type_raw;
     int num_atoms = *num_atoms_raw;
     torch::Tensor coordinates = setup_coordinates(coordinates_raw, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coordinates);
-    auto output = get_energy_charges_output(inputs);
-    torch::Tensor energy_tensor = std::get<0>(output);
-    torch::Tensor atomic_charges_tensor = std::get<1>(output);
+
+    torch::Tensor energy_tensor = torch::empty(0);
+    torch::Tensor atomic_charges_tensor = torch::empty(0);
+    if (charges_type == 0) {
+        if (cached_torchani_model_index != 3) {
+            std::cerr << "Error in libtorchani\n"
+                      << "Torchani model should be animbis (index=3) if charges_type=0"
+                      << std::endl;
+            std::exit(2);
+        }
+        auto output = get_energy_charges_output(inputs);
+        energy_tensor = std::get<0>(output);
+        atomic_charges_tensor = std::get<1>(output);
+    } else if (charges_type == -1){
+        energy_tensor = get_energy_output(inputs);
+    } else {
+        std::cerr << "Error in libtorchani\n"
+                  << "Charges type should be 0 (mbis) or -1 (no charges)"
+                  << std::endl;
+        std::exit(2);
+
+    }
     torch::Tensor qbc_tensor = get_energy_qbc_output(inputs)[1];
 
     calculate_and_populate_forces(coordinates, energy_tensor, forces, true, num_atoms);
     calculate_and_populate_qbc_derivatives(
         coordinates, qbc_tensor, qbc_derivatives, true, num_atoms
     );
-    calculate_and_populate_charge_derivatives(
-        coordinates, atomic_charges_tensor, atomic_charge_derivatives, num_atoms
-    );
     populate_potential_energy(energy_tensor, potential_energy);
-    populate_atomic_charges(atomic_charges_tensor, atomic_charges, num_atoms);
     populate_qbc(qbc_tensor, qbc);
+    if (charges_type == 0) {
+        calculate_and_populate_charge_derivatives(
+            coordinates, atomic_charges_tensor, atomic_charge_derivatives, num_atoms
+        );
+        populate_atomic_charges(atomic_charges_tensor, atomic_charges, num_atoms);
+    }
 }
