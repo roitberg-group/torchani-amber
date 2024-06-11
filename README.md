@@ -27,15 +27,13 @@ cd torchani-amber
 # This environment will contain:
 # - torchani's required dependencies, including pytorch
 # - CUDA Toolkit and cuDNN libraries necessary to build the extensions and interface
-conda env create -f ./environment.yaml
+conda env create --file ./environment.yaml
 
 # (2) Activate the environment
 conda activate ani-amber
 
-# (4) Install the python torchani submodule
-pip install -v --no-deps --no-build-isolation -e ./submodules/torchani_sandbox/
-# (optional) install the cuaev extension
-pip install -v --no-deps --no-build-isolation --editable . --global-option="--ext"
+# (4) Install the python torchani submodule, together with the cuaev extension
+pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e .
 
 # (5) Build and install libtorchani using the cmake.sh script
 bash ./cmake.sh
