@@ -31,7 +31,9 @@ def _save_jit_compiled_model_results_to_file(
     # Avoid qbc for non-ensembles
     if file_path.stem.endswith("ensemble"):
         qbcs = model.energies_qbcs(input_).qbcs * units.HARTREE_TO_KCALMOL
-        qbc_deriv = torch.autograd.grad(qbcs.sum(), coordinates, retain_graph=True)[0][0]
+        qbc_deriv = torch.autograd.grad(qbcs.sum(), coordinates, retain_graph=True)[0][
+            0
+        ]
     with open(file_path, mode="w") as f:
         lines_ = [f"{energy.item()}\n"]
         lines_.extend([f"{v}\n" for v in force.flatten()])
@@ -42,11 +44,9 @@ def _save_jit_compiled_model_results_to_file(
             charges = output.atomic_charges.flatten()
             lines_.extend([f"{v}\n" for v in charges])
             for c in charges:
-                deriv_charges = torch.autograd.grad(
-                    c,
-                    coordinates,
-                    retain_graph=True
-                )[0]
+                deriv_charges = torch.autograd.grad(c, coordinates, retain_graph=True)[
+                    0
+                ]
                 lines_.extend([f"{v}\n" for v in deriv_charges.flatten()])
         f.writelines(lines_)
 
@@ -72,7 +72,7 @@ def _generate_cpu_or_cuda_values(
             suffix = f"{suffix}_ensemble"
 
         _save_jit_compiled_model_results_to_file(
-            tests_dir / f'test_values_{device}{suffix}.txt',
+            tests_dir / f"test_values_{device}{suffix}.txt",
             device,
             model_jit_file=f,
         )
@@ -106,15 +106,15 @@ if __name__ == "__main__":
     tests_dir = Path(__file__).resolve().parent.parent / "tests"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
     model_jit_files = [
-        jit_dir / "ani1x-standard.pt",
-        jit_dir / "ani1ccx-standard.pt",
-        jit_dir / "ani2x-standard.pt",
-        jit_dir / "animbis-standard.pt",
-        jit_dir / "anidr-standard.pt",
-        jit_dir / "ani1x-standard-0.pt",
-        jit_dir / "ani1ccx-standard-0.pt",
-        jit_dir / "ani2x-standard-0.pt",
-        jit_dir / "animbis-standard-0.pt",
-        jit_dir / "anidr-standard-0.pt",
+        jit_dir / "ani1x-stdlist.pt",
+        jit_dir / "ani1ccx-stdlist.pt",
+        jit_dir / "ani2x-stdlist.pt",
+        jit_dir / "animbis-stdlist.pt",
+        jit_dir / "anidr-stdlist.pt",
+        jit_dir / "ani1x-stdlist-0.pt",
+        jit_dir / "ani1ccx-stdlist-0.pt",
+        jit_dir / "ani2x-stdlist-0.pt",
+        jit_dir / "animbis-stdlist-0.pt",
+        jit_dir / "anidr-stdlist-0.pt",
     ]
     _main(model_jit_files, tests_dir)

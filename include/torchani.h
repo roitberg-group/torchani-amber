@@ -1,7 +1,6 @@
 #ifndef TORCHANI_H_
 #define TORCHANI_H_
 
-
 extern "C" void torchani_init_atom_types_(
     int atomic_numbers[],
     int* num_atoms_raw,
@@ -27,7 +26,6 @@ extern "C" void torchani_energy_force_atomic_charges_(
     double* potential_energy,
     double* atomic_charges
 );
-
 
 /**
  * Model index must be 3 (animbis) in order to use this function
@@ -69,7 +67,6 @@ extern "C" void torchani_data_for_monitored_mlmm_(
     double qbc_derivatives[][3]
 );
 
-
 extern "C" void torchani_energy_force_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -77,7 +74,6 @@ extern "C" void torchani_energy_force_(
     double forces[][3],
     double* potential_energy
 );
-
 
 extern "C" void torchani_energy_force_qbc_(
     double coordinates_raw[][3],
@@ -88,7 +84,6 @@ extern "C" void torchani_energy_force_qbc_(
     double* qbc
 );
 
-
 extern "C" void torchani_energy_force_pbc_(
     double coordinates_raw[][3],
     int* num_atoms_raw,
@@ -97,7 +92,6 @@ extern "C" void torchani_energy_force_pbc_(
     /* outputs */
     double* potential_energy
 );
-
 
 // accept an external neighborlist and shifts
 extern "C" void torchani_energy_force_external_neighborlist_(

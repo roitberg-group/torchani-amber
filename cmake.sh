@@ -16,11 +16,11 @@ else
 fi
 
 cmake \
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -S"$_src_dir" \
     -B"$_build_dir" \
-    -DCONDA_CUDA=$_use_conda \
-    -DCONDA_CUDNN=$_use_conda \
+    -DUSE_ACTIVE_CONDA_PYTORCH=$_use_conda \
+    -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$_use_conda \
+    -DUSE_ACTIVE_CONDA_CUDNN=$_use_conda \
 && cmake \
     --build "$_build_dir"
 
