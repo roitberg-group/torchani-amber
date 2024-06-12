@@ -18,6 +18,9 @@ and calling it from inside a `conda` (or `mamba`) environment. The necessary
 steps are described next, but if you know what you are doing feel free to use your
 own procedure.
 
+Note that a GCC version that supports C++17 is needed
+to compile torchani-amber (typically > 9 is enough, it is tested with 11.4).
+
 ```bash
 # (0) Clone this repo and cd into it
 git clone --recurse-submodules git@github.com:roitberg-group/torchani-amber.git
@@ -33,7 +36,9 @@ conda env create --file ./environment.yaml
 conda activate ani-amber
 
 # (4) Install the python torchani submodule, together with the cuaev extension
+cd ./submodules/torchani_sandbox
 pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e .
+cd ../..
 
 # (5) Build and install libtorchani using the cmake.sh script
 bash ./cmake.sh
