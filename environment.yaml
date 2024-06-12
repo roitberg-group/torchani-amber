@@ -5,8 +5,9 @@ channels:
   - https://conda.anaconda.org/pytorch
   - https://conda.anaconda.org/conda-forge
 dependencies:
+  # General
   - python=3.10
-  - pip
+  - pip>=24.0
 
   # Required dependencies of the torchani python package:
   - numpy>=1.24
@@ -16,7 +17,9 @@ dependencies:
   - h5py  # HDF5 backend for datasets
   - tqdm  # progress bar util
 
-  # Extra dependencies needed to build libcuaev and libtorchani
+  # Extra dependencies needed to build compiled extensions, libcuaev and libtorchani
+  - setuptools>=64
+  - setuptools-scm>=8
   - gxx_linux-64=11.4
   - gcc_linux-64=11.4
   - nvidia::cuda-libraries-dev=11.8
@@ -25,10 +28,10 @@ dependencies:
   - conda-forge::cudnn=8.9.7
   - cmake>=3.24
 
-  # pretty printing
+  # Pretty printing
   - rich
 
-  # dev, not required
+  # Dev, not required
   - mypy
   - pre-commit  # runs pre commit/push hooks
   - black  # code formatter
