@@ -91,7 +91,7 @@ any issues regarding this.
 - python 3.8 (for generating the models and some test data)
 - torchani (latest version, for generating the models and some test data)
 - Amber24
-- LibTorch 2.3.0
+- LibTorch 2.3
 
 Through conda:
 
