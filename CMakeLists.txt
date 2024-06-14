@@ -201,7 +201,7 @@ message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
 
 # LibTorch is a required dependency
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-find_package(Torch ${REQUIRED_TORCH_VERSION} EXACT REQUIRED)
+find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 
 # The cuAEV extension lib is a required dep, and needs the Python headers and libraries
 # Set Python_LIBRARIES, Python_INCLUDE_DIRS
