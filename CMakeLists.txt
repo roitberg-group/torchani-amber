@@ -230,7 +230,6 @@ set(TORCHANI_LIBRARIES_INSTALL_RPATH
     ${CUDA_TOOLKIT_ROOT_DIR}
     ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
 )
-message(STATUS "Rpath will be ${TORCHANI_LIBRARIES_INSTALL_RPATH}")
 
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
