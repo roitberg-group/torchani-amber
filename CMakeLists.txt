@@ -189,6 +189,16 @@ endif()
 
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
+# Default CMake installation prefix for Linux is /usr/local. Its better to
+# use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND DO_LOCAL_INSTALL)
+    set(LOCAL_PREFIX /home/$ENV{USER}/.local)
+    set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
+    # TODO: Is it necessary to set this again for local scope?
+    set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX})
+endif()
+message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
+
 # LibTorch is a required dependency
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${REQUIRED_TORCH_VERSION} EXACT REQUIRED)
@@ -215,15 +225,10 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development)
 # can't be found otherwise, it may only be needed to force-link libnvrtc (and
 # maybe nvtoolsext?) but for now I force-link everything since it is easier
 # althought a bit dirtier.
-if(DO_LOCAL_INSTALL)
-    set(TORCHANI_LOCAL_LIB /home/$ENV{USER}/.local/lib/Torchani)
-else()
-    set(TORCHANI_LOCAL_LIB "/usr/local/lib/Torchani")
-endif()
 set(TORCHANI_LIBRARIES_INSTALL_RPATH
     ${LIBTORCH_LIBRARY_DIR}
     ${CUDA_TOOLKIT_ROOT_DIR}
-    ${TORCHANI_LOCAL_LIB}
+    ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
 )
 
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
@@ -324,15 +329,6 @@ catch_discover_tests(tests)
 
 # Set boilerplate variables needed for target installation
 
-# Default CMake installation prefix for Linux is /usr/local. Its better to
-# use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
-if(DO_LOCAL_INSTALL)
-    set(LOCAL_PREFIX /home/$ENV{USER}/.local)
-else()
-    set(LOCAL_PREFIX /usr/local)
-endif()
-set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
-message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
 
 # Set dirs for project installation
 # Note that by default in unix the project_relative(_install)_configdir are the same
