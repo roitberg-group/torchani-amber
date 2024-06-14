@@ -25,7 +25,10 @@ def _save_jit_compiled_model_results_to_file(
     )
     atomic_numbers = torch.tensor([[1, 6]], dtype=torch.long, device=device)
     input_ = (atomic_numbers, coordinates)
-    output = model(input_)
+    if "mbis" in str(model_jit_file):
+        output = model.energies_and_atomic_charges(input_)
+    else:
+        output = model(input_)
     energy = output.energies * units.HARTREE_TO_KCALMOL
     force = -torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0][0]
     # Avoid qbc for non-ensembles

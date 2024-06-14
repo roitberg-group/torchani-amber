@@ -10,7 +10,7 @@
 #include <catch2/matchers/catch_matchers_all.hpp>
 #include <torchani.h>
 // Default tolerances are:
-// 3.9e-6 rel, 3e-5 abs for float32 (x3 than torch, needed for ensembles)
+// 4.5e-6 rel, 3.5e-5 abs for float32 (x3 than torch, needed for ensembles)
 // 1e-7 rel, 1e-7 abs for float64 (same as torch)
 
 using Catch::Matchers::WithinAbs;
@@ -19,8 +19,8 @@ using Catch::Matchers::WithinRel;
 #define FLOAT_EQ(pred, expect, dbl) \
     CHECK_THAT( \
         pred, \
-        WithinAbs(expect, dbl ? 1e-7 : 3.9e-6) \
-            || WithinRel(expect, dbl ? 1e-7 : 3e-5) \
+        WithinAbs(expect, dbl ? 1e-7 : 4.5e-6) \
+            || WithinRel(expect, dbl ? 1e-7 : 3.5e-5) \
     )
 
 

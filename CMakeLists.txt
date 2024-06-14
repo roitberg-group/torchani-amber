@@ -324,7 +324,8 @@ include(Catch)
 add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 target_compile_definitions(tests PUBLIC ${TORCH_CXX_FLAGS})
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani)
+target_link_options(tests PRIVATE "LINKER:--no-as-needed")
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani cuaev)
 catch_discover_tests(tests)
 
 # Set boilerplate variables needed for target installation
