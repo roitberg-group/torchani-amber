@@ -192,10 +192,10 @@ message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 # Default CMake installation prefix for Linux is /usr/local. Its better to
 # use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND DO_LOCAL_INSTALL)
-    set(LOCAL_PREFIX /home/$ENV{USER}/.local)
-    set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
+    set(TORCHANI_LOCAL_PREFIX /home/$ENV{USER}/.local)
+    set(CMAKE_INSTALL_PREFIX ${TORCHANI_LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
     # TODO: Is it necessary to set this again for local scope?
-    set(CMAKE_INSTALL_PREFIX ${LOCAL_PREFIX})
+    set(CMAKE_INSTALL_PREFIX ${TORCHANI_LOCAL_PREFIX})
 endif()
 message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
 
@@ -230,6 +230,7 @@ set(TORCHANI_LIBRARIES_INSTALL_RPATH
     ${CUDA_TOOLKIT_ROOT_DIR}
     ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
 )
+message(STATUS "Rpath will be ${TORCHANI_LIBRARIES_INSTALL_RPATH}")
 
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
