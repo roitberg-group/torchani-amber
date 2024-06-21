@@ -22,11 +22,14 @@ dependencies:
   - setuptools-scm>=8
   - gxx_linux-64=11.4
   - gcc_linux-64=11.4
-  - gfortran_linux-64=11.4
   - nvidia::cuda-libraries-dev=11.8
   - nvidia::cuda-nvcc=11.8
   - nvidia::cuda-cccl=11.8
   - cmake>=3.24
+
+  # Needed only to compile sander/pmememd serial and mpi
+  - gfortran_linux-64=11.4
+  - openmpi=4.1.5
 
   # Pretty printing
   - rich
