@@ -26,6 +26,7 @@ cmake \
     -DUSE_ACTIVE_CONDA_CUDNN=$_use_conda \
     -DCMAKE_C_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc" \
     -DCMAKE_CXX_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
+    -DCMAKE_Fortran_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran" \
     -DCMAKE_CUDA_HOST_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
 && cmake \
     --build "$_build_dir"
