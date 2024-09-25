@@ -21,6 +21,7 @@ fi
 cmake \
     -S"$_src_dir" \
     -B"$_build_dir" \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DUSE_ACTIVE_CONDA_PYTORCH=$_use_conda \
     -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$_use_conda \
     -DUSE_ACTIVE_CONDA_CUDNN=$_use_conda \
