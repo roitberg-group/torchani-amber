@@ -80,7 +80,8 @@ def _check_which_models_need_compilation(
         for kwargs in model_kwargs:
             spec = ModelSpec(cls=name, **kwargs)
             if spec.file_path().exists() and not force_recompilation:
-                specs.append(spec)
+                continue
+            specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
