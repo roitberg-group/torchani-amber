@@ -6,20 +6,26 @@ usage() { echo "Usage: [OPTION]...
     All options are boolean flags.
     -I Don't install
     -B Don't build
+    -T Don't run tests
     -c Use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
     -h Print this message" 1>&2; }
 
 use_conda=ON
+run_tests=1
 cmake_build=1
 cmake_install=1
-while getopts "IBCh" o; do
+while getopts "TIBCh" o; do
     case "${o}" in
+        T)
+            run_tests=0
+            ;;
         I)
             cmake_install=0
             ;;
         B)
             cmake_build=0
             cmake_install=0
+            run_tests=0
             ;;
         C)
             use_conda=OFF
@@ -67,8 +73,22 @@ cmake \
 
 if [ "$cmake_build" -eq 1 ]; then
     cmake --build "$bld_dir"
+    if [ "$run_tests" -eq 1 ]; then
+        echo "Starting to run tests ..."
+        if ! ./build/tests; then
+            echo "Tests failed!!"
+            # Skip install step if the tests fail
+            cmake_install=0
+        fi
+    else
+        echo "Skipping test step"
+    fi
+else
+    echo "Skipping build step"
 fi
 
 if [ "$cmake_install" -eq 1 ]; then
     cmake --install "$bld_dir"
+else
+    echo "Skipping install step"
 fi
