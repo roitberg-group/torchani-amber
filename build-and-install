@@ -1,0 +1,74 @@
+#!/bin/bash
+
+usage() { echo "Usage: [OPTION]...
+    Configure, Generate buildsystem, build, and install Torchani
+
+    All options are boolean flags.
+    -I Don't install
+    -B Don't build
+    -c Use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
+    -h Print this message" 1>&2; }
+
+use_conda=ON
+cmake_build=1
+cmake_install=1
+while getopts "IBCh" o; do
+    case "${o}" in
+        I)
+            cmake_install=0
+            ;;
+        B)
+            cmake_build=0
+            cmake_install=0
+            ;;
+        C)
+            use_conda=OFF
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "$o"
+            echo "Incorrect argument"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$use_conda" = ON ]; then
+    c_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc"
+    cxx_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++"
+    fortran_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran"
+else
+    c_path="$(which cc)"
+    cxx_path="$(which c++)"
+    fortran_path="$(which gfortran)"
+fi
+
+# The directory of this script, taken from:
+# https://stackoverflow.com/questions/59895/
+# how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
+src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+bld_dir="$src_dir/build"
+cmake \
+    -S"$src_dir" \
+    -B"$bld_dir" \
+    --install-prefix "$HOME/.local/" \
+    -DUSE_ACTIVE_CONDA_PYTORCH=$use_conda \
+    -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
+    -DUSE_ACTIVE_CONDA_CUDNN=$use_conda \
+    -DCMAKE_C_COMPILER="$c_path" \
+    -DCMAKE_CXX_COMPILER="$cxx_path" \
+    -DCMAKE_CUDA_HOST_COMPILER="$cxx_path" \
+    -DCMAKE_Fortran_COMPILER="$fortran_path" \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+if [ "$cmake_build" -eq 1 ]; then
+    cmake --build "$bld_dir"
+fi
+
+if [ "$cmake_install" -eq 1 ]; then
+    cmake --install "$bld_dir"
+fi
