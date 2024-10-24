@@ -7,7 +7,7 @@ project(
     Torchani
     LANGUAGES C CXX
     VERSION 0.1
-    DESCRIPTION "C++ wrapper for Torchani"
+    DESCRIPTION "C++ wrapper to execute ANI-Style models from TorchANI"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
 
@@ -15,12 +15,8 @@ project(
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-# Dump build database into compile_commands.json
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 # Make private internal modules available
-set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
-list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Internal modules
 include(Msg)
@@ -322,43 +318,43 @@ catch_discover_tests(tests)
 # Create and install files for discovery and config by downstream pkgs
 # - pkg-config-file: <Pkg>Config.cmake
 # - pkg-ver-file: <Pkg>ConfigVersion.cmake
-set(PKG_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
+set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
 write_basic_package_version_file(
-    "${PKG_BINARY_VERSION_PATH}"
+    "${PKG_VERSION_FILE_BLDTREE_PATH}"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY ExactVersion
 )
-set(PKG_RELATIVE_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
-set(PKG_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+set(PKG_RELATIVE_DATADIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
 configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-    "${PKG_BINARY_CONFIG_PATH}"
-    INSTALL_DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
+    "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+    INSTALL_DESTINATION "${PKG_RELATIVE_DATADIR}"
 )
 install(
-    FILES
-        "${PKG_BINARY_CONFIG_PATH}"
-        "${PKG_BINARY_VERSION_PATH}"
-    DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
+    FILES  # Paths to files in the bldtree
+        "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+        "${PKG_VERSION_FILE_BLDTREE_PATH}"
+    DESTINATION "${PKG_RELATIVE_DATADIR}"
 )
 # TODO Add model.jit.pt files here
 
 # Install targets
 # - pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
 # - corresponding targets
-set(PKG_EXPORT_FILESET "${PROJECT_NAME}Targets")
+set(PKG_EXPORT_FILESET_NAME "${PROJECT_NAME}Targets")
 install(
-    EXPORT ${PKG_EXPORT_FILESET}
-    FILE "${PROJECT_NAME}Targets.cmake"
+    EXPORT ${PKG_EXPORT_FILESET_NAME}
+    FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
     NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
-    DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
+    DESTINATION "${PKG_RELATIVE_DATADIR}"
 )
 
 install(
     TARGETS
         torchani
         cuaev
-    EXPORT ${PKG_EXPORT_FILESET}  # Add reference in the pkg-export-fileset
+    EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}"
 )
