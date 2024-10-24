@@ -1,7 +1,8 @@
 #!/bin/bash
 
 usage() { echo "Usage: [OPTION]...
-    Configure, Generate buildsystem, build, and install Torchani
+    Configure, Generate buildsystem, build, run tests, and install the TorchANI C++
+    interface.
 
     All options are boolean flags.
     -I Don't install
