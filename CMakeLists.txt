@@ -36,7 +36,6 @@ OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
 LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
 # General: options and flags
-option(DO_LOCAL_INSTALL "Install in ~/.local instead of /usr/local" ON)
 set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Requires 'USE_ACTIVE_CONDA_PYTORCH=OFF' and 'INSTALL_CUSTOM_LIBTORCH=ON'")
 
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
@@ -188,16 +187,6 @@ else()
 endif()
 
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
-
-# Default CMake installation prefix for Linux is /usr/local. Its better to
-# use ~/.local since it is typically user-writable in Linux systems (no sudo needed)
-if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND DO_LOCAL_INSTALL)
-    set(TORCHANI_LOCAL_PREFIX /home/$ENV{USER}/.local)
-    set(CMAKE_INSTALL_PREFIX ${TORCHANI_LOCAL_PREFIX} CACHE PATH "Installation prefix" FORCE)
-    # TODO: Is it necessary to set this again for local scope?
-    set(CMAKE_INSTALL_PREFIX ${TORCHANI_LOCAL_PREFIX})
-endif()
-message(STATUS "Install location set to: ${CMAKE_INSTALL_PREFIX}")
 
 # LibTorch is a required dependency
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
