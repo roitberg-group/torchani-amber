@@ -18,8 +18,8 @@ include(GNUInstallDirs)
 # Dump build database into compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Make private internal modules accessible
-set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/share/cmake/${PROJECT_NAME}/private")
+# Make private internal modules available
+set(PRIVATE_MODULES_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH ${PRIVATE_MODULES_DIR})
 
 # Internal modules
@@ -214,6 +214,8 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development)
 # can't be found otherwise, it may only be needed to force-link libnvrtc (and
 # maybe nvtoolsext?) but for now I force-link everything since it is easier
 # althought a bit dirtier.
+
+# TODO: FULL_LIBDIR *should be fixed here*
 set(TORCHANI_LIBRARIES_INSTALL_RPATH
     ${LIBTORCH_LIBRARY_DIR}
     ${CUDA_TOOLKIT_ROOT_DIR}
@@ -317,78 +319,46 @@ target_link_options(tests PRIVATE "LINKER:--no-as-needed")
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani cuaev)
 catch_discover_tests(tests)
 
-# Set boilerplate variables needed for target installation
-
-
-# Set dirs for project installation
-# Note that by default in unix the project_relative(_install)_configdir are the same
-set(PROJECT_RELATIVE_CONFIGDIR "share/cmake/${PROJECT_NAME}")  # local configdir
-set(PROJECT_RELATIVE_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
-set(PROJECT_RELATIVE_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
-
-# Set stems of generated and configured shareable installation files
-set(PROJECT_CONFIG_STEM "${PROJECT_NAME}Config")
-set(PROJECT_VERSION_STEM "${PROJECT_NAME}ConfigVersion")
-set(PROJECT_TARGETS_STEM "${PROJECT_NAME}Targets")
-
-# Set targets namespace
-set(PROJECT_TARGETS_NAMESPACE "${PROJECT_NAME}::")
-
-# Set PackageConfig file paths (input (source-tree) and output (binary-tree))
-set(PROJECT_CONFIG_FNAME "${PROJECT_CONFIG_STEM}.cmake")
-set(PROJECT_SOURCE_CONFIG_PATH "${CMAKE_SOURCE_DIR}/${PROJECT_RELATIVE_CONFIGDIR}/${PROJECT_CONFIG_FNAME}.in")
-set(PROJECT_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/${PROJECT_RELATIVE_CONFIGDIR}/${PROJECT_CONFIG_FNAME}")
-
-# Set PackageVersion file path (output (binary-tree) only, version file is generated on-the-fly)
-set(PROJECT_VERSION_FNAME "${PROJECT_VERSION_STEM}.cmake")
-set(PROJECT_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/${PROJECT_RELATIVE_CONFIGDIR}/${PROJECT_VERSION_FNAME}")
-
-# Set targets file path (output (binary-tree) only, targets file is generated on-the-fly)
-set(PROJECT_TARGETS_FNAME "${PROJECT_TARGETS_STEM}.cmake")
-set(PROJECT_BINARY_TARGETS_PATH "${CMAKE_BINARY_DIR}/${PROJECT_RELATIVE_INSTALL_CONFIGDIR}/${PROJECT_TARGETS_FNAME}")
-
-# Create and install files for use by downstream packages
-# - <PkgName>Config.cmake (configure_package_config_file)
-# - <PkgName>ConfigVersion.cmake (write_basic_version_file)
-# - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake  (install(EXPORT ...))
-# - <PkgName>Targets.cmake & <proj-name>Targets-*.cmake (build-tree) (export(EXPORT ...))
-
-configure_package_config_file(
-    "${PROJECT_SOURCE_CONFIG_PATH}"
-    "${PROJECT_BINARY_CONFIG_PATH}"
-    INSTALL_DESTINATION "${PROJECT_RELATIVE_INSTALL_CONFIGDIR}"
-)
+# Create and install files for discovery and config by downstream pkgs
+# - pkg-config-file: <Pkg>Config.cmake
+# - pkg-ver-file: <Pkg>ConfigVersion.cmake
+set(PKG_BINARY_VERSION_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
 write_basic_package_version_file(
-    "${PROJECT_BINARY_VERSION_PATH}"
+    "${PKG_BINARY_VERSION_PATH}"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY ExactVersion
 )
-
-install(
-    EXPORT "${PROJECT_TARGETS_STEM}"
-    FILE "${PROJECT_TARGETS_FNAME}"
-    NAMESPACE "${PROJECT_TARGETS_NAMESPACE}"
-    DESTINATION "${PROJECT_RELATIVE_INSTALL_CONFIGDIR}"
-)
-
-# Export is needed to consume the project from its build-tree, it creates
-# Targets files in the build-tree, not only in the install-prefix
-export(
-    EXPORT "${PROJECT_TARGETS_STEM}"
-    FILE "${PROJECT_BINARY_TARGETS_PATH}"
-    NAMESPACE "${PROJECT_TARGETS_NAMESPACE}"
+set(PKG_RELATIVE_INSTALL_CONFIGDIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+set(PKG_BINARY_CONFIG_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+configure_package_config_file(
+    "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+    "${PKG_BINARY_CONFIG_PATH}"
+    INSTALL_DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
 )
 install(
     FILES
-        "${PROJECT_BINARY_CONFIG_PATH}"
-        "${PROJECT_BINARY_VERSION_PATH}"
-    DESTINATION "${PROJECT_RELATIVE_INSTALL_CONFIGDIR}"
+        "${PKG_BINARY_CONFIG_PATH}"
+        "${PKG_BINARY_VERSION_PATH}"
+    DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
 )
+# TODO Add model.jit.pt files here
+
+# Install targets
+# - pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
+# - corresponding targets
+set(PKG_EXPORT_FILESET "${PROJECT_NAME}Targets")
+install(
+    EXPORT ${PKG_EXPORT_FILESET}
+    FILE "${PROJECT_NAME}Targets.cmake"
+    NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
+    DESTINATION "${PKG_RELATIVE_INSTALL_CONFIGDIR}"
+)
+
 install(
     TARGETS
         torchani
         cuaev
-    EXPORT "${PROJECT_TARGETS_STEM}"
+    EXPORT ${PKG_EXPORT_FILESET}  # Add reference in the pkg-export-fileset
     LIBRARY
-        DESTINATION "${PROJECT_RELATIVE_INSTALL_LIBDIR}"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}"
 )
