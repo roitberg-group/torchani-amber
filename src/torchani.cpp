@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -182,7 +183,7 @@ void torchani_init_atom_types_(
     }
 
     if (network_index != -1) {
-        model.get_method("set_active_members")({network_index});
+        model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
     }
     #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
