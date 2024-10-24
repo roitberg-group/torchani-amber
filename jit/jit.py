@@ -1,9 +1,9 @@
+import sys
 from dataclasses import dataclass
 import typing as tp
 from copy import deepcopy
 from pathlib import Path
 import argparse
-import warnings
 
 from tqdm import tqdm
 from rich.console import Console
@@ -18,7 +18,6 @@ class ModelSpec:
     cls: str
     neighborlist: str
     use_cuda_ops: bool
-    model_indices: tp.List[tp.Optional[int]]
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
@@ -30,11 +29,7 @@ class ModelSpec:
         _kwargs["use_cuaev_interface"] = self.use_cuda_ops
         return _kwargs
 
-    def file_path(self, index: tp.Optional[int]) -> Path:
-        if index not in self.model_indices:
-            raise ValueError(
-                f"Index must be one of the allowed model indices {self.model_indices}"
-            )
+    def file_path(self) -> Path:
         parts = []
         if self.use_cuda_ops:
             parts.append("cuaev")
@@ -46,8 +41,6 @@ class ModelSpec:
         elif self.neighborlist == "external":
             parts.append("externlist")
 
-        if index is not None:
-            parts.append(str(index))
         suffix = "-".join(parts)
         return Path(JIT_DIR / f"{self.cls.lower()}-{suffix}.pt")
 
@@ -57,14 +50,7 @@ def _check_which_models_need_compilation(
     external_neighborlist: bool,
     cuaev: bool,
 ) -> tp.List[ModelSpec]:
-    model_names_and_sizes = {
-        "ANI1x": 8,
-        "ANI1ccx": 8,
-        "ANI2x": 8,
-        "ANIdr": 7,
-        "ANIala": 1,
-        "ANImbis": 8,
-    }
+    model_names = ("ANI1x", "ANI1ccx", "ANI2x", "ANIdr", "ANIala", "ANImbis")
     model_kwargs: tp.List[tp.Dict[str, tp.Any]] = [
         {
             "neighborlist": "full_pairwise",
@@ -90,36 +76,18 @@ def _check_which_models_need_compilation(
         model_kwargs.extend(_model_kwargs)
 
     specs = []
-    for name, size in model_names_and_sizes.items():
-        idxs: tp.List[tp.Optional[int]] = [None]
-        if size > 1:
-            idxs.extend(range(size))
+    for name in model_names:
         for kwargs in model_kwargs:
-            spec = ModelSpec(cls=name, model_indices=idxs, **kwargs)
-            needed_indices = []
-            for idx in spec.model_indices:
-                file_path = spec.file_path(idx)
-                if not file_path.exists() or force_recompilation:
-                    needed_indices.append(idx)
-            if needed_indices:
-                spec.model_indices = needed_indices
-                specs.append(spec)
+            spec = ModelSpec(cls=name, **kwargs)
+            if spec.file_path().exists() and not force_recompilation:
+                continue
+            specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
-            _name = [
+            console.print(
                 f"-- {s.cls}({'cuAEV' if s.use_cuda_ops else 'pyAEV'}, {s.neighborlist})"  # noqa
-            ]
-            if None in s.model_indices:
-                _name.append("full-ensemble")
-            single_networks = []
-            for idx in s.model_indices:
-                if idx is None:
-                    continue
-                single_networks.append(str(idx))
-            if single_networks:
-                _name.append(f"single-networks:{','.join(single_networks)}")
-            console.print(", ".join(_name))
+            )
     return specs
 
 
@@ -137,16 +105,9 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
         console.print(f"-- JIT - {e}", style="yellow")
         console.print(f"-- JIT - Failed to instantiate {spec}", style="yellow")
         return False
-    # TODO: Is this needed?
-    model.requires_grad_(False)
-    indices = deepcopy(spec.model_indices)
-    if None in indices:
-        indices.remove(None)
-        _reset_jit_registry()
-        torch.jit.save(torch.jit.script(model), spec.file_path(None))
-    for index in indices:
-        _reset_jit_registry()
-        torch.jit.save(torch.jit.script(model[index]), spec.file_path(index))
+    # TODO: is this still needed?
+    _reset_jit_registry()
+    torch.jit.save(torch.jit.script(model), spec.file_path())
     return True
 
 
@@ -184,41 +145,40 @@ if __name__ == "__main__":
         action="store_true",
         default=True,
     )
-    args = parser.parse_args()
-    model_specs = _check_which_models_need_compilation(
-        force_recompilation=args.force,
-        external_neighborlist=args.external_neighborlist,
-        cuaev=args.cuaev,
-    )
-    if model_specs:
-        # If we actually need to compile something we import torch and torchani
-        # here, since the imports are slow, otherwise we skip the immports
-        console.print(
-            "JIT - Importing torch in order to JIT-compile models...",
+    try:
+        args = parser.parse_args()
+        model_specs = _check_which_models_need_compilation(
+            force_recompilation=args.force,
+            external_neighborlist=args.external_neighborlist,
+            cuaev=args.cuaev,
         )
-        import torch
-
-        # Disable some annoying torchani warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            import torchani
-        if args.disable_optimizations:
-            console.print(
-                "-- JIT - Disabling optimizations before scripting",
-            )
-            _disable_jit_optimizations()
-
-    success = True
-    console.print("-- JIT - Starting to compile models")
-    for spec in tqdm(model_specs, leave=False):
-        success = _jit_compile_and_save_models_in_spec(spec)
-
-    if success:
         if model_specs:
-            console.print("-- JIT - Done", style="green")
+            # If we actually need to compile something we import torch and torchani
+            # here, since the imports are slow, otherwise we skip the imports
+            console.print(
+                "JIT - Importing torch in order to JIT-compile models...",
+            )
+            import torch
+            import torchani
+
+            # TODO Does this do anything?
+            if args.disable_optimizations:
+                console.print(
+                    "-- JIT - Disabling optimizations before scripting",
+                )
+                _disable_jit_optimizations()
+        success = True
+        console.print("-- JIT - Starting to compile models")
+        for spec in tqdm(model_specs, leave=False):
+            success = _jit_compile_and_save_models_in_spec(spec)
+
+        if success:
+            if model_specs:
+                console.print("-- JIT - Done", style="green")
+            else:
+                console.print("-- JIT - Done (nothing to compile)", style="green")
         else:
-            console.print("-- JIT - Done (nothing to compile)", style="green")
-    else:
-        console.print(
-            "-- JIT - Done, but failed to instantiate some models", style="yellow"
-        )
+            console.print("-- JIT - Done, but failed for some models", style="yellow")
+    except Exception as e:
+        console.print(f"-- JIT - Failed with exception {type(e)}: {e}", style="red")
+        sys.exit(1)

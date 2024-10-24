@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -120,14 +121,9 @@ void torchani_init_atom_types_(
         }
     }
 
-    if (network_index == -1) {
-        model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + ".pt";
-    } else {
-        model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + "-" +
-            std::to_string(network_index) + ".pt";
-    }
+    model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + ".pt";
     #ifdef DEBUG
-    std::cout << model_jit_fname << '\n';
+    std::cout << "model_jit_fname: " << model_jit_fname << '\n';
     #endif
 
     torchani_set_device(use_cuda_device, device_index);
@@ -152,7 +148,7 @@ void torchani_init_atom_types_(
         atomic_numbers, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
     #ifdef DEBUG
-    std::cout << jit_model_path << '\n';
+    std::cout << "jit_model_path: " << jit_model_path << '\n';
     #endif
     torchani_atomic_numbers = torchani_atomic_numbers.to(torchani_device);
     torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
@@ -184,6 +180,10 @@ void torchani_init_atom_types_(
                   << "Could not load model correctly from path: " << jit_model_path
                   << std::endl;
         std::exit(2);
+    }
+
+    if (network_index != -1) {
+        model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
     }
     #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
