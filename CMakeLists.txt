@@ -39,6 +39,7 @@ set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Req
 set(REQUIRED_TORCH_VERSION "2.3" CACHE STRING "Request this version of PyTorch/LibTorch")
 option(USE_ACTIVE_CONDA_PYTORCH "Use PyTorch from active conda environment" ON)
 option(INSTALL_CUSTOM_LIBTORCH "Download LibTorch library and extract locally" OFF)
+option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libraries" ON)
 # The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF""
 set(REQUIRED_TORCH_CUDA_VERSION "11.8" CACHE STRING "Request PyTorch/LibTorch binaries precompiled for this CUDA Toolkit version")
 # The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF" and "INSTALL_CUSTOM_LIBTORCH=OFF"
@@ -184,7 +185,7 @@ endif()
 
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
-# LibTorch is a required dependency
+# LibTorch is a required dep
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 
@@ -192,32 +193,7 @@ find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 # Set Python_LIBRARIES, Python_INCLUDE_DIRS
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
-# Now build both libcuaev and libtorchanis
-#
-# NOTE: In both cases the install rpath is hardcoded to be the same as the link path,
-# to avoid issues if the correct CUDA is not installed system-wide. If this is
-# not done then CMake tries to re-link the binaries at install-time, and
-# prefers the system CUDA, which may be bad.
-#
-# NOTE: When doing this, both the build-tree and the install-tree binaries are
-# still linked to the CUDA driver library from the system (libcuda.so) by
-# default. This behavior seems to be a design choice of Conda, since envs don't
-# have a "real" libcuda.so, just a "stub" libcuda.so. I belive this is ok,
-# since the cuda driver is unrelated to the CUDA Toolkit, but I'm documenting
-# it here for completeness.
-#
-# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
-# can't be found otherwise, it may only be needed to force-link libnvrtc (and
-# maybe nvtoolsext?) but for now I force-link everything since it is easier
-# althought a bit dirtier.
-
-# TODO: FULL_LIBDIR *should be fixed here*
-set(TORCHANI_LIBRARIES_INSTALL_RPATH
-    ${LIBTORCH_LIBRARY_DIR}
-    ${CUDA_TOOLKIT_ROOT_DIR}
-    ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
-)
-
+# Build both libcuaev and libtorchani
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
     cuaev
@@ -226,12 +202,6 @@ add_library(
     "${CUAEV_ROOT}/aev.cu"
     "${CUAEV_ROOT}/aev.h"
     "${CUAEV_ROOT}/cuaev_cub.cuh"
-)
-set_target_properties(
-    cuaev
-    PROPERTIES
-        INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
 )
 target_compile_features(cuaev PRIVATE cxx_std_17)
 # TORCHANI_OPT and "-use_fast_math" make calculations faster in libcuaev.so.
@@ -256,12 +226,6 @@ target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
-set_target_properties(
-    torchani
-    PROPERTIES
-        INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
-)
 target_compile_options(
     torchani
     PRIVATE
@@ -288,6 +252,45 @@ target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
 target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
+
+# For both libcuaev and libtorchani, the install RPATH is set by default to be
+# the same as the link path to avoid issues if the correct CUDA is not
+# installed system-wide. If this is not done then CMake tries to re-link the
+# binaries at install-time, and prefers the system CUDA, which may be bad. In addition,
+# if the Conda PyTorch is used, TorchANI would not be able to find the necessary
+# libraries even if the env is active, since PyTorch doesn't expose them in
+# ${CONDA_PREFIX}/lib.
+#
+# NOTE: When doing this, both the build-tree and the install-tree binaries are
+# still linked to the CUDA driver library from the system (libcuda.so) by
+# default. This behavior seems to be a design choice of Conda, since envs don't
+# have a "real" libcuda.so, just a "stub" libcuda.so. I belive this is ok,
+# since the CUDA driver is unrelated to the CUDA Toolkit, but I'm documenting
+# it here for completeness.
+#
+# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
+# can't be found otherwise, it may only be needed to force-link libnvrtc (and
+# maybe nvtoolsext?) but for now I force-link everything since it is easier
+# althought a bit dirtier.
+if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
+    set(TORCHANI_LIBRARIES_INSTALL_RPATH
+        ${LIBTORCH_LIBRARY_DIR}
+        ${CUDA_TOOLKIT_ROOT_DIR}
+        ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
+    )
+    set_target_properties(
+        cuaev
+        PROPERTIES
+            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
+            INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+    set_target_properties(
+        torchani
+        PROPERTIES
+            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
+            INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
 #
