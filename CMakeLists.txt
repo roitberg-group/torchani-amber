@@ -43,7 +43,7 @@ option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during buil
 # The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF""
 set(REQUIRED_TORCH_CUDA_VERSION "11.8" CACHE STRING "Request PyTorch/LibTorch binaries precompiled for this CUDA Toolkit version")
 # The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF" and "INSTALL_CUSTOM_LIBTORCH=OFF"
-set(CUSTOM_PYTORCH_CUDNN_VERSION "8.9.7" CACHE STRING "Request PyTorch binaries precompiled for this cuDNN version")
+set(CUSTOM_PYTORCH_CUDNN_VERSION "8.7.0" CACHE STRING "Request PyTorch binaries precompiled for this cuDNN version")
 set(CUSTOM_PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Request PyTorch binaries precompiled for this Python version")
 # Validate options
 if(INSTALL_CUSTOM_LIBTORCH AND USE_ACTIVE_CONDA_PYTORCH)
