@@ -6,8 +6,9 @@ usage() { echo "Usage: [OPTION]...
 
     All options are boolean flags.
     -I Don't install
-    -B Don't build
+    -B Don't build, only configure and generate
     -T Don't run tests
+    -g Build in Debug configuration
     -c Use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
     -h Print this message" 1>&2; }
 
@@ -15,7 +16,8 @@ use_conda=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
-while getopts "TIBCh" o; do
+cmake_build_type="Release"
+while getopts "TIBCgh" o; do
     case "${o}" in
         T)
             run_tests=0
@@ -30,6 +32,9 @@ while getopts "TIBCh" o; do
             ;;
         C)
             use_conda=OFF
+            ;;
+        g)
+            cmake_build_type="Debug"
             ;;
         h)
             usage
@@ -63,6 +68,7 @@ cmake \
     -S"$src_dir" \
     -B"$bld_dir" \
     --install-prefix "$HOME/.local/" \
+    -DCMAKE_BUILD_TYPE="$cmake_build_type" \
     -DUSE_ACTIVE_CONDA_PYTORCH=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDNN=$use_conda \
