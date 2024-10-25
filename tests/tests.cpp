@@ -82,6 +82,7 @@ TEST_CASE("C bindings") {
         int use_cuaev = std::get<2>(device_spec); // Only enabled for cuda devices
         std::string device_suffix = std::get<3>(device_spec);
         INFO("Testing model on device: " << "device" << device_suffix);
+        INFO("cuAEV: " << (use_cuaev == 1));
         // TODO: Cell seems to be too small for pbc, but this should generate
         // tests for the cell too
         int use_cell_list = 0;
