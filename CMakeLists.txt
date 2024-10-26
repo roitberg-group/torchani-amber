@@ -45,17 +45,15 @@ set(REQUIRED_TORCH_CUDA_VERSION "11.8" CACHE STRING "Request PyTorch/LibTorch bi
 # The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF" and "INSTALL_CUSTOM_LIBTORCH=OFF"
 set(CUSTOM_PYTORCH_CUDNN_VERSION "8.7.0" CACHE STRING "Request PyTorch binaries precompiled for this cuDNN version")
 set(CUSTOM_PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Request PyTorch binaries precompiled for this Python version")
+
 # Validate options
 if(INSTALL_CUSTOM_LIBTORCH AND USE_ACTIVE_CONDA_PYTORCH)
     msg_error("'USE_ACTIVE_CONDA_PYTORCH=OFF' needed to install custom LibTorch")
 endif()
-if(COMPILE_WITH_CXX11ABI)
-    if(USE_ACTIVE_CONDA_PYTORCH)
-        msg_error("'USE_ACTIVE_CONDA_PYTORCH=OFF' needed to compile with the CXX11ABI")
-    elseif(NOT INSTALL_CUSTOM_LIBTORCH)
-        msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' needed to compile with the CXX11ABI")
-    endif()
-else()
+
+if(COMPILE_WITH_CXX11ABI AND (USE_ACTIVE_CONDA_PYTORCH OR (NOT INSTALL_CUSTOM_LIBTORCH)))
+    msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' and 'USE_ACTIVE_CONDA_PYTORCH=OFF' needed to compile with the CXX11ABI")
+elseif(NOT COMPILE_WITH_CXX11ABI)
     message(STATUS "NOTE: All binaries will be compiled with the pre-C++11 ABI")
     message(STATUS "Linking to binaries compiled with the C++11 ABI will not be possible")
     message(STATUS "If you need this feature then reconfigure with the following options:")
@@ -66,7 +64,7 @@ endif()
 option(USE_ACTIVE_CONDA_CUDNN "Use cuDNN from active conda environment (if needed)" ON)
 option(SELECT_CUSTOM_CUDNN "Explicitly specify a cuDNN library" OFF)
 # The following options are only used if "USE_ACTIVE_CONDA_CUDNN=OFF" and "SELECT_CUSTOM_CUDNN=ON"
-set(CUSTOM_CUDNN_VERSION "8.9.7" CACHE STRING "cuDNN version to download")
+set(CUSTOM_CUDNN_VERSION "8.7.0" CACHE STRING "cuDNN version to download")
 set(CUSTOM_CUDNN_CUDA_VERSION "11.8" CACHE STRING "CUDA version cuDNN is compatible with")
 # Validate options
 if(USE_ACTIVE_CONDA_CUDNN AND SELECT_CUSTOM_CUDNN)
@@ -81,11 +79,7 @@ set(CUSTOM_CUDA_TOOLKIT_VERSION "11.8" CACHE STRING "CUDA Toolkit version used t
 # JIT: Options and flags
 option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
 option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
-option(JIT_CUAEV "JIT-compile models with cuAEV extension" ON)
-option(JIT_EXTERNAL_NEIGHBORLIST "JIT-compile models with external neighborlist" OFF)
 option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
-
-# Use conda packages in current environment
 
 # PyTorch/LibTorch setup
 if(USE_ACTIVE_CONDA_PYTORCH)
@@ -176,8 +170,6 @@ if(JIT_COMPILE_MODELS)
     TorchScriptUtils_jit_compile_models(
         FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
         DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
-        WITH_CUAEV ${JIT_COMPILE_WITH_CUAEV}
-        WITH_EXTERNAL_NEIGHBORLIST ${JIT_COMPILE_WITH_EXTERNAL_NEIGHBORLIST}
     )
 else()
     msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")

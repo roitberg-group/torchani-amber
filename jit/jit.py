@@ -1,7 +1,6 @@
 import sys
 from dataclasses import dataclass
 import typing as tp
-from copy import deepcopy
 from pathlib import Path
 import argparse
 
@@ -17,77 +16,36 @@ JIT_DIR = Path(__file__).resolve().parent
 class ModelSpec:
     cls: str
     neighborlist: str
-    use_cuda_ops: bool
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        _kwargs: tp.Dict[str, tp.Any] = {"neighborlist": self.neighborlist}
-        if self.cls in ("ANIdr", "ANImbis"):
-            _kwargs["use_cuda_ops"] = self.use_cuda_ops
-            return _kwargs
-        _kwargs["use_cuda_extension"] = self.use_cuda_ops
-        _kwargs["use_cuaev_interface"] = self.use_cuda_ops
-        return _kwargs
+        return {"neighborlist": self.neighborlist, "compute_strategy": "cuaev"}
 
     def file_path(self) -> Path:
-        parts = []
-        if self.use_cuda_ops:
-            parts.append("cuaev")
-
         if self.neighborlist == "cell_list":
-            parts.append("celllist")
+            suffix = "celllist"
         elif self.neighborlist == "full_pairwise":
-            parts.append("stdlist")
-        elif self.neighborlist == "external":
-            parts.append("externlist")
-
-        suffix = "-".join(parts)
+            suffix = "stdlist"
         return Path(JIT_DIR / f"{self.cls.lower()}-{suffix}.pt")
 
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
-    external_neighborlist: bool,
-    cuaev: bool,
 ) -> tp.List[ModelSpec]:
     model_names = ("ANI1x", "ANI1ccx", "ANI2x", "ANIdr", "ANIala", "ANImbis")
-    model_kwargs: tp.List[tp.Dict[str, tp.Any]] = [
-        {
-            "neighborlist": "full_pairwise",
-            "use_cuda_ops": False,
-        },
-        {
-            "neighborlist": "cell_list",
-            "use_cuda_ops": False,
-        },
-    ]
-    if external_neighborlist:
-        model_kwargs.append(
-            {
-                "neighborlist": "external",
-                "use_cuda_ops": False,
-            }
-        )
-
-    if cuaev:
-        _model_kwargs = deepcopy(model_kwargs)
-        for d in _model_kwargs:
-            d.update({"use_cuda_ops": True})
-        model_kwargs.extend(_model_kwargs)
+    neighborlists = ["full_pairwise", "cell_list"]
 
     specs = []
     for name in model_names:
-        for kwargs in model_kwargs:
-            spec = ModelSpec(cls=name, **kwargs)
+        for nl in neighborlists:
+            spec = ModelSpec(cls=name, neighborlist=nl)
             if spec.file_path().exists() and not force_recompilation:
                 continue
             specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
-            console.print(
-                f"-- {s.cls}({'cuAEV' if s.use_cuda_ops else 'pyAEV'}, {s.neighborlist})"  # noqa
-            )
+            console.print(f"-- {s.cls}({s.neighborlist})")  # noqa
     return specs
 
 
@@ -131,26 +89,14 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--external-neighborlist",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
         "--force",
         action="store_true",
         default=False,
-    )
-    parser.add_argument(
-        "--cuaev",
-        action="store_true",
-        default=True,
     )
     try:
         args = parser.parse_args()
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
-            external_neighborlist=args.external_neighborlist,
-            cuaev=args.cuaev,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
