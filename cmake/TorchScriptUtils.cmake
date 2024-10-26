@@ -8,8 +8,6 @@ function(TorchScriptUtils_jit_compile_models)
         oneValueArgs
         DISABLE_OPTIMIZATIONS
         FORCE_RECOMPILATION
-        _FN_WITH_EXTERNAL_NEIGHBORLIST
-        WITH_CUAEV
     )
     set(multiValueArgs "")
     cmake_parse_arguments(
@@ -26,12 +24,6 @@ function(TorchScriptUtils_jit_compile_models)
     endif()
     if(_FN_FORCE_RECOMPILATION)
         list(APPEND CMD "--force")
-    endif()
-    if(_FN_WITH_EXTERNAL_NEIGHBORLIST)
-        list(APPEND CMD "--external-neighborlist")
-    endif()
-    if(_FN_WITH_CUAEV)
-        list(APPEND CMD "--cuaev")
     endif()
     execute_process(COMMAND ${CMD})
 endfunction()

@@ -99,26 +99,17 @@ void torchani_init_atom_types_(
     if (use_cuaev and not use_cuda_device) {
         std::cerr
             << "Error in libtorchani\n"
-            << "A CUDA capable device must be selected to use the cuaev extension"
+            << "A CUDA capable device must be selected to use the cuAEV extension"
             << std::endl;
         std::exit(2);
     }
-    if (use_cuaev) {
-        if (use_cell_list) {
-            suffix = "-cuaev-celllist";
-        } else if (use_external_neighborlist) {
-            suffix = "-cuaev-externlist";
-        } else {
-            suffix = "-cuaev-stdlist";
-        }
+
+    if (use_cell_list) {
+        suffix = "-celllist";
+    } else if (use_external_neighborlist) {
+        suffix = "-externlist";
     } else {
-        if (use_cell_list) {
-            suffix = "-celllist";
-        } else if (use_external_neighborlist) {
-            suffix = "-externlist";
-        } else {
-            suffix = "-stdlist";
-        }
+        suffix = "-stdlist";
     }
 
     model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + ".pt";
@@ -182,8 +173,14 @@ void torchani_init_atom_types_(
         std::exit(2);
     }
 
+    // Set the correct model configuration
     if (network_index != -1) {
         model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
+    }
+    if (use_cuaev) {
+        model.get_method("set_compute_strategy")({"cuaev"});
+    } else {
+        model.get_method("set_compute_strategy")({"pyaev"});
     }
     #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
