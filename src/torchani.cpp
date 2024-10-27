@@ -191,12 +191,7 @@ void torchani_init_atom_types_(
     model.to(torchani_precision);
     #ifdef DEBUG
     std::cout << "Cast model to the specified precision" << '\n';
-    #endif
-    // Long tensors are recast to kLong, this is necessary because
-    // to(torch::kDouble) also casts buffers to double (or float)
-    model.get_method("_recast_long_buffers")({});
-    #ifdef DEBUG
-    std::cout << "Finalized Torchani Initialization" << '\n';
+    std::cout << "Finalized TorchANI Initialization" << '\n';
     #endif
 }
 
