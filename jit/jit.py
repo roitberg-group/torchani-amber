@@ -19,7 +19,7 @@ class ModelSpec:
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        return {"neighborlist": self.neighborlist, "compute_strategy": "cuaev"}
+        return {"neighborlist": self.neighborlist, "strategy": "cuaev"}
 
     def file_path(self) -> Path:
         if self.neighborlist == "cell_list":
