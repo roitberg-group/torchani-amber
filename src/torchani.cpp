@@ -178,9 +178,9 @@ void torchani_init_atom_types_(
         model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
     }
     if (use_cuaev) {
-        model.get_method("set_compute_strategy")({"cuaev"});
+        model.get_method("set_strategy")({"cuaev"});
     } else {
-        model.get_method("set_compute_strategy")({"pyaev"});
+        model.get_method("set_strategy")({"pyaev"});
     }
     #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
