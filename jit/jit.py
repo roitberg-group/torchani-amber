@@ -24,7 +24,7 @@ class ModelSpec:
     def file_path(self) -> Path:
         if self.neighborlist == "cell_list":
             suffix = "celllist"
-        elif self.neighborlist == "full_pairwise":
+        elif self.neighborlist == "all_pairs":
             suffix = "stdlist"
         return Path(JIT_DIR / f"{self.cls.lower()}-{suffix}.pt")
 
@@ -33,7 +33,7 @@ def _check_which_models_need_compilation(
     force_recompilation: bool,
 ) -> tp.List[ModelSpec]:
     model_names = ("ANI1x", "ANI1ccx", "ANI2x", "ANIdr", "ANIala", "ANImbis")
-    neighborlists = ["full_pairwise", "cell_list"]
+    neighborlists = ["all_pairs", "cell_list"]
 
     specs = []
     for name in model_names:
