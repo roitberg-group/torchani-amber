@@ -1,4 +1,4 @@
-# Torchani-Amber interface
+# TorchANI-Amber interface
 
 This interface works with the AMBER suite of programs (specifically pmemd and
 sander). It allows energies and forces to be calculated with a deep neural
@@ -13,10 +13,9 @@ ANI-2x supports in addition F, Cl and S.
 
 ## Instructions
 
-The main supported way to build and install the torchani interface is using `CMake`,
-and calling it from inside a `conda` (or `mamba`) environment. The necessary
-steps are described next, but if you know what you are doing feel free to use your
-own procedure.
+The main supported way to build and install the torchani interface is using `CMake`, and
+calling it from inside a `conda` (or `mamba`) environment. The necessary steps are
+described next. Different build+install procedures are not tested as of now.
 
 Note that a GCC version that supports C++17 is needed
 to compile torchani-amber (typically > 9 is enough, it is tested with 11.4).
@@ -41,20 +40,19 @@ pip install --no-deps --no-build-isolation --config-settings=--global-option=ext
 cd ../..
 
 # (5) Build and install libtorchani using the cmake.sh script
-bash ./cmake.sh
-# Alternatively, this can be done by invoking cmake manually with:
-# cmake -S. -B./build && cmake --build ./build && cmake --install ./build
+# ADVANCED: If you want to perform your custom modifications to the build, check the
+# script and/or CMakeLists.txt file before running
+bash ./run-cmake.sh
 
-# (6) Deactivate the environment.
-conda deactivate ani-amber
-
-# (7) You may have to add ~/.local/bin to your PATH, if it isn't already
+# (6) You may have to add ~/.local/bin to your PATH, if it isn't already
 # there, since by default torchani is installed into ~/.local
-mkdir -P ~/.local/bin
-cat PATH="$HOME/.local/bin:$PATH" >> ~/.bashrc  # Or corresponding file of your shell
+mkdir -P ~/.local/lib
+# If using bash, for example, run:
+cat LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH" >> ~/.bashrc
 
-# (8) compile Amber using cmake (Amber will automatically find torchani and link it
-# to its md engines, SANDER and PMEMD)
+# (7) compile Amber using cmake (Amber will automatically find torchani and link it
+# to its MD engines, Sander and Pmemd)
+conda install -c conda-forge gfortran_linux-64=11.4 openmpi=4.1.5  # Sander, Pmemd deps
 # Follow instructions in https://ambermd.org/
 ```
 
@@ -66,7 +64,7 @@ it*, since this will remove the installed libraries from your system
 
 ## Note about CUDA and LD_LIBRARY_PATH
 
-Torchani is tested with a specific version of the CUDA Toolkit.. It is
+Torchani is tested with a specific version of the CUDA Toolkit. It is
 recommended that the CUDA Toolkit be installed using conda (or mamba). When
 installing the library, however, the path's to the correct CUDA Toolkit's liked
 libraries may get overriden if the system has a different Toolkit available and
