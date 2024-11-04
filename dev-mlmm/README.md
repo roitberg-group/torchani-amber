@@ -1,7 +1,7 @@
 # Manual for the usage of TORCHANI as a QM engine in AMBER (ML/MM)
 
 First, the variable `ifqnt` in the &cntrl namelist must be set to 1 to turn on
-the qmmm calculation, qm_theory must be set to `extern`, and the $ani namelist
+the qmmm calculation, qm_theory must be set to `extern`, and the &ani namelist
 must be included bellow the &qmmm namelist.
 
 qmmm_int = 5 o 2 are available to use with the interface. If set to 2, the
