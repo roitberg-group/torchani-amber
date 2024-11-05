@@ -1,0 +1,32 @@
+! Constant T dynamics
+&cntrl
+    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    imin = 0
+    ntx = 1
+    ntpr = 1
+    ntwx = 1
+    nstlim = 1000
+    dt = 0.001
+    tempi = 300.0
+    temp0 = 300.0
+    cut = 9999.0
+    ntt = 3
+    ntc = 1
+    ntf = 1
+    gamma_ln = 2.0
+    ig = 5541
+    igb = 6
+/
+&qmmm
+    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
+    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
+    qmmask = ':1',  ! Select the first molecule as the QM-region
+    qmcut = 15.0  ! Recommended
+/
+&ani
+    use_cuda_device = .true.
+    use_double_precision = .false.
+    cuda_device_index = 0
+    model_index = -1
+    model_type = "ani1x"
+/
