@@ -109,85 +109,79 @@ Toolkit, cuDNN and LibTorch. There are no plans to address this limitation.
 
 ## Usage
 
-TODO: Write something more comprehensive.
+Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
 
-Familiarity with Pmemd and/or Sander is assumed in what follows.
-
-To use the potential with Amber you must include three different namelists:
+To use TorchANI-Amber to run full-ML simulations you must include three different
+namelists:
 - First the usual `&cntrl` namelist, which *must have* the flag `iextpot = 1`, together
   with the usual simulation configuration.
-- Second, the `&extpot` namelist, which consists only on the value `extprog =
-  'torchani'`.
+- Second, the `&extpot` namelist, with the only setting `extprog = 'TORCHANI'`.
 - Third, the `&ani` namelist, which has the actual `TorchANI` configuration.
 
-The `&ani` namelist has the following options:
+The `&ani` namelist has the following basic options:
 - `model_type` (string)
    The neural network to choose. Possible values are `"ani1x"`, `"ani1ccx"`, `"ani2x"`,
    `anidr`, and `"custom"`. For usage of "custom" see section *Support for custom
-   models*. Default is `"ani1x"`.
+   models*. Default is `"ani1x"` (case sensitive).
 - `use_double_precision` (*bool*)
    Determines whether the network runs using float64 parameters. Defaults to `.true.` We
-   recommend to use double precision for accurate dynamics.
+   recommend this setting for accurate dynamics.
 - `use_cuda_device` (*bool*)
-   Flag that determines if the network runs in a CUDA device or in CPU. Default is
-   `.true.`. If the flag is set to true and a CUDA device can't be found TorchANI-Amber
-   will exit with an error. CUDA provides a very significant performance boost over CPU.
+   Determines whether the network runs in a CUDA enabled GPU. Default is `.true.`. If
+   the flag is set to `.true.` and a CUDA enabled GPU can't be found, TorchANI-Amber
+   will exit with an error. CUDA acceleration provides a very significant performance
+   boost over CPU.
 
 There are also some advanced options:
 - `use_cuaev` (bool)
-   Whether to use the cuAEV cuda extension to accellerate TorchANI potentials.
+   Whether to use the cuAEV cuda extension to accelerate potentials that support it.
 - `use_external_neighborlist` (bool)
-   Whether to let Sander / Pmemd handle the neighborlist calculation.
+   Whether to let Sander | Pmemd handle the neighborlist calculation.
 - `use_torch_cell_list` (bool)
-   Whether to use the Torch `CellList` to accellerate TorchANI's internal neighborlist
-   calculation.
+   Whether to use the TorchANI `CellList` to accelerate internal neighborlist
+   calculations.
 - `model_index` (int)
-   Used to select a specific model (0-indexed) from a model ensemble.
-   The default is to use the whole ensemble (set to -1). It is highly recommended that
-   you do not set this flag unless you know exactly what you are doing. Using an
-   ensemble of models provides a significantly higher accuracy than using one model
-   only.
+   Select a specific model (0-indexed) from a model ensemble. The default is to use the
+   whole ensemble (set to -1). We recommend you do *not* set this flag unless you know
+   exactly what you are doing. Using an ensemble provides a significantly higher
+   accuracy than using a single model.
 - `cuda_device_index` (int)
-   The index of the CUDA enabled GPU. If `use_cuda_device` is `.false.` this flag should
-   be set to `-1`. If `use_cuda_device` is `.true.` then it can be set to a positive
-   integer. By default it is set to `0`. It only makes sense to change this flag if
-   you can access more than one CUDA enabled GPU in your machine.
+   The index of the CUDA enabled GPU. If `use_cuda_device` is `.true.` then it can be
+   set to a (0-indexed) device integer. By default it is set to `0`. It only makes sense
+   to change this flag if you can access more than one CUDA enabled GPU in your machine.
 
 An example `mdin` input file with the correct format follows:
 
 ```
 &cntrl
     iextpot = 1 ! Required to run full-ML TorchANI-Amber
-    imin = 0
-    nstlim = 10000
-    dt = 0.001
-    ntf = 2
-    ntc = 2
-    temp0 = 300.0
-    cut = 8.0
-    ntt = 3
-    gamma_ln = 2.0
-    ...  ! Add the rest of the Sander options here
+    ! ... Add the rest of the Sander options here
 /
-
 &extpot
-    extprog = "torchani"  ! Required to run full-ML TorchANI-Amber
+    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
 /
-
 &ani
     model_type = "ani2x"
     use_double_precision = .true.
     use_cuda_device = .true.
     use_cuaev = .true.
-    ...  ! Add the rest of the TorchANI-Amber config options here
+    ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
 
 ## Usage of the interface for ML/MM
 
-TorchANI can run in an ML/MM context. Sander is required for this, Pmemd is not
-supported. In order to run ani with ML/MM, the `&qmmm` namelist must be included
-*instead of* the `&extpot` namelist. Additionally, `extpot = 1` should not be specified.
+TorchANI-Amber is also integrated with the QM/MM Sander subsystem, which means you can
+perform ML/MM simulations with it. Sander is *required* for this, Pmemd is not
+supported.
+
+If you want to run this kind of dynamics, **instead** of setting `iextpot = 1` and
+including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
+namelist.
+
+Many options can be used in the `&qmmm` namelist, but `qmmm_int = 2` and `qmmm_theory =
+'EXTERN'` are *required* to run ML/MM simulations with TorchANI-Amber.
+
 The `&ani` namelist remains the same, with the following extra available options:
 
 Output related options:
@@ -201,95 +195,61 @@ Output related options:
 
 ML/MM and electrostatic related options:
 - `use_torchani_charges` (bool)
-   Note that this option can only be specified if a charge-predicting model is selected.
+   **This option can only be specified if a charge-predicting model is selected.**
    Currently the only available `model_type` that supports it is `animbis`. Partial
    charges for the QM atoms will be predicted by TorchANI (MBIS atomic charges at the
    `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. This
    charges are geometry-dependent, and the derivativse w.r.t. coordinates are used to
    calculate their contribution to the forces.
-- `mlmm_coupling` (int)
-   Note that this option can only be specified if `qmmm_int = 2`.
-   Currently available options are: `0` (*coulombic coupling*) and `1` (*simple
-   polarizable* coupling). We recommend using the *simple polarizable* coupling if
-   predicting **with use_torchani_charges=.true.**, and the *coulombic coupling* if predicting
-   **with use_torchani_charges=.false.** (which implies fixed topology charges).
+- `mlmm_coupling` (int = `0` or `1`)
+   Currently available are: `0` (*coulombic coupling*) and `1` (*simple polarizable*
+   coupling).
 
-This means there are two main setups we recommend. The first one is the *simple
-polarizable* coupling using ANI-predicted MBIS charges:
+We recommend using one of the following two settings:
+- *mlmm_coupling = 0* and *use_torchani_charges=.true.* (variable nn-predicted charges)
+- *mlmm_coupling = 1* and *use_torchani_charges=.false.* (fixed topology charges)
+
+TODO: Check what the defaults are for qm_ewald and qm_mask
+
+A template for the first setting (simple polarizable with variable charges) is:
 
 ```raw
 &cntrl
-    ifqnt=1  ! Required for ML/MM TorchANI-Amber dynamics
-    ...
+    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ! ... Add extra simulation settings here
 /
-
 &qmmm
-    qmmm_int = 2,  ! Let TorchANI-Amber handle the ML/MM coupling
+    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
+    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1',  ! Select the first molecule as the QM-region
-    qm_theory = 'EXTERN'  ! Required
-    qm_ewald = 0  ! Required
-    qmshake = 0  ! Recommended
     qmcut = 15.0  ! Recommended
 /
-
 &ani
     model_type = 'animbis'  ! Charge-predicting model. Currently available: 'animbis'
-    use_torchani_charges = .true.
+    use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
     mlmm_coupling = 1  ! Simple polarizable coupling
-    ...  ! Add the rest of the TorchANI-Amber config options here
+    ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
 
-The second is using *coulombic* coupling, with fixed topology charges (i.e. mechanical
-embedding, ME). Here we can choose to either let TorchANI handle the interaction
-(Doesn't take PBC into account TODO:???), or allow Sander to handle it
-
-An example of TorchANI-Amber handling the ME:
+An example of the second (coulombic with fixed charges, i.e. mechanical embedding):
 
 ```raw
 &cntrl
-    ifqnt=1  ! Required for ML/MM TorchANI-Amber dynamics
-    ...
+    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ! ... Add extra simulation settings here
 /
-
 &qmmm
-    qmmm_int = 2  ! Let TorchANI-Amber handle the ML/MM coupling
+    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
+    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1'  ! Select the first molecule as the QM-region
-    qm_theory = 'EXTERN'  ! Required
-    qm_ewald = 0  ! Required
-    qmshake = 0  ! Recommended
     qmcut = 15.0  ! Recommended
 /
-
 &ani
     model_type = 'ani2x'  ! Select any model
-    use_torchani_charges = .false.  ! Required
+    use_torchani_charges = .false.  ! Use fixed topology charges
     mlmm_coupling = 0  ! Coulombic coupling
-    ...  ! Add the rest of the TorchANI-Amber config options here
-/
-```
-
-And of Sander handling the ME:
-
-```raw
-&cntrl
-    ifqnt=1  ! Required for ML/MM TorchANI-Amber dynamics
-    ...
-/
-
-&qmmm
-    qmmm_int = 5  ! Let Sander handle the ML/MM coupling (Coulombic coupling)
-    qmmask = ':1'  ! Select the first molecule as the QM-region
-    qm_theory = 'EXTERN'  ! Required
-    qm_ewald = 0  ! Required
-    qmshake = 0  ! Recommended
-    qmcut = 15.0  ! Recommended
-/
-
-&ani
-    model_type = 'ani2x'  ! Select any model
-    use_torchani_charges = .false.  ! Required
-    ...  ! Add the rest of the TorchANI-Amber config options here
+    ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
 
