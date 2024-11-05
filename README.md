@@ -61,7 +61,6 @@ cat LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH" >> ~/.bashrc
 
 # (7) compile Amber using cmake (Amber will automatically find torchani and link it
 # to its MD engines, Sander and Pmemd)
-conda install -c conda-forge gfortran_linux-64=11.4 openmpi=4.1.5  # Sander, Pmemd deps
 # Follow instructions in https://ambermd.org/
 ```
 
