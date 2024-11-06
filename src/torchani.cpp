@@ -46,12 +46,6 @@ void torchani_set_device(bool use_cuda_device, int device_index) {
     if (use_cuda_device) {
         torchani_device = torch::Device(torch::kCUDA, device_index);
     } else {
-        // CPU device should always be -1
-        if (device_index != -1) {
-            std::cerr << "Error in libtorchani\n"
-                      << "Device index should be -1 for CPU" << std::endl;
-            std::exit(2);
-        }
         torchani_device = torch::Device(torch::kCPU, device_index);
     }
 }
