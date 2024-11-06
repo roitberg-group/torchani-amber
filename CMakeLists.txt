@@ -240,7 +240,7 @@ target_compile_definitions(
         PUBLIC ${TORCH_CXX_FLAGS}
         PRIVATE $<$<CONFIG:Debug>:"DEBUG">
 )
-target_link_options(torchani PRIVATE "LINKER:--no-as-needed")
+target_link_options(torchani PRIVATE "LINKER:--no-as-needed" "LINKER:-force_load,$<TARGET_FILE:cuaev>")
 target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
