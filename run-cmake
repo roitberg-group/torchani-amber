@@ -8,8 +8,8 @@ usage() { echo "Usage: [OPTION]...
     -I Don't install
     -B Don't build, only configure and generate
     -T Don't run tests
+    -C Don't use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
     -g Build in Debug configuration
-    -c Use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
     -h Print this message" 1>&2; }
 
 use_conda=ON
