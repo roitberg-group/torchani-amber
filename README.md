@@ -22,90 +22,114 @@ Useful links:
 
 ## Installing
 
-The main supported way to build and install the torchani interface is using `CMake`, and
-calling it from inside a `conda` (or `mamba`) environment. The necessary steps are
-described next. Different build+install procedures are not tested as of now.
+The main supported way to build and install TorchANI-Amber interface is by using
+`cmake`, which you should call from within a `conda` (or `mamba`) environment. The
+necessary steps are described next. Other procedures may work, but are untested.
 
-Note that a GCC version that supports C++17 is needed
-to compile torchani-amber (typically > 9 is enough, it is tested with 11.4).
+A GCC version that supports C++17 is needed to compile TorchANI-Amber (typically > 9 is
+enough, it is tested with 11.4). A tested GCC version is included in the
+`environment.yaml` file and installed by default.
 
-```bash
-# (0) Clone this repo and cd into it
-git clone --recurse-submodules git@github.com:roitberg-group/torchani-amber.git
-cd torchani-amber
+1. Clone this repo and cd into it
+    ```bash
+    git clone --recurse-submodules git@github.com:roitberg-group/torchani-amber.git
+    cd torchani-amber
+    ```
+2. Create a new `conda` (or `mamba`) environment and activate it. The `environment.yaml`
+    file has a correct environment, tested to work correctly with TorchANI-Amber. It
+    contains:
+    - TorchANI's required dependencies, including PyTorch
+    - CUDA Toolkit and cuDNN libraries necessary to build the extensions and interface
+    - GFortran and OpenMPI, which are needed to compile Sander and Pmemd (serial and MPI)
+    ```bash
+    conda env create --file ./environment.yaml
+    conda activate ani-amber
+    ```
+3. Install TorchANI (python), together with its compiled extensions
+    ```bash
+    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox
+    ```
+4. Build and install TorchANI-Amber using the `run-cmake` script
+    *ADVANCED:* If you want to perform your custom modifications to the build, this is
+    the moment to do it. Check `run-cmake` and the `CMakeLists.txt` for more info.
+    By default the installation script runs the tests, you can avoid this by
+    using the `-T` flag. For more options do `run-cmake -h`
+    ```bash
+    ./run-cmake
+    ```
+5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
+    to both `pmemd` and `sander`. You can refer to [the amber
+    website](https://ambermd.org/) for info on how to obtain and install Amber. You can
+    use this configuration as a template, which requires that you run `cmake` while the
+    `ani-amber` env is activated:
+    ```bash
+    cmake \
+        -S./path/to/your/amber/source-dir/ \
+        -B./path/to/your/amber/build-dir/ \
+        -DCMAKE_INSTALL_PREFIX=/path/to/your/amber/install-dir/ \
+        -DCMAKE_PREFIX_PATH=$HOME/.local/lib \
+        -DCOMPILER=MANUAL \
+        -DCMAKE_C_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc" \
+        -DCMAKE_CXX_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
+        -DCMAKE_Fortran_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran" \
+        -DCMAKE_CUDA_HOST_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
+        -DDOWNLOAD_MINICONDA=FALSE \
+        -DBUILD_PYTHON=FALSE
+    ```
 
-# (1) Create a new conda (or mamba) environment
-# This environment will contain:
-# - torchani's required dependencies, including pytorch
-# - CUDA Toolkit and cuDNN libraries necessary to build the extensions and interface
-conda env create --file ./environment.yaml
+## Details on building Amber
 
-# (2) Activate the environment
-conda activate ani-amber
+When building Amber make sure that:
 
-# (4) Install the python torchani submodule, together with the cuaev extension
-cd ./submodules/torchani_sandbox
-pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e .
-cd ../..
+- You are building using the same compilers as those used for TorchANI-Amber. This
+  is done with `COMPILER=MANUAL` and `CMAKE_<lang>_COMPILER=...` in the template config,
+  which instruct Amber to use the compilers in the current conda env.
+- You are *not* using Amber's Miniconda or Amber's python. This is
+  done with the `DOWNLOAD_MINICONDA=FALSE` and `BUILD_PYTHON=FALSE`.
+- `~/.local/lib/` is in the search file for `cmake`. This is only needed if installing
+  to `~/.local/lib/` (the default, which doesn't need `sudo`). If installing for example
+  to `/usr/local` it is not needed. Done with `CMAKE_PREFIX_PATH=${HOME}/.local/lib`.
+- Amber can find `TorchANI-Amber` (it should appear in the list of enabled
+  software that Amber prints when installing).
 
-# (5) Build and install libtorchani using the cmake.sh script
-# ADVANCED: If you want to perform your custom modifications to the build, check the
-# script and/or CMakeLists.txt file before running
-bash ./run-cmake.sh
+## About the provided conda environment
 
-# (6) You may have to add ~/.local/bin to your PATH, if it isn't already
-# there, since by default torchani is installed into ~/.local
-mkdir -P ~/.local/lib
-# If using bash, for example, run:
-cat LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH" >> ~/.bashrc
-
-# (7) compile Amber using cmake (Amber will automatically find torchani and link it
-# to its MD engines, Sander and Pmemd)
-conda install -c conda-forge gfortran_linux-64=11.4 openmpi=4.1.5  # Sander, Pmemd deps
-# Follow instructions in https://ambermd.org/
-```
-
-TODO: Expand this section
-
-By default the installation script runs the tests
-
-## About the conda environment
-
-You don't need to run things inside the `ani` environment since the built artifacts have
+There is no need to activate the `ani-amber` conda env after Amber has been built, since
 the path to the needed libraries baked in, but *don't remove it*, since this will remove
-the installed libraries from your system
+the needed libraries from your system.
 
 ## About CUDA and LD_LIBRARY_PATH
 
 TODO: Double check this.
 
 TorchANI-Amber is tested with a specific version of the CUDA Toolkit. It is recommended
-that the CUDA Toolkit be installed using *conda* (or *mamba*). When installing the library,
-however, the path's to the correct CUDA Toolkit's linked libraries may get overriden if
-the system has a different Toolkit available and LD_LIBRARY_PATH is set to point there
-(as the CUDA installation instructions unfortunately recommend).
+that the CUDA Toolkit be installed using *conda* (or *mamba*) as in the provided
+installation instructions. When installing the library or running the executables,
+however, the paths to the correct CUDA Toolkit's linked libraries may be overriden if
+the system has a different Toolkit available.
 
-This should not cause problems in principle, since the libraries will supposedly only be
-overriden if compatible, but if this is problematic to you, it is recommended to wrap
-torchani in a script that removes the system's cuda libraries from LD_LIBRARY_PATH.
+This should not cause problems in principle, since the libraries will only be overriden
+*if they are compatible*, if you want to avoid this you can remove the CUDA Toolkit libs
+from `LD_LIBRARY_PATH` before building the library or running Sander or Pmemd.
 
 Note that this situation is pretty rare, most probably you will not experience any
 issues regarding this.
 
-## LibTorch / PyTorch version compatibility
+## LibTorch (C++) and PyTorch (Python) compatibility
 
-Its important that the TorchANI models used are compiled in python with JIT using the
-same PyTorch version as the LibTorch version used to run the model in C++. For example,
-if `torch.__version__ == 2.5` for TorchANI, then LibTorch must also be 2.5, otherwise
-LibTorch may fail to load the models, or load it incorrectly.
+NOTE: This is a non-issue if you use the installation script, since the same binaries
+are used for both LibTorch and PyTorch. You can safely skip this section
+if that is the case.
 
-This is a non-issue if you use the installation script, since the same binaries are used
-for both LibTorch and PyTorch in that case.
+Its important that the TorchANI models used are JIT-compiled using the same PyTorch
+version as the LibTorch version linked to the libraries. For example, if
+`torch.__version__ == 2.5` for TorchANI, then the linked LibTorch must also be 2.5,
+otherwise LibTorch may fail to load the models, or load it incorrectly.
 
 ## CPU-only support
 
 TorchANI-Amber can run CPU-only, but even in this case it depends on the the CUDA
-Toolkit, cuDNN and LibTorch. There are no plans to address this limitation.
+Toolkit, cuDNN and LibTorch.
 
 ## Usage
 
