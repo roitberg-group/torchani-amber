@@ -1,4 +1,4 @@
-name: ani
+name: ani-amber
 channels:
   - nodefaults
   - https://conda.anaconda.org/pytorch
