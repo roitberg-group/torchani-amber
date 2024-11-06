@@ -36,7 +36,7 @@ set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Req
 
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
-set(REQUIRED_TORCH_VERSION "2.3" CACHE STRING "Request this version of PyTorch/LibTorch")
+set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Request this version of PyTorch/LibTorch")
 option(USE_ACTIVE_CONDA_PYTORCH "Use PyTorch from active conda environment" ON)
 option(INSTALL_CUSTOM_LIBTORCH "Download LibTorch library and extract locally" OFF)
 option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libraries" ON)
