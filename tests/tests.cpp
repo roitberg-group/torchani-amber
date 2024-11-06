@@ -70,7 +70,7 @@ TEST_CASE("C bindings") {
         auto device_spec = GENERATE(
             table<int, int, int, std::string>(
                 {
-                    DeviceSpec{0, -1, 0, "_cpu"},  // CPU
+                    DeviceSpec{0, 0, 0, "_cpu"},  // CPU
                     DeviceSpec{1, 0, 0, "_cuda"},  // CUDA
                     DeviceSpec{1, 0, 1, "_cuda"}  // CUDA + cuAEV
                 }

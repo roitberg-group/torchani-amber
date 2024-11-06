@@ -67,7 +67,7 @@ bld_dir="$src_dir/build"
 cmake \
     -S"$src_dir" \
     -B"$bld_dir" \
-    --install-prefix "$HOME/.local/" \
+    -DCMAKE_INSTALL_PREFIX "$HOME/.local/" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
     -DUSE_ACTIVE_CONDA_PYTORCH=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
