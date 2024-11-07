@@ -29,9 +29,10 @@
 {% if mlmm %}
 &qmmm
     qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
+    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ":1"  ! Select the first molecule as the QM-region
-    qmcut = 15.0  ! Recommended
+    qmcut = 8.0  ! 15.0 is recommended, 8.0 for tests
 /
 {% else %}
 &extpot
