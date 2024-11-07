@@ -1,67 +1,37 @@
 ! TorchANI-Amber test input
 &cntrl
-    {% if mlmm %}
     ifqnt = 1  ! Use QM/MM
-    {% else %}
-    iextpot = 2  ! Use an external potential
-    {% endif %}
     imin = 0  ! Dynamics
     nstlim = 5  ! Total num of dynamics steps
     ntx = 1  ! Dump coords as netCDF
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
     dt = 0.001  ! timestep (ns)
-    {% if shake %}
-    ntc = 2  ! Shake ON
-    ntf = 2  ! Shake ON
-    {% else %}
     ntc = 1  ! Shake OFF
     ntf = 1  ! Shake OFF
-    {% endif %}
     ig = 5541  ! Manual seed for reproducibility
-    {% if vacuum %}
     cut = 9999.0  ! Non-bonded neighborlist cutoff
     igb = 6  ! Vacuum, no PBC
-    {% else %}
-    cut = 8.0  !  Non-bonded neighborlist cutoff
-    {% endif %}
 /
-{% if mlmm %}
 &qmmm
     qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ":1"  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
 /
-{% else %}
-&extpot
-    extprog = "TORCHANI"  ! External program is TorchANI-Amber
-/
-{% endif %}
 &ani
-{% if cuda %}
     cuda_device_index = 0
     use_cuda_device = .True.
-    use_cuaev = .{{ cuda.cuaev }}.
-{% else %}
-    use_cuda_device = .False.
-{% endif %}
+    use_cuaev = .False.
     model_type = "animbis"  ! ANI-mbis can be used for all kinds of dynamics
-    use_double_precision = .{{ float64 }}.
-{% if mlmm %}
-    {% if mlmm.protocol == "me" %}
-    use_torchani_charges = .False.
-    mlmm_coupling = 0  ! Coulombic coupling
-    {% else %}
+    use_double_precision = .False.
     use_torchani_charges = .True.
     mlmm_coupling = 1  ! Simple polarizable coupling
-    {% endif %}
     write_charges = .True.
     write_forces = .True.
     write_xyz = .True.
-{% endif %}
     model_index = -1
-    use_torch_cell_list = .{{ neighborlist == 'cell_list' }}.
-    use_external_neighborlist = .{{ neighborlist == 'amber' }}.
+    use_torch_cell_list = .False.
+    use_external_neighborlist = .False.
 /
 ! End TorchANI-Amber test input

@@ -1,0 +1,37 @@
+! TorchANI-Amber test input
+&cntrl
+    ifqnt = 1  ! Use QM/MM
+    imin = 0  ! Dynamics
+    nstlim = 5  ! Total num of dynamics steps
+    ntx = 1  ! Dump coords as netCDF
+    ntwx = 1  ! Dump coords every step
+    ntpr = 1  ! Dump mdout 'logs' every step
+    dt = 0.001  ! timestep (ns)
+    ntc = 1  ! Shake OFF
+    ntf = 1  ! Shake OFF
+    ig = 5541  ! Manual seed for reproducibility
+    cut = 9999.0  ! Non-bonded neighborlist cutoff
+    igb = 6  ! Vacuum, no PBC
+/
+&qmmm
+    qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
+    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
+    qmmask = ":1"  ! Select the first molecule as the QM-region
+    qmcut = 15.0  ! Recommended
+/
+&ani
+    cuda_device_index = 0
+    use_cuda_device = .True.
+    use_cuaev = .False.
+    model_type = "animbis"  ! ANI-mbis can be used for all kinds of dynamics
+    use_double_precision = .True.
+    use_torchani_charges = .False.
+    mlmm_coupling = 0  ! Coulombic coupling
+    write_charges = .True.
+    write_forces = .True.
+    write_xyz = .True.
+    model_index = -1
+    use_torch_cell_list = .False.
+    use_external_neighborlist = .False.
+/
+! End TorchANI-Amber test input
