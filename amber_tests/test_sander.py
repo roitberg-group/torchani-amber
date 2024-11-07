@@ -105,12 +105,11 @@ env = jinja2.Environment(
 
 
 def name_func(fn, idx, param) -> str:
-    config, = param.args
+    (config,) = param.args
     return f"{fn.__name__}_{param.args[0].name}"
 
 
 class AmberIntegration(unittest.TestCase):
-
     def setUp(self) -> None:
         self.d: tp.Optional[tempfile.TemporaryDirectory] = None
 
@@ -161,7 +160,7 @@ class AmberIntegration(unittest.TestCase):
         if out.returncode != 0:
             print("Process stdout", out.stdout)
             print("Process stderr", out.stdout)
-            mdout = (dir / "system.mdout")
+            mdout = dir / "system.mdout"
             if mdout.exists():
                 print("Amber mdout", mdout.read_text())
             raise RuntimeError("Error when calling sander")
