@@ -305,5 +305,5 @@ TODO: Fix this section
 
 ## Testing
 
-To run the `Amber` integration tests do `pytest -v ./amber_tests` (a working Sander
+To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a working Sander
 binary is assumed to be on `PATH`).
