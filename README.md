@@ -302,3 +302,8 @@ compatible flags for `igb` in the Amber `&ctrl` namelist are `igb = 0` (PBC, vac
 ## Support for custom models
 
 TODO: Fix this section
+
+## Testing
+
+To run the `Amber` integration tests do `pytest -v ./amber_tests` (a working Sander
+binary is assumed to be on `PATH`).
