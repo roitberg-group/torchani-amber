@@ -23,7 +23,7 @@ class CudaConfig:
     cuaev: bool = True
 
 
-template = env.get_template("input.md.in.jinja")
+template = env.get_template("input.mdin.jinja")
 
 Pairlists = tp.Literal["cell_list", "all_pairs", "amber"]
 
@@ -66,4 +66,4 @@ for tup in itertools.product(
     fname_parts.append(config.neighborlist)
     d = Path(__file__).parent / f"{'-'.join(fname_parts)}"
     d.mkdir(exist_ok=True)
-    (d / "input.md.in").write_text(string)
+    (d / "input.mdin").write_text(string)

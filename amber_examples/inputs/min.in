@@ -1,9 +1,0 @@
-! Minimization
-&cntrl
-    imin = 1
-    ntx = 1
-    ntmin = 1
-    ncyc = 3000
-    maxcyc = 10000
-    cut = 8.0
-/
