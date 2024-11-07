@@ -8,6 +8,7 @@ external/*
 *.tar.gz
 slurm_script*
 slurm.sh
+__pycache__/
 
 # don't save test values
 test/test_values*.txt
