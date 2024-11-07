@@ -203,8 +203,8 @@ If you want to run this kind of dynamics, **instead** of setting `iextpot = 1` a
 including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
 namelist.
 
-Many options can be used in the `&qmmm` namelist, but `qmmm_int = 2` and `qmmm_theory =
-'EXTERN'` are *required* to run ML/MM simulations with TorchANI-Amber.
+Many options can be used in the `&qmmm` namelist, but `qmmm_int = 2`, `qm_ewald=0`, and
+`qmmm_theory = 'EXTERN'` are *required* to run ML/MM simulations with TorchANI-Amber.
 
 The `&ani` namelist remains the same, with the following extra available options:
 
@@ -244,6 +244,7 @@ A template for the first setting (simple polarizable with variable charges) is:
 /
 &qmmm
     qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
+    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1',  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
@@ -265,6 +266,7 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 /
 &qmmm
     qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
+    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1'  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
@@ -300,3 +302,8 @@ compatible flags for `igb` in the Amber `&ctrl` namelist are `igb = 0` (PBC, vac
 ## Support for custom models
 
 TODO: Fix this section
+
+## Testing
+
+To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a working Sander
+binary is assumed to be on `PATH`).
