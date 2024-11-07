@@ -30,7 +30,7 @@
 &qmmm
     qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
-    qmmask = ":1",  ! Select the first molecule as the QM-region
+    qmmask = ":1"  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
 /
 {% else %}
