@@ -96,7 +96,7 @@ for tup in itertools.product(
 
 
 env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(Path(__file__).parent.parent / "templates/"),
+    loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
     undefined=jinja2.StrictUndefined,
     autoescape=jinja2.select_autoescape(),
     trim_blocks=True,
