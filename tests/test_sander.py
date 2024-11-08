@@ -3,8 +3,8 @@ r"""TorchANI-Amber integration tests
 If the envvar TORCHANI_AMBER_KEEP_TEST_DIRS=1, then the inputs and outputs
 are not removed after the tests are run, this may be useful for debugging.
 
-If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat`` and ``.traj`` outputs of the
-test are saved into the `expect/` directory
+If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat``, ``.xyz``, and ``.traj``
+outputs of the test are saved into the `expect/` directory
 
 If you are debugging old branches use TORCHANI_AMBER_LEGACY_TEST=1
 """
@@ -155,7 +155,7 @@ class AmberIntegration(unittest.TestCase):
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".traj"]:
+            if f.suffix in [".dat", ".traj", ".xyz"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
                 if expect_file.exists() and not config.cuda:
                     expect_text = expect_file.read_text()
