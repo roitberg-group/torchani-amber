@@ -303,7 +303,18 @@ compatible flags for `igb` in the Amber `&ctrl` namelist are `igb = 0` (PBC, vac
 
 TODO: Fix this section
 
-## Testing
+## Amber integration tests
 
 To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a working Sander
-binary is assumed to be on `PATH`).
+binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
+and Full-ML Amber integrations.
+
+- To only select the ML/MM or Full-ML tests add the `-k mlmm` or `-k fullml` flags
+    respectively
+- To only select the CUDA or CPU tests add the `-k cuda` or `-k cpu` flags
+    respectively.
+- To only select the float32 or float64 tests add the `-k f32` or `-k f64` flags
+    respectively (very few tests use float64 since it is quite slow).
+- To only select the "shake" or "no-shake" tests use `-k shake` or `-k noshake`
+- To only select the "vacuum" (non-pbc) or "water" (explicit solvent, pbc) tests use `-k
+  vacuum` or `-k water`
