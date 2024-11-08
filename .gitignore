@@ -19,10 +19,6 @@ amber_examples/outputs/*
 # don't save outputs from tests
 tests/MLMM*
 tests/FullML*
-! tests/MLMM*_expect/*.traj.nc
-! tests/MLMM*_expect/*.dat
-! tests/FullML*_expect/*.traj.nc
-! tests/FullML*_expect/*.dat
 
 # No swap files
 *.swp
