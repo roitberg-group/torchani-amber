@@ -17,6 +17,10 @@ prediction by ani are implemented).
 
 Available keywords for the &ani namelist in AMBER mdin (with their defaults)
 
+NOTE: Instead of polarize_qm_charges = .true., distort_qm_energy = .true., please use
+`mlmm_coupling = 1`, which will enable **both options**. If you really want to disregard
+the distortion contribution only, use `mlmm_coupling = 1`, `distortion_k = 0.0`.
+
       model_type ='ani1x'
       model_index = -1
       use_double_precision = .true.
@@ -25,9 +29,8 @@ Available keywords for the &ani namelist in AMBER mdin (with their defaults)
       use_torchani_charges = .false.
       charges_model_type = 'ani1x-mbis'
       charges_model_index = -1
-      polarize_qm_charges = .true.
-      distort_qm_energy = .true.
-      distortion_k = 0.5d0
+      mlmm_coupling = 0
+      distortion_k = 0.4d0
       use_extcoupling = .false.
       extcoupling_program = 'none'
       use_numerical_qmmm_forces = .false.
@@ -45,7 +48,7 @@ Description:
 
 
 - `model_type` (string)
-  The neural network to choose. Currently possible values are `"ani1x"`,
+  The neural network to choose. Current possible values are `"ani1x"`,
   `"ani1ccx"`, `"ani2x"`,`"animbis"`  and `"custom"`. For use of "custom" see
   section *Support for custom models*. Default is `"ani1x"`.
 
@@ -68,53 +71,52 @@ Description:
   performance boost over CPU.
 
 - `cuda_device_index` (int)
-  The index of the cuda device. If `use_cuda_device` is `.false.` this flag
-  should be omitted (or set to -1). If `use_cuda_device` is `.true.` then it
-  has to be set to a positive integer, and it is set by default to 0. Only set
-  it to a different GPU index if the CPU can access more than one CUDA device.
+  The index of the cuda device. If `use_cuda_device` is `.false.` this flag should be
+  omitted (or set to -1). If `use_cuda_device` is `.true.` then it has to be set to a
+  positive integer, and it is set by default to 0. Only set it to a different GPU index
+  if the CPU can access more than one CUDA device.
 
 - `use_torchani_charges` (bool)
-   Only available if If `model_type` is set to `animbis`. Partial charges for
-   the QM atoms will be predicted by torchani (wB97X/tzvp/MBIS level, in
-   vacuo), in each step, and the interface uses the forcefield charges to
-   calculate the eelectrostatic coupling between the QM and MM regions, at the
-   mechanical embedding level.
+   Requires a charge-predicting model. Partial charges for the QM atoms will be
+   predicted by torchani (wB97X/tzvp/MBIS level, in vacuo), in each step, and the
+   interface uses the forcefield charges to calculate the eelectrostatic coupling
+   between the QM and MM regions, at the mechanical embedding level.
 
 - `use_charges_derivatives` (bool)
-   Only available if If `model_type` is set to `animbis` and
-   `use_torchani_charges` is `.true.`. It consideres the predicted charges
-   dependence on atomic coordinates for forces calculation. Makes the code a
-   bit slower for large systems, but it is still recommended to set it `true`.
+   Only used if `use_torchani_charges` is `.true.`. It consideres the predicted charges
+   dependence on atomic coordinates for forces calculation. Makes the code a bit slower
+   for large systems, but it is still recommended to set it `true`.
 
-- `polarize_qm_charges`(bool)
-   Only used if `qmmm_int` is set to 2. A polarization correction is included
-   to account the effect of the MM region.
-
-- `distort_qm_energy`(bool)
-   Only used if `qmmm_int` is set to 2. The in vacuo QM energy is corrected
-   with a term called distortion energy, that is assumed to be proportional and
-   of opposite sign to the polarization energy.
+- `mlmm_coupling`(int)
+    Only used if `qmmm_int` is set to 2.
+    If `= 0`, don't apply polarization and distortion energy corrections. If `= 1`, A
+    polarization correction is included to account the effect of the MM region, and
+    the in vacuo QM energy is corrected with a term called distortion energy, that is
+    assumed to be proportional and of opposite sign to the polarization energy.
 
 - `distortion_k`(double precision)
    Only used if `distort_qm_energy` is `.true.`. The proporcionality constant
    fot the distortion correction.
-
-- `write_xyz` (bool)
-   Writes xyz coordinates of QM region.
-
-- `write_forces` (bool)
-   Writes forces acting on QM atoms.
-
-- `write_charges` (bool)
-   Only used if `use_torchani_charges` is `.true.`. Writes partial charges
-   predicted by torchani.
 
 - `pol_H` (double precision)
   Only used  if `polarize_qm` is `.true.`. It allowes the user to manually
   indicate the atomic polarizability desired for Hydrogen atoms. The same can
   be done for all atoms of the second period (pol_H, pol_C, pol_N, etc.)
 
-NOT EXTENSIVELY TESTED:
+Output related options:
+- `write_xyz` (bool)
+   Writes xyz coordinates of QM region.
+
+- `write_forces` (bool)
+   Writes forces acting on QM atoms.
+
+- `write_charges_grad` (bool)
+   Writes derivatives of the partial charges of the QM region w.r.t. the coords.
+
+- `write_charges` (bool)
+   Writes partial charges of the QM region
+
+EXPERIMENTAL OPTIONS:
 
 - `use_switching_function` (bool)
   If set to `true`, torchani estimates how similar the prediction between the
