@@ -52,12 +52,11 @@ class RunConfig:
     def name(self) -> str:
         parts = [f"MLMM_{self.mlmm.protocol}"] if self.mlmm else ["FullML"]
         parts.append("shake" if self.shake else "noshake")
-        parts.append("vac" if self.vacuum else "wat")
+        parts.append("vacuum" if self.vacuum else "water")
         parts.append("f64" if self.float64 else "f32")
-        if self.cuda:
-            parts.append("cuda")
-            if self.cuda.cuaev:
-                parts.append("cuaev")
+        parts.append("cuda" if self.cuda else "cpu")
+        if self.cuda and self.cuda.cuaev:
+            parts.append("cuaev")
         parts.append(self.neighborlist.replace("_", ""))
         return "_".join(parts)
 
@@ -93,8 +92,10 @@ for tup in itertools.product(
         if config.cuda and config.cuda.cuaev:
             continue
 
-    # Float 64 is too slow on CPU or with all-pairs
-    if config.float64 and (config.neighborlist == "all_pairs" or config.cpu):
+    # Only test Float 64 in a few Mlmm cases, never on FullML. Its too slow.
+    if config.float64 and not (
+        config.mlmm and config.cuda and config.cuda.cuaev and config.vacuum
+    ):
         continue
 
     # Mlmm is only tested with all-pairs
