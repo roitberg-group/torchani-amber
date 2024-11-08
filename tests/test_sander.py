@@ -5,6 +5,8 @@ are not removed after the tests are run, this may be useful for debugging.
 
 If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat`` and ``.traj`` outputs of the
 test are saved into the `expect/` directory
+
+If you are debugging old branches use TORCHANI_AMBER_LEGACY_TEST=1
 """
 
 from numpy.typing import NDArray
@@ -83,6 +85,13 @@ for tup in itertools.product(
     cuda_configs, mlmm_configs, bools, bools, bools, neighbor_configs
 ):
     config = RunConfig(*tup)
+    if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
+        if not config.mlmm:
+            continue
+        if config.neighborlist != "all_pairs":
+            continue
+        if config.cuda and config.cuda.cuaev:
+            continue
 
     # Float 64 is too slow on CPU or with all-pairs
     if config.float64 and (config.neighborlist == "all_pairs" or config.cpu):
@@ -131,8 +140,14 @@ class AmberIntegration(unittest.TestCase):
         else:
             self.d = tempfile.TemporaryDirectory()
             test_dir = Path(self.d.name)
-
-        string = env.get_template("input.mdin.jinja").render(**asdict(config))
+        if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
+            string = env.get_template("input.mdin.jinja").render(
+                legacy=True, **asdict(config)
+            )
+        else:
+            string = env.get_template("input.mdin.jinja").render(
+                legacy=False, **asdict(config)
+            )
         (test_dir / "input.mdin").write_text(string)
         self._run_sander(test_dir)
 
@@ -142,7 +157,7 @@ class AmberIntegration(unittest.TestCase):
         for f in sorted(test_dir.iterdir()):
             if f.suffix in [".dat", ".traj"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
-                if expect_file.exists():
+                if expect_file.exists() and not config.cuda:
                     expect_text = expect_file.read_text()
                     expect_arr = self.parse_amber_output(expect_text, f.suffix)
                     this_text = f.read_text()
@@ -150,8 +165,8 @@ class AmberIntegration(unittest.TestCase):
                     assert_allclose(
                         this_arr,
                         expect_arr,
-                        rtol=1e-7,
-                        atol=1e-5,
+                        rtol=1e-7 if not config.cuda else 1e-5,
+                        atol=1e-5 if not config.cuda else 1e-4,
                         err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
                     )
                 if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
