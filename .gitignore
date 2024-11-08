@@ -17,11 +17,11 @@ test/test_values*.txt
 amber_examples/outputs/*
 
 # don't save outputs from tests
-amber_tests/*.nc
-amber_tests/*.mdinfo
-amber_tests/*.mdout
-amber_tests/*.xyz
-amber_tests/*.dat
+tests/*.nc
+tests/*.mdinfo
+tests/*.mdout
+tests/*.xyz
+tests/*.dat
 
 # No swap files
 *.swp
