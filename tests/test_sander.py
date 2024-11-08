@@ -174,6 +174,10 @@ class AmberIntegration(unittest.TestCase):
 
     @staticmethod
     def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
+        if suffix == ".xyz":
+            lines = text.split("\n")
+            non_comment = [line for line in lines if "TORCHANI" not in line]
+            text = " ".join(non_comment)
         if suffix == ".traj":
             text = " ".join(text.split("\n")[1:])  # Get rid of file name
         return np.array([float(s) for s in text.split() if s.strip()], dtype=np.float32)
