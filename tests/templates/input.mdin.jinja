@@ -7,10 +7,12 @@
     {% endif %}
     imin = 0  ! Dynamics
     nstlim = 5  ! Total num of dynamics steps
-    ntx = 1  ! Dump coords as netCDF
+    ntx = 1  ! Only read input coords, not vels
+    ntxo = 1  ! Dump restart as formatted ASCII
+    ioutfm = 0  ! Dump traj as formated ASCII
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
-    dt = 0.001  ! timestep (ns)
+    dt = 0.001  ! Timestep (ns)
     {% if shake %}
     ntc = 2  ! Shake ON
     ntf = 2  ! Shake ON
@@ -32,7 +34,7 @@
     qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ":1"  ! Select the first molecule as the QM-region
-    qmcut = 8.0  ! 15.0 is recommended, 8.0 for tests
+    qmcut = 8.0  ! 15.0 is recommended, 8.0 used for tests
 /
 {% else %}
 &extpot
@@ -43,7 +45,9 @@
 {% if cuda %}
     cuda_device_index = 0
     use_cuda_device = .True.
+    {% if not legacy %}
     use_cuaev = .{{ cuda.cuaev }}.
+    {% endif %}
 {% else %}
     use_cuda_device = .False.
 {% endif %}
@@ -52,17 +56,35 @@
 {% if mlmm %}
     {% if mlmm.protocol == "me" %}
     use_torchani_charges = .False.
+        {% if not legacy %}
     mlmm_coupling = 0  ! Coulombic coupling
+        {% else %}
+    use_charges_derivatives = .False.
+    polarize_qm_charges = .False.
+    distort_qm_energy = .False.
+        {% endif %}
     {% else %}
     use_torchani_charges = .True.
+        {% if not legacy %}
     mlmm_coupling = 1  ! Simple polarizable coupling
+        {% else %}
+    use_charges_derivatives = .True.
+    polarize_qm_charges = .True.
+    distort_qm_energy = .True.
+    distortion_k = 0.4d0
+        {% endif %}
     {% endif %}
     write_charges = .True.
+    {% if not legacy %}
+    write_charges_grad = .True.
+    {% endif %}
     write_forces = .True.
     write_xyz = .True.
 {% endif %}
     model_index = -1
+    {% if not legacy %}
     use_torch_cell_list = .{{ neighborlist == 'cell_list' }}.
     use_external_neighborlist = .{{ neighborlist == 'amber' }}.
+    {% endif %}
 /
 ! End TorchANI-Amber test input
