@@ -1,8 +1,12 @@
 r"""TorchANI-Amber integration tests
 
 If the envvar TORCHANI_AMBER_KEEP_TEST_DIRS=1, then the inputs and outputs
-are not removed after the tests are run.
+are not removed after the tests are run, this may be useful for debugging.
+
+If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat`` and ``.traj`` outputs of the
+test are saved into the `expect/` directory
 """
+import shutil
 import os
 import tempfile
 import typing as tp
@@ -66,8 +70,6 @@ class RunConfig:
 
 # Generate all configs to be tested
 bools = (True, False)
-mlmm_me = MlmmConfig()
-mlmm_mbispol = MlmmConfig("mbispol")
 cuda_configs = (None, CudaConfig(True), CudaConfig(False))
 mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
 # TODO test external neighborlist, "amber"
@@ -130,6 +132,14 @@ class AmberIntegration(unittest.TestCase):
         (test_dir / "input.mdin").write_text(string)
         self._run_sander(test_dir)
 
+        # Generate expected values
+        if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
+            expect = this_dir / "expect"
+            expect.mkdir(exist_ok=True)
+            for f in test_dir.iterdir():
+                if f.suffix in [".dat", ".traj"]:
+                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
+
     def _run_sander(self, dir: Path) -> None:
         # prmtop and inpcrd correspond to a solvated ALA dipeptide
         this_dir = Path(__file__).parent
@@ -145,9 +155,9 @@ class AmberIntegration(unittest.TestCase):
                 "-o",
                 "system.mdout",
                 "-r",
-                "system.restart.nc",
+                "system.restart",
                 "-x",
-                "system.traj.nc",
+                "system.traj",
                 "-inf",
                 "system.mdinfo",
                 "-O",  # Overwrite

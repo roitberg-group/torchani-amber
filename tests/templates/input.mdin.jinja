@@ -7,10 +7,12 @@
     {% endif %}
     imin = 0  ! Dynamics
     nstlim = 5  ! Total num of dynamics steps
-    ntx = 1  ! Dump coords as netCDF
+    ntx = 1  ! Only read input coords, not vels
+    ntxo = 1  ! Dump restart as formatted ASCII
+    ioutfm = 0  ! Dump traj as formated ASCII
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
-    dt = 0.001  ! timestep (ns)
+    dt = 0.001  ! Timestep (ns)
     {% if shake %}
     ntc = 2  ! Shake ON
     ntf = 2  ! Shake ON
@@ -32,7 +34,7 @@
     qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ":1"  ! Select the first molecule as the QM-region
-    qmcut = 8.0  ! 15.0 is recommended, 8.0 for tests
+    qmcut = 8.0  ! 15.0 is recommended, 8.0 used for tests
 /
 {% else %}
 &extpot
