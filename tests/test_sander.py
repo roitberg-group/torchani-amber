@@ -54,10 +54,9 @@ class RunConfig:
         parts.append("shake" if self.shake else "noshake")
         parts.append("vacuum" if self.vacuum else "water")
         parts.append("f64" if self.float64 else "f32")
-        if self.cuda:
-            parts.append("cuda")
-            if self.cuda.cuaev:
-                parts.append("cuaev")
+        parts.append("cuda" if self.cuda else "cpu")
+        if self.cuda and self.cuda.cuaev:
+            parts.append("cuaev")
         parts.append(self.neighborlist.replace("_", ""))
         return "_".join(parts)
 
