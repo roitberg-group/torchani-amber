@@ -6,6 +6,10 @@ are not removed after the tests are run, this may be useful for debugging.
 If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat`` and ``.traj`` outputs of the
 test are saved into the `expect/` directory
 """
+
+from numpy.typing import NDArray
+from numpy.testing import assert_allclose
+import numpy as np
 import shutil
 import os
 import tempfile
@@ -133,12 +137,31 @@ class AmberIntegration(unittest.TestCase):
         self._run_sander(test_dir)
 
         # Generate expected values
-        if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
-            expect = this_dir / "expect"
-            expect.mkdir(exist_ok=True)
-            for f in test_dir.iterdir():
-                if f.suffix in [".dat", ".traj"]:
+        expect = this_dir / "expect"
+        expect.mkdir(exist_ok=True)
+        for f in sorted(test_dir.iterdir()):
+            if f.suffix in [".dat", ".traj"]:
+                expect_file = (expect / config.name).with_suffix(f".{f.name}")
+                if expect_file.exists():
+                    expect_text = expect_file.read_text()
+                    expect_arr = self.parse_amber_output(expect_text, f.suffix)
+                    this_text = f.read_text()
+                    this_arr = self.parse_amber_output(this_text, f.suffix)
+                    assert_allclose(
+                        this_arr,
+                        expect_arr,
+                        rtol=1e-7,
+                        atol=1e-5,
+                        err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
+                    )
+                if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
                     shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
+
+    @staticmethod
+    def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
+        if suffix == ".traj":
+            text = " ".join(text.split("\n")[1:])  # Get rid of file name
+        return np.array([float(s) for s in text.split() if s.strip()], dtype=np.float32)
 
     def _run_sander(self, dir: Path) -> None:
         # prmtop and inpcrd correspond to a solvated ALA dipeptide
