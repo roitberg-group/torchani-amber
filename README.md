@@ -67,14 +67,15 @@ enough, it is tested with 11.4). A tested GCC version is included in the
         -S./path/to/your/amber/source-dir/ \
         -B./path/to/your/amber/build-dir/ \
         -DCMAKE_INSTALL_PREFIX=/path/to/your/amber/install-dir/ \
-        -DCMAKE_PREFIX_PATH=$HOME/.local/lib \
+        -DCMAKE_PREFIX_PATH=$HOME/.local/ \
         -DCOMPILER=MANUAL \
         -DCMAKE_C_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc" \
         -DCMAKE_CXX_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
         -DCMAKE_Fortran_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran" \
         -DCMAKE_CUDA_HOST_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
         -DDOWNLOAD_MINICONDA=FALSE \
-        -DBUILD_PYTHON=FALSE
+        -DBUILD_PYTHON=FALSE \
+        -DBUILD_GUI=FALSE
     ```
 
 ## Details on building Amber
