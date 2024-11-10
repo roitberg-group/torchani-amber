@@ -134,6 +134,48 @@ class AmberIntegration(unittest.TestCase):
             self.d.cleanup()
 
     @parameterized.expand(configs, name_func=name_func)
+    def testPmemd(self, config: RunConfig) -> None:
+        if config.mlmm:
+            self.skipTest("pmemd does not support ML/MM")
+        if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
+            test_dir = Path(__file__).parent / config.name
+            test_dir.mkdir(exist_ok=True)
+        else:
+            self.d = tempfile.TemporaryDirectory()
+            test_dir = Path(self.d.name)
+        if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
+            string = env.get_template("input.mdin.jinja").render(
+                legacy=True, **asdict(config)
+            )
+        else:
+            string = env.get_template("input.mdin.jinja").render(
+                legacy=False, **asdict(config)
+            )
+        (test_dir / "input.mdin").write_text(string)
+        self._run_engine("pmemd", test_dir)
+
+        # Generate expected values
+        expect = this_dir / "expect"
+        expect.mkdir(exist_ok=True)
+        for f in sorted(test_dir.iterdir()):
+            if f.suffix in [".dat", ".traj", ".xyz"]:
+                expect_file = (expect / config.name).with_suffix(f".{f.name}")
+                if expect_file.exists() and not config.cuda:
+                    expect_text = expect_file.read_text()
+                    expect_arr = self.parse_amber_output(expect_text, f.suffix)
+                    this_text = f.read_text()
+                    this_arr = self.parse_amber_output(this_text, f.suffix)
+                    assert_allclose(
+                        this_arr,
+                        expect_arr,
+                        rtol=1e-7 if not config.cuda else 1e-5,
+                        atol=1e-5 if not config.cuda else 1e-4,
+                        err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
+                    )
+                if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
+                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
+
+    @parameterized.expand(configs, name_func=name_func)
     def testSander(self, config: RunConfig) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
             test_dir = Path(__file__).parent / config.name
@@ -150,7 +192,7 @@ class AmberIntegration(unittest.TestCase):
                 legacy=False, **asdict(config)
             )
         (test_dir / "input.mdin").write_text(string)
-        self._run_sander(test_dir)
+        self._run_engine("sander", test_dir)
 
         # Generate expected values
         expect = this_dir / "expect"
@@ -183,12 +225,12 @@ class AmberIntegration(unittest.TestCase):
             text = " ".join(text.split("\n")[1:])  # Get rid of file name
         return np.array([float(s) for s in text.split() if s.strip()], dtype=np.float32)
 
-    def _run_sander(self, dir: Path) -> None:
+    def _run_engine(self, name: str, dir: Path) -> None:
         # prmtop and inpcrd correspond to a solvated ALA dipeptide
         this_dir = Path(__file__).parent
         out = subprocess.run(
             [
-                "sander",
+                name,
                 "-i",
                 "input.mdin",
                 "-p",
