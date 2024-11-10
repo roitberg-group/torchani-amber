@@ -85,7 +85,7 @@ for tup in itertools.product(
 ):
     config = RunConfig(*tup)
     if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
-        if not config.mlmm:
+        if config.fullml:
             continue
         if config.neighborlist != "all_pairs":
             continue
@@ -104,12 +104,11 @@ for tup in itertools.product(
             continue
 
     # All-Pairs PBC with full-ml is too slow
-    if not config.mlmm:
+    if config.fullml:
         if config.explicit_solvent and config.neighborlist == "all_pairs":
             continue
 
     configs.append(config)
-
 
 env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
@@ -133,10 +132,8 @@ class AmberIntegration(unittest.TestCase):
         if self.d is not None:
             self.d.cleanup()
 
-    @parameterized.expand(configs, name_func=name_func)
+    @parameterized.expand([c for c in configs if c.fullml], name_func=name_func)
     def testPmemd(self, config: RunConfig) -> None:
-        if config.mlmm:
-            self.skipTest("pmemd does not support ML/MM")
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
             test_dir = Path(__file__).parent / config.name
             test_dir.mkdir(exist_ok=True)
