@@ -235,8 +235,8 @@ ML/MM and electrostatic related options:
    coupling).
 
 We recommend using one of the following two settings:
-- *mlmm_coupling = 0* and *use_torchani_charges=.true.* (variable nn-predicted charges)
-- *mlmm_coupling = 1* and *use_torchani_charges=.false.* (fixed topology charges)
+- *mlmm_coupling = 1* and *use_torchani_charges=.true.* (variable nn-predicted charges)
+- *mlmm_coupling = 0* and *use_torchani_charges=.false.* (fixed topology charges)
 
 TODO: Check what the defaults are for qm_ewald and qm_mask
 
