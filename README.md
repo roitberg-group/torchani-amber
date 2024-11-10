@@ -78,6 +78,10 @@ enough, it is tested with 11.4). A tested GCC version is included in the
         -DBUILD_GUI=FALSE
     ```
 
+IMPORTANT: If you compile Sander or Pmemd with TorchANI-Amber enabled, the binaries will
+depend on the cuda and torch libraries being present to run correctly, even when
+executing CPU-only calculations.
+
 ## Details on building Amber
 
 When building Amber make sure that:
@@ -160,7 +164,7 @@ The `&ani` namelist has the following basic options:
 There are also some advanced options:
 - `use_cuaev` (bool)
    Whether to use the cuAEV cuda extension to accelerate potentials that support it.
-- `use_external_neighborlist` (bool)
+- `use_amber_neighborlist` (bool)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
 - `use_torch_cell_list` (bool)
    Whether to use the TorchANI `CellList` to accelerate internal neighborlist
