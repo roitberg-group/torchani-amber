@@ -85,8 +85,6 @@ TEST_CASE("C bindings") {
         INFO("cuAEV: " << (use_cuaev == 1));
         // TODO: Cell seems to be too small for pbc, but this should generate
         // tests for the cell too
-        int use_cell_list = 0;
-        int use_external_neighborlist = 0;
 
         // output
         double potential_energy;
@@ -99,8 +97,6 @@ TEST_CASE("C bindings") {
             &network_index,
             &use_double,
             &use_cuda_device,
-            &use_cell_list,
-            &use_external_neighborlist,
             &use_cuaev
         );
 

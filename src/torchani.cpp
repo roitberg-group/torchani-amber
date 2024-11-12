@@ -70,8 +70,6 @@ void torchani_init_atom_types_(
     int* network_index_raw,
     int* use_double_precision_raw,
     int* use_cuda_device_raw,
-    int* use_torch_cell_list_raw,
-    int* use_external_neighborlist_raw,
     int* use_cuaev_raw
 ) {
     // use_cuda_device and use_double_precision should be a bool but it is
@@ -82,13 +80,10 @@ void torchani_init_atom_types_(
     int num_atoms = *num_atoms_raw;
     int device_index = *device_index_raw;
     int network_index = *network_index_raw;
-    bool use_external_neighborlist = static_cast<bool>(*use_external_neighborlist_raw);
-    bool use_cell_list = static_cast<bool>(*use_torch_cell_list_raw);
     bool use_cuaev = static_cast<bool>(*use_cuaev_raw);
     bool use_cuda_device = static_cast<bool>(*use_cuda_device_raw);
     bool use_double_precision = static_cast<bool>(*use_double_precision_raw);
     std::string model_jit_fname;
-    std::string suffix = "";
 
     if (use_cuaev and not use_cuda_device) {
         std::cerr
@@ -98,15 +93,7 @@ void torchani_init_atom_types_(
         std::exit(2);
     }
 
-    if (use_cell_list) {
-        suffix = "-celllist";
-    } else if (use_external_neighborlist) {
-        suffix = "-externlist";
-    } else {
-        suffix = "-stdlist";
-    }
-
-    model_jit_fname = torchani_model[*torchani_model_index_raw] + suffix + ".pt";
+    model_jit_fname = torchani_model[*torchani_model_index_raw] + ".pt";
     #ifdef DEBUG
     std::cout << "model_jit_fname: " << model_jit_fname << '\n';
     #endif

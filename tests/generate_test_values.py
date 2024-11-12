@@ -105,19 +105,15 @@ def _main(
     _generate_cpu_or_cuda_values(model_jit_files, "cpu", tests_dir)
 
 
+# TODO: Fix this file, it does not generate accurate test values anymore =(
 if __name__ == "__main__":
     tests_dir = Path(__file__).resolve().parent.parent / "tests"
     jit_dir = Path(__file__).resolve().parent.parent / "jit"
     model_jit_files = [
-        jit_dir / "ani1x-stdlist.pt",
-        jit_dir / "ani1ccx-stdlist.pt",
-        jit_dir / "ani2x-stdlist.pt",
-        jit_dir / "animbis-stdlist.pt",
-        jit_dir / "anidr-stdlist.pt",
-        jit_dir / "ani1x-stdlist-0.pt",
-        jit_dir / "ani1ccx-stdlist-0.pt",
-        jit_dir / "ani2x-stdlist-0.pt",
-        jit_dir / "animbis-stdlist-0.pt",
-        jit_dir / "anidr-stdlist-0.pt",
+        jit_dir / "ani1x.pt",
+        jit_dir / "ani1ccx.pt",
+        jit_dir / "ani2x.pt",
+        jit_dir / "animbis.pt",
+        jit_dir / "anidr.pt",
     ]
     _main(model_jit_files, tests_dir)
