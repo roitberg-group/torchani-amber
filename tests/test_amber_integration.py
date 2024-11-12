@@ -77,9 +77,7 @@ cuda_configs = (None, CudaConfig(True), CudaConfig(False))
 mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
 # TODO test external neighborlist, "amber"
 configs: tp.List[RunConfig] = []
-for tup in itertools.product(
-    cuda_configs, mlmm_configs, bools, bools, bools
-):
+for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools):
     config = RunConfig(*tup)
     if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
         if config.fullml:
