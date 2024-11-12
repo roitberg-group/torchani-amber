@@ -15,25 +15,25 @@ public :: &
 
 interface
 subroutine internal_init_atom_types( &
-    atomic_nums, &
     num_atoms, &
-    device_index, &
+    atomic_nums, &
     model_type, &
+    device_index, &
     network_index, &
     use_double_precision, &
     use_cuda_device, &
     use_cuaev &
 ) bind(c, name="torchani_init_atom_types")
     use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), intent(in) :: atomic_nums(*)
-    integer(c_int), intent(in) :: num_atoms
-    integer(c_int), intent(in) :: device_index
     character(len=1, kind=c_char), intent(in) :: model_type(*)
-    integer(c_int), intent(in) :: network_index
+    integer(c_int), value, intent(in) :: device_index
+    integer(c_int), value, intent(in) :: network_index
     ! Flags
-    logical(c_bool), intent(in) :: use_double_precision
-    logical(c_bool), intent(in) :: use_cuda_device
-    logical(c_bool), intent(in) :: use_cuaev
+    logical(c_bool), value, intent(in) :: use_double_precision
+    logical(c_bool), value, intent(in) :: use_cuda_device
+    logical(c_bool), value, intent(in) :: use_cuaev
 endsubroutine
 
 subroutine torchani_energy_force( &
@@ -43,7 +43,7 @@ subroutine torchani_energy_force( &
     potential_energy &
 ) bind(c, name="torchani_energy_force")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
@@ -58,7 +58,7 @@ subroutine torchani_energy_force_qbc( &
     qbc &
 ) bind(c, name="torchani_energy_force_qbc")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
@@ -69,12 +69,12 @@ endsubroutine
 subroutine torchani_energy_force_pbc( &
     num_atoms, &
     coords, &
-    forces, &
     pbc_box, &
+    forces, &
     potential_energy &
 ) bind(c, name="torchani_energy_force_pbc")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     real(c_double), intent(out) :: pbc_box(*)
     ! Outputs
@@ -90,7 +90,7 @@ subroutine torchani_energy_force_atomic_charges( &
     potential_energy &
 ) bind(c, name="torchani_energy_force_atomic_charges")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
@@ -107,7 +107,7 @@ subroutine torchani_energy_force_atomic_charges_with_derivatives( &
     potential_energy &
 ) bind(c, name="torchani_energy_force_atomic_charges_with_derivatives")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
@@ -127,7 +127,7 @@ subroutine torchani_data_for_monitored_mlmm( &
     qbc_grad &
 ) bind(c, name="torchani_data_for_monitored_mlmm")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
@@ -142,17 +142,17 @@ subroutine torchani_energy_force_external_neighborlist( &
     num_atoms, &
     coords, &
     num_neighbors, &
-    neighborlist, &
     shifts, &
+    neighborlist, &
     forces, &
     potential_energy &
 ) bind(c, name="torchani_energy_force_external_neighborlist")
     use, intrinsic :: iso_c_binding
-    integer(c_int), intent(in) :: num_atoms
-    integer(c_int), intent(in) :: num_neighbors
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_neighbors
     real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: shifts(*)
     integer(c_int), intent(in) :: neighborlist(*)
+    real(c_double), intent(in) :: shifts(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy(*)
@@ -174,8 +174,8 @@ subroutine torchani_init_atom_types( &
     use_cuaev &
 )
     integer(c_int), intent(in) :: atomic_nums(*)
-    integer(c_int), intent(in) :: num_atoms
-    integer(c_int), intent(in) :: device_index
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: device_index
     character(len=1, kind=c_char), intent(in) :: model_type(*)
     integer(c_int), intent(in) :: network_index
     ! Flags
@@ -183,10 +183,10 @@ subroutine torchani_init_atom_types( &
     logical, intent(in) :: use_cuda_device
     logical, intent(in) :: use_cuaev
     call internal_init_atom_types( &
-        atomic_nums, &
         num_atoms, &
-        device_index, &
+        atomic_nums, &
         model_type, &
+        device_index, &
         network_index, &
         fbool_to_cbool(use_double_precision), &
         fbool_to_cbool(use_cuda_device), &
