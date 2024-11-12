@@ -83,8 +83,7 @@
 {% endif %}
     model_index = -1
     {% if not legacy %}
-    use_torch_cell_list = .{{ neighborlist == 'cell_list' }}.
-    use_amber_neighborlist = .{{ neighborlist == 'amber' }}.
+    use_amber_neighborlist = .{{ use_amber_neighborlist }}.
     {% endif %}
 /
 ! End TorchANI-Amber test input

@@ -26,7 +26,6 @@ from parameterized import parameterized
 import jinja2
 
 this_dir = Path(__file__).parent
-Pairlists = tp.Literal["cell_list", "all_pairs", "amber"]
 
 
 @dataclass
@@ -46,7 +45,7 @@ class RunConfig:
     shake: bool
     vacuum: bool
     float64: bool
-    neighborlist: Pairlists
+    use_amber_neighborlist: bool = False  # TODO Implement option
 
     @property
     def name(self) -> str:
@@ -57,7 +56,6 @@ class RunConfig:
         parts.append("cuda" if self.cuda else "cpu")
         if self.cuda and self.cuda.cuaev:
             parts.append("cuaev")
-        parts.append(self.neighborlist.replace("_", ""))
         return "_".join(parts)
 
     @property
@@ -78,16 +76,13 @@ bools = (True, False)
 cuda_configs = (None, CudaConfig(True), CudaConfig(False))
 mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
 # TODO test external neighborlist, "amber"
-neighbor_configs: tp.Tuple[Pairlists, ...] = ("cell_list", "all_pairs")
 configs: tp.List[RunConfig] = []
 for tup in itertools.product(
-    cuda_configs, mlmm_configs, bools, bools, bools, neighbor_configs
+    cuda_configs, mlmm_configs, bools, bools, bools
 ):
     config = RunConfig(*tup)
     if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
         if config.fullml:
-            continue
-        if config.neighborlist != "all_pairs":
             continue
         if config.cuda and config.cuda.cuaev:
             continue
@@ -98,17 +93,8 @@ for tup in itertools.product(
     ):
         continue
 
-    # Mlmm is only tested with all-pairs
-    if config.mlmm:
-        if config.neighborlist != "all_pairs":
-            continue
-
-    # All-Pairs PBC with full-ml is too slow
-    if config.fullml:
-        if config.explicit_solvent and config.neighborlist == "all_pairs":
-            continue
-
     configs.append(config)
+
 
 env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
@@ -180,6 +166,8 @@ class AmberIntegration(unittest.TestCase):
         else:
             self.d = tempfile.TemporaryDirectory()
             test_dir = Path(self.d.name)
+
+        # Fix amber neighborlist
         if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
             string = env.get_template("input.mdin.jinja").render(
                 legacy=True, **asdict(config)
