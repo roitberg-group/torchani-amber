@@ -9,8 +9,6 @@ extern "C" void torchani_init_atom_types_(
     int* network_index_raw,
     int* use_double_precision_raw,
     int* use_cuda_device_raw,
-    int* use_torch_cell_list_raw,
-    int* use_external_neighborlist_raw,
     int* use_cuaev_raw
 );
 

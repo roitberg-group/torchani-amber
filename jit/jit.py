@@ -15,37 +15,30 @@ JIT_DIR = Path(__file__).resolve().parent
 @dataclass
 class ModelSpec:
     cls: str
-    neighborlist: str
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        return {"neighborlist": self.neighborlist, "strategy": "cuaev"}
+        return {"neighborlist": "adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
-        if self.neighborlist == "cell_list":
-            suffix = "celllist"
-        elif self.neighborlist == "all_pairs":
-            suffix = "stdlist"
-        return Path(JIT_DIR / f"{self.cls.lower()}-{suffix}.pt")
+        return Path(JIT_DIR / f"{self.cls.lower()}.pt")
 
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
 ) -> tp.List[ModelSpec]:
     model_names = ("ANI1x", "ANI1ccx", "ANI2x", "ANIdr", "ANIala", "ANImbis")
-    neighborlists = ["all_pairs", "cell_list"]
 
     specs = []
     for name in model_names:
-        for nl in neighborlists:
-            spec = ModelSpec(cls=name, neighborlist=nl)
-            if spec.file_path().exists() and not force_recompilation:
-                continue
-            specs.append(spec)
+        spec = ModelSpec(cls=name)
+        if spec.file_path().exists() and not force_recompilation:
+            continue
+        specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
-            console.print(f"-- {s.cls}({s.neighborlist})")  # noqa
+            console.print(f"-- {s.cls}")  # noqa
     return specs
 
 
