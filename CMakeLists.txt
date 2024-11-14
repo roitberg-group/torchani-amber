@@ -6,7 +6,7 @@ cmake_minimum_required(
 project(
     Torchani
     LANGUAGES C CXX
-    VERSION 0.1
+    VERSION 0.2
     DESCRIPTION "C++ wrapper to execute ANI-Style models from TorchANI"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
@@ -317,7 +317,7 @@ set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Conf
 write_basic_package_version_file(
     "${PKG_VERSION_FILE_BLDTREE_PATH}"
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY ExactVersion
+    COMPATIBILITY SameMinorVersion
 )
 set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
 
