@@ -319,37 +319,62 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY ExactVersion
 )
-set(PKG_RELATIVE_DATADIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
 set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+
+# *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
+set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}")
+set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
+set(LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
+set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
 configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
     "${PKG_CONFIG_FILE_BLDTREE_PATH}"
-    INSTALL_DESTINATION "${PKG_RELATIVE_DATADIR}"
+    INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
+    PATH_VARS
+        INCLUDE_INSTALL_DIR
+        DATA_INSTALL_DIR
+        LIBRARY_INSTALL_DIR
+        FORTRAN_INTERFACE_INSTALL_SRC_FILE
 )
+# Install CMake config-file and config-ver-file for downstream usage:
 install(
-    FILES  # Paths to files in the bldtree
+    FILES
         "${PKG_CONFIG_FILE_BLDTREE_PATH}"
         "${PKG_VERSION_FILE_BLDTREE_PATH}"
-    DESTINATION "${PKG_RELATIVE_DATADIR}"
+    DESTINATION "${PKGDATA_INSTALL_DIR}"
 )
-# TODO Add model.jit.pt files here
 
-# Install targets
-# - pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
-# - corresponding targets
+# Install CMake targets for downstream usage:
+# pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
 set(PKG_EXPORT_FILESET_NAME "${PROJECT_NAME}Targets")
 install(
     EXPORT ${PKG_EXPORT_FILESET_NAME}
     FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
     NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
-    DESTINATION "${PKG_RELATIVE_DATADIR}"
+    DESTINATION "${PKGDATA_INSTALL_DIR}"
 )
 
+# Install corresponding targets
 install(
     TARGETS
         torchani
         cuaev
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}"
+        DESTINATION "${LIBRARY_INSTALL_DIR}"
 )
+# Install C-interface include file
+install(
+    FILES
+        "${CMAKE_SOURCE_DIR}/include/torchani.h"
+    DESTINATION "${INCLUDE_INSTALL_DIR}"
+)
+
+# Install module file necessary for a portable fortran interface
+install(
+    FILES
+        "${CMAKE_SOURCE_DIR}/src-fortran/torchani.F90"
+    DESTINATION "${DATA_INSTALL_DIR}/Fortran"
+)
+# TODO Add model.jit.pt files

@@ -33,7 +33,7 @@ static std::string file_directory = file_path.substr(
 
 
 TEST_CASE("C bindings") {
-    double coordinates[][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    double coords[][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
     int atomic_numbers[] = {1, 6};
     int size = 2;
     double forces[size][3];
@@ -46,22 +46,22 @@ TEST_CASE("C bindings") {
     INFO("Comparing with double precision: " << use_double);
 
     SECTION("Energy + Force", "Test energy and force for all models") {
-        using ModelSpec = std::tuple<int, int, std::string>;
+        using ModelSpec = std::tuple<std::string, int, std::string>;
         auto model_spec = GENERATE(
-            table<int, int, std::string>(
+            table<std::string, int, std::string>(
                 {
-                    ModelSpec{0, 0, "_1x"},
-                    ModelSpec{1, 0, "_1ccx"},
-                    ModelSpec{2, 0, "_2x"},
-                    ModelSpec{3, 0, "_mbis"},
-                    ModelSpec{0, -1, "_1x_ensemble"},
-                    ModelSpec{1, -1, "_1ccx_ensemble"},
-                    ModelSpec{2, -1, "_2x_ensemble"},
-                    ModelSpec{3, -1, "_mbis_ensemble"}
+                    ModelSpec{"ani1x", 0, "_1x"},
+                    ModelSpec{"ani1ccx", 0, "_1ccx"},
+                    ModelSpec{"ani2x", 0, "_2x"},
+                    ModelSpec{"animbis", 0, "_mbis"},
+                    ModelSpec{"ani1x", -1, "_1x_ensemble"},
+                    ModelSpec{"ani1ccx", -1, "_1ccx_ensemble"},
+                    ModelSpec{"ani2x", -1, "_2x_ensemble"},
+                    ModelSpec{"animbis", -1, "_mbis_ensemble"}
                 }
             )
         );
-        int torchani_model_index = std::get<0>(model_spec);
+        std::string model_type = std::get<0>(model_spec);
         int network_index = std::get<1>(model_spec);
         std::string model_suffix = std::get<2>(model_spec);
         INFO("Testing model: " << "ani" << model_suffix);
@@ -89,15 +89,15 @@ TEST_CASE("C bindings") {
         // output
         double potential_energy;
 
-        torchani_init_atom_types_(
+        torchani_init_model(
+            size,
             atomic_numbers,
-            &size,
-            &device_index,
-            &torchani_model_index,
-            &network_index,
-            &use_double,
-            &use_cuda_device,
-            &use_cuaev
+            model_type.c_str(),
+            device_index,
+            network_index,
+            use_double,
+            use_cuda_device,
+            use_cuaev
         );
 
         std::string file_path = file_directory
@@ -116,17 +116,17 @@ TEST_CASE("C bindings") {
             std::exit(2);
         }
 
-        if (torchani_model_index != 3) {
+        if (model_type != "animbis") {
             double test_values[7];
             for (int j = 0; j != 7; ++j) {
                 infile >> test_values[j];
             }
             for (long j = 0; j != 10; ++j) {
-                torchani_energy_force_pbc_(
-                    coordinates,
-                    &size,
-                    forces,
+                torchani_energy_force_pbc(
+                    size,
+                    coords,
                     cell,
+                    forces,
                     &potential_energy
                 );
                 FLOAT_EQ(potential_energy, test_values[0], use_double);
@@ -145,17 +145,16 @@ TEST_CASE("C bindings") {
             double* atomic_charge_derivatives;
             atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
             for (long j = 0; j != 10; ++j){
-                torchani_data_for_monitored_mlmm_(
-                    coordinates,
-                    &size,
-                    &charges_type_raw,
+                torchani_data_for_monitored_mlmm(
+                    size,
+                    coords,
                     /* outputs */
                     forces,
-                    &potential_energy,
-                    atomic_charge_derivatives,
                     atomic_charges,
+                    atomic_charge_derivatives,
                     &qbc,
-                    qbc_deriv
+                    qbc_deriv,
+                    &potential_energy
                 );
                 FLOAT_EQ(potential_energy, test_values[0], use_double);
                 FLOAT_EQ(forces[0][0], test_values[1], use_double);
