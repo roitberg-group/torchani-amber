@@ -6,7 +6,7 @@ cmake_minimum_required(
 project(
     Torchani
     LANGUAGES C CXX
-    VERSION 0.2
+    VERSION 0.3
     DESCRIPTION "C++ wrapper to execute ANI-Style models from TorchANI"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
