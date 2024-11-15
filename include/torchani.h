@@ -73,7 +73,7 @@ void torchani_data_for_monitored_mlmm(
     double* potential_energy  // Scalar
 );
 
-void torchani_energy_force_external_neighborlist(
+void torchani_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords[][3],  // Shape (num_atoms, 3)

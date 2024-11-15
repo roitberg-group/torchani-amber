@@ -61,14 +61,18 @@ void torchani_set_precision(bool use_double_precision) {
     }
 }
 
-
-std::vector<torch::jit::IValue> setup_inputs_pbc_external_neighborlist(
+std::vector<torch::jit::IValue> setup_external_neighbors(
     torch::Tensor& coords, torch::Tensor& neighborlist, torch::Tensor& shifts
 ) {
-    std::tuple<torch::Tensor, torch::Tensor> input_tuple = {
-        torchani_atomic_numbers, coords
+    return {
+        torchani_atomic_numbers,
+        coords.to(torchani_precision),
+        neighborlist,
+        shifts.to(torchani_precision),
+        /* total_charge= */0,
+        /* atomic= */false,
+        /* ensemble_values= */false
     };
-    return {input_tuple, neighborlist, shifts};
 }
 
 std::vector<torch::jit::IValue> setup_inputs_pbc(
@@ -270,6 +274,18 @@ void populate_potential_energy(torch::Tensor& output, double* potential_energy) 
     *potential_energy = (*output.data_ptr<double>()) * HARTREE_TO_KCALMOL;
 }
 
+
+torch::Tensor get_energy_output_from_external_neighbors(std::vector<torch::jit::IValue>& inputs) {
+    // The output value of the model is of type torch::jit::IValue
+    // so it has to be converted to tensor to be correctly used
+    // output value is a tuple here
+    // The output value of the model is an IValue that has to be cast to a
+    // (pointer to a) tuple. The first element is the only important one, which is
+    // a 1D tensor that holds the potential energy
+    torch::Tensor output = model.get_method("compute_from_external_neighbors")(inputs).toTensor();
+    return output;
+}
+
 torch::Tensor get_energy_output(std::vector<torch::jit::IValue>& inputs) {
     // The output value of the model is of type torch::jit::IValue
     // so it has to be converted to tensor to be correctly used
@@ -401,7 +417,7 @@ void torchani_init_model(
     #endif
 }
 
-void torchani_energy_force_external_neighborlist(
+void torchani_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords_buf[][3],
@@ -414,11 +430,8 @@ void torchani_energy_force_external_neighborlist(
     torch::Tensor coords = setup_coords(num_atoms, coords_buf);
     torch::Tensor neighborlist = setup_neighborlist(num_neighbors, neighborlist_buf);
     torch::Tensor shifts = setup_shifts(num_neighbors, shifts_buf);
-
-    // Inputs are setup with PBC
-    std::vector<torch::jit::IValue> inputs =
-        setup_inputs_pbc_external_neighborlist(coords, neighborlist, shifts);
-    torch::Tensor result = get_energy_output(inputs);
+    std::vector<torch::jit::IValue> inputs = setup_external_neighbors(coords, neighborlist, shifts);
+    torch::Tensor result = get_energy_output_from_external_neighbors(inputs);
     calculate_and_populate_forces(coords, result, forces_buf, false, num_atoms);
     populate_potential_energy(result, potential_energy_buf);
 }
