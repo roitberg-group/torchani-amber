@@ -6,7 +6,7 @@ implicit none (type, external)
 public :: &
     torchani_init_model, &
     torchani_energy_force, &
-    torchani_energy_force_external_neighborlist, &
+    torchani_energy_force_from_external_neighbors, &
     torchani_energy_force_pbc, &
     torchani_energy_force_qbc, &
     torchani_energy_force_atomic_charges, &
@@ -138,15 +138,15 @@ subroutine torchani_data_for_monitored_mlmm( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine torchani_energy_force_external_neighborlist( &
+subroutine torchani_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
     coords, &
-    shifts, &
     neighborlist, &
+    shifts, &
     forces, &
     potential_energy &
-) bind(c, name="torchani_energy_force_external_neighborlist")
+) bind(c, name="torchani_energy_force_from_external_neighbors")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), value, intent(in) :: num_neighbors

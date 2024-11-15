@@ -45,7 +45,7 @@ class RunConfig:
     shake: bool
     vacuum: bool
     float64: bool
-    use_amber_neighborlist: bool = False  # TODO Implement option
+    use_amber_neighborlist: bool
 
     @property
     def name(self) -> str:
@@ -77,7 +77,7 @@ cuda_configs = (None, CudaConfig(True), CudaConfig(False))
 mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
 # TODO test external neighborlist, "amber"
 configs: tp.List[RunConfig] = []
-for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools):
+for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools, bools):
     config = RunConfig(*tup)
     if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
         if config.fullml:
@@ -89,6 +89,14 @@ for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools):
     if config.float64 and not (
         config.mlmm and config.cuda and config.cuda.cuaev and config.vacuum
     ):
+        continue
+
+    # Not implemented
+    if config.mlmm and config.use_amber_neighborlist:
+        continue
+
+    # Not applicable
+    if config.fullml and config.vacuum and config.use_amber_neighborlist:
         continue
 
     configs.append(config)
@@ -116,8 +124,23 @@ class AmberIntegration(unittest.TestCase):
         if self.d is not None:
             self.d.cleanup()
 
-    @parameterized.expand([c for c in configs if c.fullml], name_func=name_func)
+    @parameterized.expand(
+        [c for c in configs if (c.fullml and not c.use_amber_neighborlist)],
+        name_func=name_func,
+    )
     def testPmemd(self, config: RunConfig) -> None:
+        self._testPmemd(config)
+
+    # TODO: CPU + Water test fails, not sure why (!) difference is very small,
+    # may be some sort of rounding error issue?
+    @parameterized.expand(
+        [c for c in configs if (c.fullml and c.use_amber_neighborlist)],
+        name_func=name_func,
+    )
+    def testPmemdAmberNeighbors(self, config: RunConfig) -> None:
+        self._testPmemd(config)
+
+    def _testPmemd(self, config: RunConfig) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
             test_dir = Path(__file__).parent / config.name
             test_dir.mkdir(exist_ok=True)
@@ -156,7 +179,10 @@ class AmberIntegration(unittest.TestCase):
                 if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
                     shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
 
-    @parameterized.expand(configs, name_func=name_func)
+    # TODO implement amber neighborlist for sander
+    @parameterized.expand(
+        [c for c in configs if not config.use_amber_neighborlist], name_func=name_func
+    )
     def testSander(self, config: RunConfig) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
             test_dir = Path(__file__).parent / config.name
