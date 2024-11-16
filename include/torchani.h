@@ -55,7 +55,7 @@ void torchani_energy_force_qbc(
 void torchani_energy_force_pbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
-    double pbc_box[][3],  // Shape (3, 3)
+    double cell[][3],  // Shape (3, 3)
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* potential_energy  // Scalar

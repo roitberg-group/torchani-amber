@@ -3,12 +3,13 @@ r"""TorchANI-Amber integration tests
 If the envvar TORCHANI_AMBER_KEEP_TEST_DIRS=1, then the inputs and outputs
 are not removed after the tests are run, this may be useful for debugging.
 
-If the envvar TORCHANI_AMBER_EXPECTTEST=1 then the ``.dat``, ``.xyz``, and ``.traj``
+If the envvar TORCHANI_AMBER_OVERWRITE_EXPECTED=1 then the ``.dat``, ``.xyz``,``.mdcrd``
 outputs of the test are saved into the `expect/` directory
 
 If you are debugging old branches use TORCHANI_AMBER_LEGACY_TEST=1
 """
 
+import math
 from numpy.typing import NDArray
 from numpy.testing import assert_allclose
 import numpy as np
@@ -75,7 +76,6 @@ class RunConfig:
 bools = (True, False)
 cuda_configs = (None, CudaConfig(True), CudaConfig(False))
 mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
-# TODO test external neighborlist, "amber"
 configs: tp.List[RunConfig] = []
 for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools, bools):
     config = RunConfig(*tup)
@@ -129,7 +129,7 @@ class AmberIntegration(unittest.TestCase):
         name_func=name_func,
     )
     def testPmemd(self, config: RunConfig) -> None:
-        self._testPmemd(config)
+        self._testPmemd(config, f"pmemd_{config.name}")
 
     # TODO: CPU + Water test fails, not sure why (!) difference is very small,
     # may be some sort of rounding error issue?
@@ -137,12 +137,12 @@ class AmberIntegration(unittest.TestCase):
         [c for c in configs if (c.fullml and c.use_amber_neighborlist)],
         name_func=name_func,
     )
-    def testPmemdAmberNeighbors(self, config: RunConfig) -> None:
-        self._testPmemd(config)
+    def testPmemdFromNeighbors(self, config: RunConfig) -> None:
+        self._testPmemd(config, f"pmemd_from_neighbors_{config.name}")
 
-    def _testPmemd(self, config: RunConfig) -> None:
+    def _testPmemd(self, config: RunConfig, dirname: str) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
-            test_dir = Path(__file__).parent / config.name
+            test_dir = Path(__file__).parent / f"dump_{dirname}"
             test_dir.mkdir(exist_ok=True)
         else:
             self.d = tempfile.TemporaryDirectory()
@@ -162,9 +162,9 @@ class AmberIntegration(unittest.TestCase):
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".traj", ".xyz"]:
+            if f.suffix in [".dat", ".mdcrd", ".xyz"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
-                if expect_file.exists() and not config.cuda:
+                if expect_file.exists():
                     expect_text = expect_file.read_text()
                     expect_arr = self.parse_amber_output(expect_text, f.suffix)
                     this_text = f.read_text()
@@ -172,20 +172,30 @@ class AmberIntegration(unittest.TestCase):
                     assert_allclose(
                         this_arr,
                         expect_arr,
-                        rtol=1e-7 if not config.cuda else 1e-5,
-                        atol=1e-5 if not config.cuda else 1e-4,
+                        # Extra slack for cuda
+                        rtol=1e-7 if not config.cuda else 0.0,
+                        atol=1e-5 if not config.cuda else 1e-3,
                         err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
                     )
-                if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
+                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
                     shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
 
-    # TODO implement amber neighborlist for sander
+    @parameterized.expand(
+        [c for c in configs if (c.fullml and c.use_amber_neighborlist)],
+        name_func=name_func,
+    )
+    def testSanderFromNeighbors(self, config: RunConfig) -> None:
+        self._testSander(config, f"sander_from_neighbors_{config.name}")
+
     @parameterized.expand(
         [c for c in configs if not config.use_amber_neighborlist], name_func=name_func
     )
     def testSander(self, config: RunConfig) -> None:
+        self._testSander(config, f"sander_{config.name}")
+
+    def _testSander(self, config: RunConfig, dirname: str) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
-            test_dir = Path(__file__).parent / config.name
+            test_dir = Path(__file__).parent / f"dump_{dirname}"
             test_dir.mkdir(exist_ok=True)
         else:
             self.d = tempfile.TemporaryDirectory()
@@ -207,9 +217,9 @@ class AmberIntegration(unittest.TestCase):
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".traj", ".xyz"]:
+            if f.suffix in [".dat", ".mdcrd", ".xyz"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
-                if expect_file.exists() and not config.cuda:
+                if expect_file.exists():
                     expect_text = expect_file.read_text()
                     expect_arr = self.parse_amber_output(expect_text, f.suffix)
                     this_text = f.read_text()
@@ -217,11 +227,12 @@ class AmberIntegration(unittest.TestCase):
                     assert_allclose(
                         this_arr,
                         expect_arr,
-                        rtol=1e-7 if not config.cuda else 1e-5,
-                        atol=1e-5 if not config.cuda else 1e-4,
+                        # Extra slack for cuda
+                        rtol=1e-7 if not config.cuda else 0.0,
+                        atol=1e-5 if not config.cuda else 1e-3,
                         err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
                     )
-                if os.environ.get("TORCHANI_AMBER_EXPECTTEST") == "1":
+                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
                     shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
 
     @staticmethod
@@ -230,28 +241,30 @@ class AmberIntegration(unittest.TestCase):
             lines = text.split("\n")
             non_comment = [line for line in lines if "TORCHANI" not in line]
             text = " ".join(non_comment)
-        if suffix == ".traj":
+        if suffix == ".mdcrd":
             text = " ".join(text.split("\n")[1:])  # Get rid of file name
         return np.array([float(s) for s in text.split() if s.strip()], dtype=np.float32)
 
     def _run_engine(self, name: str, dir: Path) -> None:
         # prmtop and inpcrd correspond to a solvated ALA dipeptide
         this_dir = Path(__file__).parent
+        shutil.copy(this_dir / "system.prmtop", dir / "system.prmtop")
+        shutil.copy(this_dir / "system.inpcrd", dir / "system.inpcrd")
         out = subprocess.run(
             [
                 name,
                 "-i",
                 "input.mdin",
                 "-p",
-                this_dir / "system.prmtop",
+                "system.prmtop",
                 "-c",
-                this_dir / "system.inpcrd",
+                "system.inpcrd",
                 "-o",
                 "system.mdout",
                 "-r",
                 "system.restart",
                 "-x",
-                "system.traj",
+                "system.mdcrd",
                 "-inf",
                 "system.mdinfo",
                 "-O",  # Overwrite
@@ -262,8 +275,8 @@ class AmberIntegration(unittest.TestCase):
             text=True,
         )
         if out.returncode != 0:
-            print("Process stdout", out.stdout)
-            print("Process stderr", out.stdout)
+            print("Process stdout: ", out.stdout)
+            print("Process stderr: ", out.stderr)
             mdout = dir / "system.mdout"
             if mdout.exists():
                 print("Amber mdout", mdout.read_text())

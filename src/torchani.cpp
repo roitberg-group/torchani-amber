@@ -3,7 +3,6 @@
 #include <iostream>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 #include <vector>
 
 #include <torch/csrc/jit/runtime/graph_executor.h>
@@ -22,20 +21,20 @@ double HARTREE_TO_KCALMOL = 627.5094738898777;
 // Default device is CPU
 torch::Device torchani_device{torch::kCPU, -1};
 // Amber has PBC enabled in all directions for PME
-torch::Tensor use_pbc = torch::tensor(
+torch::Tensor pbc_true = torch::tensor(
     {true, true, true},
     torch::TensorOptions()
         .dtype(torch::kBool)
         .device(torch::Device(torch::kCPU, -1))
 );
 torch::ScalarType torchani_precision = torch::kFloat;
-std::unordered_map<int, std::string> torchani_model = {
-    {-1, "custom"},
-    {0, "ani1x"},
-    {1, "ani1ccx"},
-    {2, "ani2x"},
-    {3, "animbis"},
-    {4, "anidr"}
+std::vector<std::string> torchani_builtin_models = {
+    "ani1x",
+    "ani1ccx",
+    "ani2x",
+    "animbis",
+    "anidr",
+    "aniala"
 };
 }  // namespace
 
@@ -48,6 +47,7 @@ void torchani_set_device(bool use_cuda_device, int device_index) {
     } else {
         torchani_device = torch::Device(torch::kCPU, device_index);
     }
+    pbc_true = pbc_true.to(torchani_device);
 }
 
 /**
@@ -61,31 +61,23 @@ void torchani_set_precision(bool use_double_precision) {
     }
 }
 
-std::vector<torch::jit::IValue> setup_external_neighbors(
-    torch::Tensor& coords, torch::Tensor& neighborlist, torch::Tensor& shifts
-) {
-    return {
-        torchani_atomic_numbers,
-        coords.to(torchani_precision),
-        neighborlist,
-        shifts.to(torchani_precision),
-        /* total_charge= */0,
-        /* atomic= */false,
-        /* ensemble_values= */false
-    };
+torch::Tensor setup_cell(double cell_buf[][3]) {
+    auto cell_options = torch::TensorOptions().dtype(torch::kDouble);
+    torch::Tensor cell = torch::from_blob(cell_buf, {3, 3}, cell_options);
+    return cell.to(torch::TensorOptions().dtype(torchani_precision).device(torchani_device));
 }
 
 std::vector<torch::jit::IValue> setup_inputs_pbc(
-    double pbc_box[][3], torch::Tensor& coords
+    double cell_buf[][3], torch::Tensor& coords
 ) {
-    // uses two "globals", use_pbc and torchani_atomic_numbers
+    // uses two "globals", pbc_true and torchani_atomic_numbers
     // Amber's ucell is read into cell
     auto cell_options = torch::TensorOptions().dtype(torch::kDouble);
-    torch::Tensor cell = torch::from_blob(pbc_box, {3, 3}, cell_options);
+    torch::Tensor cell = torch::from_blob(cell_buf, {3, 3}, cell_options);
     cell = cell.to(torchani_device);
 
-#if defined(DEBUG)
-    torch::Tensor cpu_cell = torch::from_blob(pbc_box, {3, 3}, cell_options);
+#ifdef DEBUG
+    torch::Tensor cpu_cell = torch::from_blob(cell_buf, {3, 3}, cell_options);
     cpu_cell = cpu_cell.to(torch::kCPU);
     auto cell_a = cpu_cell.accessor<double, 2>();
     std::cout << "Unit Cell recieved (columns are cell vectors)" << '\n'
@@ -100,7 +92,7 @@ std::vector<torch::jit::IValue> setup_inputs_pbc(
 
     coords = coords.to(torchani_precision);
     cell = cell.to(torchani_precision);
-    // cell needs to be transposed due to fortran using column major order
+    // Cell needs to be transposed due to ANI using opposite cell convention
     cell = torch::transpose(cell, 0, 1);
     std::tuple<torch::Tensor, torch::Tensor> input_tuple = {
         torchani_atomic_numbers, coords
@@ -109,7 +101,7 @@ std::vector<torch::jit::IValue> setup_inputs_pbc(
     // classes accept and return values of ONLY type torch::jit::IValue so
     // any tensor passed to them has to be wrapped in this
     // return by value is OK since inputs is locally created
-    return {input_tuple, cell, use_pbc};
+    return {input_tuple, cell, pbc_true};
 }
 
 std::vector<torch::jit::IValue> setup_inputs_nopbc(torch::Tensor& coords) {
@@ -142,25 +134,23 @@ torch::Tensor setup_coords(int num_atoms, double coords_buf[][3]) {
             coords_buf,
             {num_atoms, 3},
             torch::TensorOptions().dtype(torch::kDouble).requires_grad(true)
-        )
-            .to(torchani_device);
+        );
     // torchani needs an extra dimension as "batch dimension"
     coords = coords.unsqueeze(0);
-    return coords;
+    return coords.to(torch::TensorOptions().dtype(torchani_precision).device(torchani_device));
 }
 
 torch::Tensor setup_neighborlist(int num_neighbors, int* neighborlist_buf[2]) {
     auto options = torch::TensorOptions().dtype(torch::kInt);
     torch::Tensor neighborlist =
         torch::from_blob(neighborlist_buf, {2, num_neighbors}, options);
-    neighborlist = neighborlist.to(torch::kLong);
-    return neighborlist.to(torchani_device);
+    return neighborlist.to(torch::TensorOptions().dtype(torch::kLong).device(torchani_device));
 }
 
 torch::Tensor setup_shifts(int num_neighbors, double shifts_buf[][3]) {
     auto options = torch::TensorOptions().dtype(torch::kDouble).requires_grad(true);
     torch::Tensor shifts = torch::from_blob(shifts_buf, {num_neighbors, 3}, options);
-    return shifts.to(torchani_device);
+    return shifts.to(torch::TensorOptions().dtype(torchani_precision).device(torchani_device));
 }
 
 void calculate_and_populate_charge_derivatives(
@@ -334,7 +324,10 @@ void torchani_init_model(
         std::exit(2);
     }
 
-    model_jit_fname = std::string{model_type} + ".pt";
+    model_jit_fname = cached_torchani_model;
+    if (std::find(torchani_builtin_models.begin(), torchani_builtin_models.end(), cached_torchani_model) != torchani_builtin_models.end()) {
+        model_jit_fname = model_jit_fname + ".pt";
+    }
     #ifdef DEBUG
     std::cout << "model_jit_fname: " << model_jit_fname << '\n';
     #endif
@@ -349,10 +342,6 @@ void torchani_init_model(
     //
     // PBC tensor is initialized even if pbc is not needed afterwards,
     // since the tensor occupies almost no space
-    use_pbc = torch::tensor(
-        {true, true, true},
-        torch::TensorOptions().dtype(torch::kBool).device(torchani_device)
-    );
     std::string file_path = __FILE__;
     file_path = file_path.substr(0, file_path.find_last_of("/"));
     file_path = file_path.substr(0, file_path.find_last_of("/"));
@@ -430,7 +419,16 @@ void torchani_energy_force_from_external_neighbors(
     torch::Tensor coords = setup_coords(num_atoms, coords_buf);
     torch::Tensor neighborlist = setup_neighborlist(num_neighbors, neighborlist_buf);
     torch::Tensor shifts = setup_shifts(num_neighbors, shifts_buf);
-    std::vector<torch::jit::IValue> inputs = setup_external_neighbors(coords, neighborlist, shifts);
+    // Cell needs to be transposed due to ANI using opposite cell convention
+    std::vector<torch::jit::IValue> inputs{
+        torchani_atomic_numbers,
+        coords,
+        neighborlist,
+        shifts,
+        /* total_charge= */0,
+        /* atomic= */false,
+        /* ensemble_values= */false
+    };
     torch::Tensor result = get_energy_output_from_external_neighbors(inputs);
     calculate_and_populate_forces(coords, result, forces_buf, false, num_atoms);
     populate_potential_energy(result, potential_energy_buf);
