@@ -9,7 +9,6 @@ outputs of the test are saved into the `expect/` directory
 If you are debugging old branches use TORCHANI_AMBER_LEGACY_TEST=1
 """
 
-import math
 from numpy.typing import NDArray
 from numpy.testing import assert_allclose
 import numpy as np
