@@ -208,19 +208,21 @@ If you want to run this kind of dynamics, **instead** of setting `iextpot = 1` a
 including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
 namelist.
 
-Many options can be used in the `&qmmm` namelist, but `qmmm_int = 2`, `qm_ewald=0`, and
-`qmmm_theory = 'EXTERN'` are *required* to run ML/MM simulations with TorchANI-Amber.
+Many options can be used in the `&qmmm` namelist, but `qmmm_int = 1` (default),
+`qm_ewald = 0` (default), and `qmmm_theory = 'EXTERN'` (must be specified) are *required*
+to run ML/MM simulations with TorchANI-Amber.
 
 The `&ani` namelist remains the same, with the following extra available options:
 
 Output related options:
 - `write_xyz` (bool)
-   Writes xyz coordinates of QM region.
+   Dump xyz coordinates of QM region as a `.xyz` file
 - `write_forces` (bool)
-   Writes forces acting on QM atoms.
+   Dump forces acting on QM atoms as a `.dat` file
 - `write_charges` (bool)
-   Only used if `use_torchani_charges` is `.true.`. Writes partial charges
-   predicted by the chosen model.
+   Dump charges of the QM atoms as a `.dat` file
+- `write_charges_grad` (bool)
+   Dump charge derivatives w.r.t. coords of the QM atoms as a `.dat` file
 
 ML/MM and electrostatic related options:
 - `use_torchani_charges` (bool)
@@ -250,7 +252,7 @@ A template for the first setting (simple polarizable with variable charges) is:
 &qmmm
     qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
     qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
+    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1',  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
 /
@@ -272,7 +274,7 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 &qmmm
     qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
     qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 2  ! Required, let TorchANI-Amber handle the ML/MM coupling
+    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1'  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
 /
@@ -287,8 +289,7 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 Many experimental options are also available for ML/MM. Please don't use experimental
 options unless you are a developer or you know exactly what you are doing, they are not
 extensively tested and we make no guarantees or claims regarding the results obtained
-with them. For more information consult the developer [**README**](./mlmm-dev/README.md)
-file.
+with them. For more information consult the developer *dev notes on ML/MM*.
 
 ## Limitations
 
@@ -313,3 +314,102 @@ TODO: Fix this section
 To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a working Sander
 binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
 and Full-ML Amber integrations.
+
+## Dev notes on ML/MM
+
+Some *advanced* options are not extensively tested, or are meant to be used for dev or
+debug situations only. If you want to specify these you need to also specify
+`allow_untested_protocols=.true.`
+
+`qmmm_int = 1` is the default value in the `&qmmm` namelist, and is the only value users
+should specify, but `qmmm_int = 0` and `qmmm_int = 5` are also supported as *advanced*
+options.
+
+- `qmmm_int = 0` completely disregards the coupling between the MM and ML (i.e. QM)
+  parts of the system, it can be used for debugging.
+- `qmmm_int = 5` Makes Sander manage the MM/ML coupling as mechanical embedding. This
+  may be slightly better in some situations, since ANI doesn't take into account PBC
+  when calculating the ML/MM interaction. In this case the charges will *always* be the
+  FF charges, as read from the topology file. Any extra options specified in the `&ani`
+  namelist, that pertain the ML/MM interaction, will not be taken into account.
+
+In older versions of the interface, `polarize_qm_charges` and `distort_qm_energy` were
+allowed options please use `mlmm_coupling = 1`, which will enable **both options**, or
+`mlmm_coupling = 0`, which will disable both. If you really want to disregard the
+distortion contribution only, use both `mlmm_coupling = 1` and `distortion_k = 0.0`.
+
+The extra available *advanced* options are, in format `<option> = <default>  (type)`:
+
+- `use_numerical_qmmm_ofrces = .false.` (bool)
+   Wheter to calculate the ML/MM coupling numerically.
+- `use_charges_derivatives = .true.` (bool)
+   Only used if `use_torchani_charges=.true.`. It consideres the predicted charges
+   dependence on atomic coordinates for forces calculation. Makes the code a bit slower
+   for large systems, but it is still recommended to set it `true`.
+- `distortion_k = 0.4d0` (double)
+   Proportionality constant for the distortion correction
+- `pol_<element-symbol>` (double)
+   Fixed atomic polarizability associated with a given element. Element symbols
+   up to `Ne` are supported (`pol_H = ..., pol_C = ..., ...`).
+
+Experimental *switching* feature:
+- `use_switching_function` (bool)
+  If set to `.true.`, torchani estimates how similar the prediction between the
+  different models is. If it is too high, the interface starts mixing the
+  energy estimated by torchani with that of an external software (as if it were
+  switching to a different potential energy surface).
+- `switching_program` (string)
+  The name of the QM switching program. Available options `'orca'`, or `'lio'`.
+  The corresponding `orc` or `lio` namelists should also be
+  included.
+- `qlow` and `qhigh` (double precision)
+  Parameters of the function used to mix the potential energy surfaces.
+
+Experimental *Extcoupling* feature:
+- `use_extcoupling` (bool)
+  Dispatch a QM program as a helper to calculate the QM/MM interaction.
+- `extcoupling_program` (string)
+  The name of the QM helper program. Available options are `'amber-dftb'`
+  (uses builtin DFTB code in Amber), `'orca'` and `'lio'`. If `'lio'` or `'orca'`
+  are specified, the `orc` or `lio` namelists should also be included.
+
+An example `&ani` namelist for use with the *Extcoupling* feature:
+
+```raw
+&ani
+  use_cuda_device= .true. ,
+  extcoupling_program='amber-dftb',
+  use_extcoupling =.true.,
+  allow_untested_protocols=.true.,
+/
+```
+
+A full example of an input for a simulation with advanced options:
+
+```raw
+&cntrl
+    imin=0,
+    ntx=5, nmropt=0,
+    ntwr=100,ntpr=10,ntwx=100,ioutfm=1,ntxo=1,
+    nstlim=5000,dt=0.001,
+    ntt=3,tempi=300.0,temp0=300.0,gamma_ln=5.0,
+    ntp=0,
+    ntb=1,
+    ntf=1,ntc=2,
+    cut=10.0,
+    ifqnt=1,
+/
+&qmmm
+    qm_theory='EXTERN',
+    qmmask=':1',
+    qmmm_int=5,  ! Advanced option
+    qmshake=0,
+    qm_ewald=0,
+    qmcut=15.0,
+/
+&ani
+    model_type='ani2x',
+    use_cuda_device=.true.,
+    allow_untested_protocols=.true.,  ! Required for advanced options
+/
+```

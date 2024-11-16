@@ -17,8 +17,7 @@ test/test_values*.txt
 amber_examples/outputs/*
 
 # don't save outputs from tests
-tests/MLMM*
-tests/FullML*
+tests/dump_*
 
 # No swap files
 *.swp
