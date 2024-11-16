@@ -318,12 +318,14 @@ and Full-ML Amber integrations.
 ## Dev notes on ML/MM
 
 Some *advanced* options are not extensively tested, or are meant to be used for dev or
-debug situations only. If you want to specify these you need to also specify
-`allow_untested_protocols=.true.`
+debug situations only.
 
-`qmmm_int = 1` is the default value in the `&qmmm` namelist, and is the only value users
-should specify, but `qmmm_int = 0` and `qmmm_int = 5` are also supported as *advanced*
-options.
+Some of the advanced options correspond to simulation protocols that technically should
+work, but are untested. If you want to specify any of theseyou need to also specify
+`allow_untested_protocols=.true.`. Using either mlmm_embedding=0 with MBIS geometry
+dependent charges, or mlmm_embedding=1 with fixed topology charges is one of these
+cases. The other case is setting `qmmm_int` to anything different from `1` (the
+default).
 
 - `qmmm_int = 0` completely disregards the coupling between the MM and ML (i.e. QM)
   parts of the system, it can be used for debugging.
@@ -334,12 +336,13 @@ options.
   namelist, that pertain the ML/MM interaction, will not be taken into account.
 
 In older versions of the interface, `polarize_qm_charges` and `distort_qm_energy` were
-allowed options please use `mlmm_coupling = 1`, which will enable **both options**, or
+allowed options. Please use `mlmm_coupling = 1`, which will enable **both options**, or
 `mlmm_coupling = 0`, which will disable both. If you really want to disregard the
 distortion contribution only, use both `mlmm_coupling = 1` and `distortion_k = 0.0`.
 
-The extra available *advanced* options are, in format `<option> = <default>  (type)`:
+The other extra available *advanced* options are, in format `<option> = <default>  (type)`:
 
+General:
 - `use_numerical_qmmm_ofrces = .false.` (bool)
    Wheter to calculate the ML/MM coupling numerically.
 - `use_charges_derivatives = .true.` (bool)
@@ -380,11 +383,10 @@ An example `&ani` namelist for use with the *Extcoupling* feature:
   use_cuda_device= .true. ,
   extcoupling_program='amber-dftb',
   use_extcoupling =.true.,
-  allow_untested_protocols=.true.,
 /
 ```
 
-A full example of an input for a simulation with advanced options:
+A full example of an input for a simulation with `qmmm_int=5`:
 
 ```raw
 &cntrl
@@ -410,6 +412,6 @@ A full example of an input for a simulation with advanced options:
 &ani
     model_type='ani2x',
     use_cuda_device=.true.,
-    allow_untested_protocols=.true.,  ! Required for advanced options
+    allow_untested_protocols=.true.,  ! Required for qmmm_int=5
 /
 ```
