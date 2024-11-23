@@ -486,7 +486,7 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     auto output = model.forward(inputs).toTuple();
     torch::Tensor energy = output->elements()[1].toTensor();
     // Squeeze ensemble dimension from atomic charges
-    torch::Tensor atomic_charges = output->elements()[2].toTensor().squeeze(0);
+    torch::Tensor atomic_charges = output->elements()[2].toTensor();
 
     calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
     calculate_and_populate_charge_derivatives(
