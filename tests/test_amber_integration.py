@@ -163,6 +163,8 @@ class AmberIntegration(unittest.TestCase):
         for f in sorted(test_dir.iterdir()):
             if f.suffix in [".dat", ".mdcrd", ".xyz"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
+                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
+                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
                     expect_arr = self.parse_amber_output(expect_text, f.suffix)
@@ -176,8 +178,6 @@ class AmberIntegration(unittest.TestCase):
                         atol=1e-5 if not config.cuda else 1e-3,
                         err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
                     )
-                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
 
     @parameterized.expand(
         [c for c in configs if (c.fullml and c.use_amber_neighborlist)],
@@ -218,6 +218,8 @@ class AmberIntegration(unittest.TestCase):
         for f in sorted(test_dir.iterdir()):
             if f.suffix in [".dat", ".mdcrd", ".xyz"]:
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
+                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
+                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
                     expect_arr = self.parse_amber_output(expect_text, f.suffix)
@@ -231,8 +233,6 @@ class AmberIntegration(unittest.TestCase):
                         atol=1e-5 if not config.cuda else 1e-3,
                         err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
                     )
-                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
 
     @staticmethod
     def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
