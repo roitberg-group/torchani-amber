@@ -150,7 +150,7 @@ namelists:
 The `&ani` namelist has the following basic options:
 - `model_type` (string)
    The neural network to choose. Possible values are `"ani1x"`, `"ani1ccx"`, `"ani2x"`,
-   `anidr`, and `"custom"`. For usage of "custom" see section *Support for custom
+   `anidr`. For usage of custom models see section *Support for custom
    models*. Default is `"ani1x"` (case sensitive).
 - `use_double_precision` (*bool*)
    Determines whether the network runs using float64 parameters. Defaults to `.true.` We
@@ -307,7 +307,73 @@ compatible flags for `igb` in the Amber `&ctrl` namelist are `igb = 0` (PBC, vac
 
 ## Support for custom models
 
-TODO: Fix this section
+Custom models are supported by passing a full path to the jit-compiled file to
+`model_type`. Custom models have the following limitations:
+
+The easiest way to fullfil requirements needed for usage of custom models is for your
+model to be an instance of `ANI` or `ANIq`. This already has quite a high flexibility,
+since they are highly customizable.
+
+Alternatively, subclassing `ANI` or `ANIq` and overriding `compute_from_neighbors(...)`
+is possible if you need more freedom. This is more complex however. Consult the
+`TorchANI 2.0` source code if you want to see a reference implementation of
+`compute_from_neighbors`. Be warned, `use_cuaev` and `network_index` may not be
+supported in this case, depending on your model.
+
+ADVANCED: The exact requirements are as follows. If the model outputs atomic energies,
+`forward` must have the following signature:
+
+```python
+def forward(
+    self,
+    species_coords: tuple[Tensor, Tensor]
+    cell: Tensor | None,
+    pbc: Tensor | None,
+    charge: int,
+    atomic: bool,  # Controls atomic energy decomposition
+    ensemble_values: bool,  # Controls whether the model outputs ensemble values
+) -> tuple[Tensor, Tensor, Tensor]:
+    # Where the output is a tuple:
+    #     - species (shape: [1, atoms]), energies, atomic_numbers
+    #     - energies (shape: [1,])
+    #     - atomic_charges (shape: [1, atoms])
+    # For more information about the signature consult the `TorchANI 2.0` docs
+    # and source code.
+    ...
+    return species, energies, atomic_charges
+```
+
+If the model doesn't support atomic charges, the signature is the same, but with
+`tuple[Tensor, Tensor]` instead, omitting `atomic_charges`.
+
+If you want to use the internal Amber neighborlists, your should additionally
+support the following method:
+
+```python
+@torch.jit.export
+def compute_from_external_neighbors(
+    self,
+    species: Tensor,
+    coords: Tensor,
+    neighbor_idxs: Tensor,  # External neighbors
+    shifts: Tensor,  # External shifts that have to be applied to wrap PBC
+    charge: int = 0,
+    atomic: bool = False,
+    ensemble_values: bool = False,
+) -> tuple[Tensor, Tensor | None]:
+    # Where the output is a tuple:
+    #     - energies (shape: [1,])
+    #     - atomic_charges (shape: [1, atoms]) (or None)
+    ...
+    return energies, atomic_charges
+```
+
+NOTE: Currently custom models need to implement `set_strategy("pyaev")`, this
+will be fixed.
+
+EXPERIMENTAL: If you want to use the 'switching' feature, the model should correctly
+respect the `ensemble_values` contract. Energies and atomic charges must have
+an extra dim prepended in this case, which indexes the models in the network.
 
 ## Amber integration tests
 
