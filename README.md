@@ -52,56 +52,49 @@ enough, it is tested with 11.4). A tested GCC version is included in the
 4. Build and install TorchANI-Amber using the `run-cmake` script
     *ADVANCED:* If you want to perform your custom modifications to the build, this is
     the moment to do it. Check `run-cmake` and the `CMakeLists.txt` for more info.
-    By default the installation script runs the tests, you can avoid this by
-    using the `-T` flag. For more options do `run-cmake -h`
+    By default the installation script runs the tests (which are fast), you can avoid
+    this by using the `-T` flag. For more options do `run-cmake -h`.
     ```bash
     ./run-cmake
     ```
+    After this is done, you can safely deactivate the environment, it is no longer
+    needed. However, *don't remove it*. The compiled binaries will depend on the cuda
+    and torch dynamic libraries in the env to run correctly.
+    ```bash
+    conda deactivate ani-amber
+    ```
 5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
-    to both `pmemd` and `sander`. You can refer to [the amber
-    website](https://ambermd.org/) for info on how to obtain and install Amber. You can
-    use this configuration as a template, which requires that you run `cmake` while the
-    `ani-amber` env is activated:
+   to both `pmemd` and `sander`. You can refer to [the amber
+   website](https://ambermd.org/) for info on how to obtain and install Amber. You can
+   use this cmake configuration as a template to generate the buildsystem.
     ```bash
     cmake \
-        -S./path/to/your/amber/source-dir/ \
-        -B./path/to/your/amber/build-dir/ \
-        -DCMAKE_INSTALL_PREFIX=/path/to/your/amber/install-dir/ \
+        -S./amber-src-dir/ \
+        -B./amber-build-dir/ \
+        -DCMAKE_INSTALL_PREFIX=/amber-install-dir/ \
         -DCMAKE_PREFIX_PATH=$HOME/.local/ \
-        -DCOMPILER=MANUAL \
-        -DCMAKE_C_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc" \
-        -DCMAKE_CXX_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
-        -DCMAKE_Fortran_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran" \
-        -DCMAKE_CUDA_HOST_COMPILER="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++" \
-        -DDOWNLOAD_MINICONDA=FALSE \
-        -DBUILD_PYTHON=FALSE \
-        -DBUILD_GUI=FALSE
+        -DCOMPILER=GNU
     ```
+<!-- Is it a problem to use amber's miniconda / python? maybe not? -->
 
-IMPORTANT: If you compile Sander or Pmemd with TorchANI-Amber enabled, the binaries will
-depend on the cuda and torch libraries being present to run correctly, even when
-executing CPU-only calculations.
+IMPORTANT: If you compile Sander or Pmemd with TorchANI-Amber enabled, the `sander|pmemd`
+binaries *will depend on the torchani libraries being present to run correctly*. This
+is true even when running CPU-only calculations, or calculations that don't use torchani
+at all.
 
 ## Details on building Amber
 
 When building Amber make sure that:
 
-- You are building using the same compilers as those used for TorchANI-Amber. This
-  is done with `COMPILER=MANUAL` and `CMAKE_<lang>_COMPILER=...` in the template config,
-  which instruct Amber to use the compilers in the current conda env.
-- You are *not* using Amber's Miniconda or Amber's python. This is
-  done with the `DOWNLOAD_MINICONDA=FALSE` and `BUILD_PYTHON=FALSE`.
-- `~/.local/lib/` is in the search file for `cmake`. This is only needed if installing
-  to `~/.local/lib/` (the default, which doesn't need `sudo`). If installing for example
-  to `/usr/local` it is not needed. Done with `CMAKE_PREFIX_PATH=${HOME}/.local/lib`.
-- Amber can find `TorchANI-Amber` (it should appear in the list of enabled
-  software that Amber prints when installing).
-
-## About the provided conda environment
-
-There is no need to activate the `ani-amber` conda env after Amber has been built, since
-the path to the needed libraries baked in, but *don't remove it*, since this will remove
-the needed libraries from your system.
+- You are *not* using `conda`'s compilers to build `Amber` (the ones provided by default
+  in the env). Currently there are some incompatiblities with internal Amber libraries,
+  which means some `sander` and `pmemd` features will not work if you do this (e.g.
+  netCDF output).
+- The install prefix for `TorchANI-Amber` is in the `cmake` search path.
+  If `TorchANI-Amber` was installed to `~/.local/lib` (the default, which doesn't need `sudo`).
+  you may need to add `CMAKE_PREFIX_PATH=${HOME}/.local/`. If this is correctly done,
+  then `Torchani` will show up in the list of enabled software that Amber prints
+  when installing.
 
 ## About CUDA and LD_LIBRARY_PATH
 
