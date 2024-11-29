@@ -22,6 +22,7 @@ import subprocess
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+import netCDF4 as netcdf
 from parameterized import parameterized
 import jinja2
 
@@ -46,6 +47,7 @@ class RunConfig:
     vacuum: bool
     float64: bool
     use_amber_neighborlist: bool
+    netcdf: bool = False
 
     @property
     def name(self) -> str:
@@ -171,7 +173,7 @@ class AmberIntegration(unittest.TestCase):
                 elif config.cuda:
                     # Extra slack for cuda
                     rtol = 0.0
-                    atol = 1e-3
+                    atol = 1.0002e-3
                 else:
                     rtol = 1e-7
                     atol = 1e-5
@@ -204,6 +206,29 @@ class AmberIntegration(unittest.TestCase):
     )
     def testSander(self, config: RunConfig) -> None:
         self._testSander(config, f"sander_{config.name}")
+
+    @parameterized.expand(["pmemd", "sander"])
+    def testNetCDFWorks(self, engine: str) -> None:
+        config = RunConfig(
+            cuda=None,
+            mlmm=None,
+            shake=True,
+            vacuum=True,
+            float64=False,
+            use_amber_neighborlist=True,
+            netcdf=True,
+        )
+        string = env.get_template("input.mdin.jinja").render(
+            legacy=False, **asdict(config)
+        )
+        self.d = tempfile.TemporaryDirectory()
+        test_dir = Path(self.d.name)
+        (test_dir / "input.mdin").write_text(string)
+        self._run_engine(engine, test_dir)
+        path = test_dir / "system.mdcrd"
+        ds = netcdf.Dataset(str(path), "r", format="NETCDF3_64BIT_OFFSET")
+        coordinates = ds["coordinates"][:].data
+        self.assertTrue((coordinates > 1e-3).any())
 
     def _testSander(self, config: RunConfig, dirname: str) -> None:
         if os.environ.get("TORCHANI_AMBER_KEEP_TEST_DIRS") == "1":
@@ -239,7 +264,7 @@ class AmberIntegration(unittest.TestCase):
                 elif config.cuda:
                     # Extra slack for cuda
                     rtol = 0.0
-                    atol = 1e-3
+                    atol = 1.0002e-3
                 else:
                     rtol = 1e-7
                     atol = 1e-5

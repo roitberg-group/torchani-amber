@@ -8,8 +8,13 @@
     imin = 0  ! Dynamics
     nstlim = 5  ! Total num of dynamics steps
     ntx = 1  ! Only read input coords, not vels
-    ntxo = 1  ! Dump restart as formatted ASCII
-    ioutfm = 0  ! Dump traj as formated ASCII
+    {% if netcdf %}
+        ntxo = 2  ! Dump restart as netCDF
+        ioutfm = 1  ! Dump traj as netCDF
+    {% else %}
+        ntxo = 1  ! Dump restart as ASCII
+        ioutfm = 0  ! Dump traj as ASCII
+    {% endif %}
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
     dt = 0.001  ! Timestep (ns)
