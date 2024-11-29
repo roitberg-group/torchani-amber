@@ -49,21 +49,13 @@ while getopts "TIBCgh" o; do
     esac
 done
 
-if [ "$use_conda" = ON ]; then
-    c_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-cc"
-    cxx_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-c++"
-    fortran_path="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran"
-else
-    c_path="$(which cc)"
-    cxx_path="$(which c++)"
-    fortran_path="$(which gfortran)"
-fi
-
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/
 # how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
 src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 bld_dir="$src_dir/build"
+
+# Paths to conda compilers are automatically detected by CMake
 cmake \
     -S"$src_dir" \
     -B"$bld_dir" \
@@ -72,10 +64,6 @@ cmake \
     -DUSE_ACTIVE_CONDA_PYTORCH=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDNN=$use_conda \
-    -DCMAKE_C_COMPILER="$c_path" \
-    -DCMAKE_CXX_COMPILER="$cxx_path" \
-    -DCMAKE_CUDA_HOST_COMPILER="$cxx_path" \
-    -DCMAKE_Fortran_COMPILER="$fortran_path" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 if [ "$cmake_build" -eq 1 ]; then
