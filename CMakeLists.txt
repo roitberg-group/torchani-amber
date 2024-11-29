@@ -211,9 +211,8 @@ target_compile_definitions(
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
 target_compile_options(cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
-target_link_options(cuaev PRIVATE "LINKER:--no-as-needed")
 target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
-target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES} nvrtc-builtins)
+target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
 target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
@@ -238,11 +237,13 @@ target_compile_features(torchani PRIVATE cxx_std_17)
 target_compile_definitions(
     torchani
         PUBLIC ${TORCH_CXX_FLAGS}
-        PRIVATE $<$<CONFIG:Debug>:"DEBUG">
+        PRIVATE
+            $<$<CONFIG:Debug>:"DEBUG">
+            $<$<CONFIG:Debug>:"TIMING">
 )
-target_link_options(torchani PRIVATE "LINKER:--no-as-needed" "LINKER:-force_load,$<TARGET_FILE:cuaev>")
+target_link_options(torchani PRIVATE "LINKER:-force_load,$<TARGET_FILE:cuaev>")
 target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev nvrtc-builtins)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # For both libcuaev and libtorchani, the install RPATH is set by default to be
@@ -306,8 +307,7 @@ include(Catch)
 add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 target_compile_definitions(tests PUBLIC ${TORCH_CXX_FLAGS})
-target_link_options(tests PRIVATE "LINKER:--no-as-needed")
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani cuaev)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani)
 catch_discover_tests(tests)
 
 # Create and install files for discovery and config by downstream pkgs

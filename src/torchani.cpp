@@ -1,3 +1,4 @@
+#include <chrono>
 #include <stdint.h>
 #include <cstdlib>
 #include <iostream>
@@ -461,6 +462,9 @@ void torchani_energy_force_from_external_neighbors(
     double forces_buf[][3],
     double* potential_energy_buf
 ) {
+    #ifdef TIMING
+    auto start = std::chrono::high_resolution_clock::now();
+    #endif
     torch::Tensor coords = setup_coords(num_atoms, coords_buf);
     torch::Tensor neighborlist = setup_neighborlist(num_neighbors, neighborlist_buf);
     torch::Tensor shifts = setup_shifts(num_neighbors, shifts_buf);
@@ -488,6 +492,14 @@ void torchani_energy_force_from_external_neighbors(
                   << std::endl;
         std::exit(2);
     }
+    #ifdef TIMING
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout
+        << "TORCHANI-AMBER: energy force external neighbors time"
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
+        << "ms"
+        << std::endl;
+    #endif
 }
 
 void torchani_energy_force_pbc(
@@ -497,6 +509,9 @@ void torchani_energy_force_pbc(
     double forces_buf[][3],
     double* potential_energy
 ) {
+    #ifdef TIMING
+    auto start = std::chrono::high_resolution_clock::now();
+    #endif
     torch::Tensor coords = setup_coords(num_atoms, coords_buf);
     // Inputs are setup with PBC
     torch::Tensor cell = setup_cell(cell_buf);
@@ -506,6 +521,14 @@ void torchani_energy_force_pbc(
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
+    #ifdef TIMING
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout
+        << "TORCHANI-AMBER: energy force PBC time"
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
+        << "ms"
+        << std::endl;
+    #endif
 }
 
 void torchani_energy_force_atomic_charges(
@@ -570,6 +593,9 @@ void torchani_energy_force(
     double forces_buf[][3],
     double* potential_energy
 ) {
+    #ifdef TIMING
+    auto start = std::chrono::high_resolution_clock::now();
+    #endif
     torch::Tensor coords = setup_coords(num_atoms, coords_buf);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
 
@@ -578,6 +604,14 @@ void torchani_energy_force(
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
+    #ifdef TIMING
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout
+        << "TORCHANI-AMBER: energy force time"
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
+        << "ms"
+        << std::endl;
+    #endif
 }
 
 void torchani_energy_force_qbc(
