@@ -449,12 +449,6 @@ void torchani_energy_force_atomic_charges(
     double atomic_charges[],
     double* potential_energy
 ) {
-    if (cached_torchani_model != "animbis") {
-        std::cerr << "Error in libtorchani\n"
-                  << "Torchani model should be 'animbis' to calculate charges"
-                  << std::endl;
-        std::exit(2);
-    }
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
     torch::jit::IValue output = model.forward(inputs);
@@ -476,12 +470,6 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     double* atomic_charge_derivatives,
     double* potential_energy
 ) {
-    if (cached_torchani_model != "animbis") {
-        std::cerr << "Error in libtorchani\n"
-                  << "Torchani model should be 'animbis' to calculate charges"
-                  << std::endl;
-        std::exit(2);
-    }
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
     torch::jit::IValue output = model.forward(inputs);
@@ -558,12 +546,6 @@ void torchani_data_for_monitored_mlmm(
     double qbc_derivatives[][3],
     double* potential_energy
 ) {
-    if (cached_torchani_model != "animbis") {
-        std::cerr << "Error in libtorchani\n"
-                  << "Torchani model should be animbis"
-                  << std::endl;
-        std::exit(2);
-    }
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords, /*ensemble_values=*/true);
 
