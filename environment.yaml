@@ -5,6 +5,7 @@ channels:
   - https://conda.anaconda.org/nvidia
   - https://conda.anaconda.org/conda-forge
 dependencies:
+  - conda-forge::cmake=3.31.1
   ## Required dependencies to run TorchANI ##
   - python=3.10
   - pip>=24.0
@@ -34,13 +35,17 @@ dependencies:
   - gxx_linux-64=11.4
   - gcc_linux-64=11.4
   - gfortran_linux-64=11.4
-  - conda-forge::netcdf4  # For tests
-  - conda-forge::libnetcdf-fortran  # For Sander / Pmemd
-  - conda-forge::openmpi=4.1.5  # For MNP, Sander-MPI, and Pmemd-MPI
   - nvidia::cuda-libraries-dev=11.8
   - nvidia::cuda-cccl=11.8
   - nvidia::cuda-nvcc=11.8
+  # Amber dependencies
+  - conda-forge::fftw=3.3.10=mpi_openmpi_hdeb57f9_6  # For Sander / Pmemd
+  - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
+  - conda-forge::libpnetcdf=1.13.0=mpi_openmpi_hbcf1124_0  # For cpptraj, "parallel" netCDF
+  - conda-forge::openmpi=4.1.6  # For MNP, Sander-MPI, and Pmemd-MPI
 
+  ## Running torchani-amber/tests ##
+  - conda-forge::netcdf4
   ## Running torchani/tests ##
   - coverage  # code coverage
   - black  # formatter
