@@ -281,6 +281,15 @@ torch::Tensor calc_qbcs(int num_atoms, torch::Tensor& energy) {
     return qbc / to_torchani_dtype_and_device(num_atoms_tensor).sqrt();
 }
 
+bool model_has_method(std::string name) {
+    try {
+        model.get_method(name);
+        return true;
+    } catch (const c10::Error& e) {
+        return false;
+    }
+}
+
 extern "C" {
 void torchani_init_model(
     int num_atoms,
@@ -371,12 +380,34 @@ void torchani_init_model(
 
     // Set the correct model configuration
     if (network_index != -1) {
-        model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
+        if (model_has_method("set_active_members")) {
+            model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
+        } else {
+            std::cerr << "Error in libtorchani\n"
+                      << "You set 'network_index' to a value != -1"
+                      << " but the selected model doesn't export"
+                      << " a method 'set_active_members(str) -> None'"
+                      << std::endl;
+            std::exit(2);
+        }
     }
     if (use_cuaev) {
-        model.get_method("set_strategy")({"cuaev"});
+        if (model_has_method("set_strategy")) {
+            model.get_method("set_strategy")({"cuaev"});
+        } else {
+            std::cerr << "Error in libtorchani\n"
+                      << "You set 'use_cuaev=true'"
+                      << " but the selected model doesn't export"
+                      << " a method 'set_strategy(str) -> None'"
+                      << " that accepts the string 'cuaev'."
+                      << std::endl;
+            std::exit(2);
+        }
     } else {
-        model.get_method("set_strategy")({"pyaev"});
+        // It is not required that models support this
+        try {
+            model.get_method("set_strategy")({"pyaev"});
+        } catch (const c10::Error& e) {}
     }
     #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
@@ -414,11 +445,19 @@ void torchani_energy_force_from_external_neighbors(
         /* atomic= */false,
         /* ensemble_values= */false
     };
-
-    auto output = model.get_method("compute_from_external_neighbors")(inputs);
-    torch::Tensor energy = output.toTuple()->elements()[0].toTensor();
-    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-    populate_potential_energy(energy, potential_energy_buf);
+    if (model_has_method("compute_from_external_neighbors")) {
+        torch::jit::IValue output = model.get_method("compute_from_external_neighbors")(inputs);
+        torch::Tensor energy = output.toTuple()->elements()[0].toTensor();
+        calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
+        populate_potential_energy(energy, potential_energy_buf);
+    } else {
+        std::cerr << "Error in libtorchani\n"
+                  << "To use an external neighborlist"
+                  << " the model must export 'compute_from_external_neighbors(...)'."
+                  << " Consult the TorchANI-Amber readmi for more info"
+                  << std::endl;
+        std::exit(2);
+    }
 }
 
 void torchani_energy_force_pbc(
