@@ -1,5 +1,6 @@
 #include <torchani.h>
 #include "config.h"
+#include "electro.h"
 #include "build_tensors.h"
 
 #include <chrono>
@@ -110,6 +111,50 @@ void calculate_and_populate_qbc_derivatives(
     for (int atom = 0; atom != num_atoms; ++atom) {
         for (int c = 0; c != 3; ++c) {
             qbc_derivatives[atom][c] = torchani_qbc_derivatives_a[0][atom][c];
+        }
+    }
+}
+
+void calculate_and_populate_embedding_forces(
+    torch::Tensor energy,
+    torch::Tensor coords,
+    torch::Tensor env_charges_coords,
+    int num_atoms,
+    int num_env_charges,
+    double forces_on_atoms_buf[][3],
+    double forces_on_env_charges_buf[][3]
+) {
+    std::vector<torch::Tensor> energy_vec = {energy.sum()};
+    std::vector<torch::Tensor> coord_vec = {coords, env_charges_coords};
+    // the output is a vector of tensors, of the same number of elements as
+    // coord_vec (in this case only one) so the [0] element is the array of
+    // derivatives, and the negative is the force
+    auto ad_output = torch::autograd::grad(
+        energy_vec,
+        coord_vec,
+        /* grad_outputs= */ {},
+        /* retain_graph= */ false
+    );
+    torch::Tensor forces_on_atoms = -ad_output[0] * HARTREE_TO_KCALMOL;
+    torch::Tensor forces_on_env_charges = -ad_output[1] * HARTREE_TO_KCALMOL;
+    // Accessor is used to access tensor elements, but dimensionality has
+    // to be known at compile time. Note that this is a CPU accessor.
+    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
+    // AFIK cuda tensors have to be converted to cpu before access is allowed
+    // This cast does nothing if output is already of the required type and
+    // device, so there should be no overhead.
+    forces_on_atoms = forces_on_atoms.to(torch::kCPU, torch::kDouble);
+    auto force_a = forces_on_atoms.accessor<double, 3>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            forces_on_atoms_buf[atom][c] = force_a[0][atom][c];
+        }
+    }
+    forces_on_env_charges = forces_on_env_charges.to(torch::kCPU, torch::kDouble);
+    auto qforce_a = forces_on_env_charges.accessor<double, 3>();
+    for (int q = 0; q != num_env_charges; ++q) {
+        for (int c = 0; c != 3; ++c) {
+            forces_on_env_charges_buf[q][c] = qforce_a[0][q][c];
         }
     }
 }
@@ -443,8 +488,9 @@ void torchani_energy_force_pbc(
 void torchani_energy_force_atomic_charges(
     int num_atoms,
     double coords_buf[][3],
+    /* outputs */
     double forces_buf[][3],
-    double atomic_charges[],
+    double atomic_charges_buf[],
     double* potential_energy
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
@@ -452,11 +498,92 @@ void torchani_energy_force_atomic_charges(
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
-    torch::Tensor atomic_charges_tensor = output.toTuple()->elements()[2].toTensor();
+    torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor();
 
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
-    populate_atomic_charges(atomic_charges_tensor, atomic_charges, num_atoms);
+    populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+}
+
+/**
+ * Note that currently this function can't split the QM forces in two parts, it only
+ * outputs net forces due to the model in vacuum and the potential energies
+ */
+void torchani_energy_force_simple_polarizable_embedding(
+    int num_atoms,
+    int num_env_charges,
+    double distortion_k,
+    double coords_buf[][3],
+    double atomic_alphas_buf[],  // shape (num-atoms,)
+    double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
+    double env_charges_buf[],  // shape (num-charges,)
+    /* outputs */
+    double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
+    double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
+    double atomic_charges_buf[],  // shape (num-atoms, 3)
+    double* ene_pot_embed_pol_buf,
+    double* ene_pot_embed_dist_buf,
+    double* ene_pot_embed_coulomb_buf,
+    double* ene_pot_invacuo_buf,
+    double* ene_pot_total_buf
+) {
+    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
+    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
+    torch::jit::IValue output = model.forward(inputs);
+    validate_model_output(output, 3);
+    torch::Tensor ene_pot_invacuo = output.toTuple()->elements()[1].toTensor();
+    torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor();
+
+    // Embedding part
+    torch::Tensor atomic_alphas =
+        dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
+    torch::Tensor env_charge_coords =
+        dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
+    torch::Tensor env_charges =
+        dbl_buf_to_tensor(config, env_charges_buf, {num_env_charges});
+
+    torch::Tensor delta = torch::reshape(env_charge_coords, {-1, 1, 3}) -
+        torch::reshape(coords, {1, -1, 3});
+    torch::Tensor env_charges_to_atoms_distances =
+        torch::linalg_norm(delta, std::nullopt, 2);
+
+    auto ene_pot_coulomb = electro::coulombic_embedding_energy(
+        atomic_charges, env_charges, env_charges_to_atoms_distances
+    );
+    auto ene_pot_distpol = electro::polarizable_embedding_energy(
+        coords,
+        atomic_alphas,
+        env_charge_coords,
+        env_charges,
+        env_charges_to_atoms_distances,
+        distortion_k
+    );
+    auto ene_pot_total = ene_pot_invacuo + ene_pot_distpol + ene_pot_coulomb;
+    // TODO: Inefficient
+    auto ene_pot_pol = ene_pot_distpol / (1 - distortion_k);
+    auto ene_pot_dist = -distortion_k * ene_pot_pol;
+    // TODO It may be possible to return forces due to "different things"
+    // by detaching the coords before the final calculation
+
+    // TODO: Retain grad in atomic_charges so that the derivatives
+    // can be returned. Use backwargs instead of autograd::grad for simplicity to do
+    // this maybe
+    calculate_and_populate_embedding_forces(
+        ene_pot_total,
+        coords,
+        env_charge_coords,
+        num_atoms,
+        num_env_charges,
+        forces_on_atoms_buf,
+        forces_on_env_charges_buf
+    );
+    populate_potential_energy(ene_pot_invacuo, ene_pot_invacuo_buf);
+    populate_potential_energy(ene_pot_coulomb, ene_pot_embed_coulomb_buf);
+    populate_potential_energy(ene_pot_pol, ene_pot_embed_pol_buf);
+    populate_potential_energy(ene_pot_dist, ene_pot_embed_dist_buf);
+    populate_potential_energy(ene_pot_total, ene_pot_total_buf);
+
+    populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
 }
 
 void torchani_energy_force_atomic_charges_with_derivatives(
@@ -473,7 +600,6 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
-    // Squeeze ensemble dimension from atomic charges
     torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor();
 
     calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
