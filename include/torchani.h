@@ -96,10 +96,10 @@ void torchani_energy_force_simple_polarizable_embedding(
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
     double atomic_charges_buf[],  // shape (num-atoms, 3)
+    double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,
     double* ene_pot_embed_coulomb_buf,
-    double* ene_pot_invacuo_buf,
     double* ene_pot_total_buf
 );
 }

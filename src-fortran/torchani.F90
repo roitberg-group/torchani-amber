@@ -163,6 +163,7 @@ endsubroutine
 subroutine torchani_energy_force_simple_polarizable_embedding( &
     num_atoms, &
     num_env_charges, &
+    distortion_k, &
     coords, &
     atomic_alphas, &
     env_charge_coords, &
@@ -171,15 +172,16 @@ subroutine torchani_energy_force_simple_polarizable_embedding( &
     forces_on_atoms, &
     forces_on_env_charges, &
     atomic_charges, &
-    ene_embed_pol, &
-    ene_embed_dist, &
-    ene_embed_coulomb, &
     ene_pot_invacuo, &
-    ene_pot &
+    ene_pot_embed_pol, &
+    ene_pot_embed_dist, &
+    ene_pot_embed_coulomb, &
+    ene_pot_total &
 ) bind(c, name="torchani_energy_force_simple_polarizable_embedding")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), value, intent(in) :: num_env_charges
+    real(c_double), value, intent(in) :: distortion_k
     real(c_double), intent(in) :: coords(*)
     real(c_double), intent(in) :: atomic_alphas(*)
     real(c_double), intent(in) :: env_charge_coords(*)
@@ -188,11 +190,11 @@ subroutine torchani_energy_force_simple_polarizable_embedding( &
     real(c_double), intent(out) :: forces_on_atoms(*)
     real(c_double), intent(out) :: forces_on_env_charges(*)
     real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: ene_embed_pol
-    real(c_double), intent(out) :: ene_embed_dist
-    real(c_double), intent(out) :: ene_embed_coulomb
     real(c_double), intent(out) :: ene_pot_invacuo
-    real(c_double), intent(out) :: ene_pot
+    real(c_double), intent(out) :: ene_pot_embed_pol
+    real(c_double), intent(out) :: ene_pot_embed_dist
+    real(c_double), intent(out) :: ene_pot_embed_coulomb
+    real(c_double), intent(out) :: ene_pot_total
 endsubroutine
 endinterface
 

@@ -3,6 +3,7 @@
 #include "electro.h"
 #include "build_tensors.h"
 
+#include <cmath>
 #include <chrono>
 #include <stdint.h>
 #include <cstdlib>
@@ -24,6 +25,8 @@ torch::jit::Module model;
 torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
+// This factor is used by ml/mm for now
+double CODATA08_ANGSTROM_TO_BOHR = 1.8897261328727875;
 std::vector<std::string> torchani_builtin_models = {
     "ani1x", "ani1ccx", "ani2x", "animbis", "anidr", "aniala"
 };
@@ -521,10 +524,10 @@ void torchani_energy_force_simple_polarizable_embedding(
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
     double atomic_charges_buf[],  // shape (num-atoms, 3)
+    double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,
     double* ene_pot_embed_coulomb_buf,
-    double* ene_pot_invacuo_buf,
     double* ene_pot_total_buf
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
@@ -547,21 +550,21 @@ void torchani_energy_force_simple_polarizable_embedding(
     torch::Tensor env_charges_to_atoms_distances =
         torch::linalg_norm(delta, std::nullopt, 2);
 
+    // Embedding calculations are made in atomic units, so outputs are in Ha
+    // TODO: check these units, they are suspicious
     auto ene_pot_coulomb = electro::coulombic_embedding_energy(
         atomic_charges, env_charges, env_charges_to_atoms_distances
-    );
-    auto ene_pot_distpol = electro::polarizable_embedding_energy(
+    ) / CODATA08_ANGSTROM_TO_BOHR;
+    auto ene_pot_pol = electro::polarizable_embedding_energy(
         coords,
         atomic_alphas,
         env_charge_coords,
         env_charges,
-        env_charges_to_atoms_distances,
-        distortion_k
-    );
-    auto ene_pot_total = ene_pot_invacuo + ene_pot_distpol + ene_pot_coulomb;
-    // TODO: Inefficient
-    auto ene_pot_pol = ene_pot_distpol / (1 - distortion_k);
+        env_charges_to_atoms_distances
+    ) / CODATA08_ANGSTROM_TO_BOHR;
     auto ene_pot_dist = -distortion_k * ene_pot_pol;
+
+    auto ene_pot_total = ene_pot_invacuo + ene_pot_dist + ene_pot_pol + ene_pot_coulomb;
     // TODO It may be possible to return forces due to "different things"
     // by detaching the coords before the final calculation
 
@@ -577,11 +580,11 @@ void torchani_energy_force_simple_polarizable_embedding(
         forces_on_atoms_buf,
         forces_on_env_charges_buf
     );
+    populate_potential_energy(ene_pot_total, ene_pot_total_buf);
     populate_potential_energy(ene_pot_invacuo, ene_pot_invacuo_buf);
-    populate_potential_energy(ene_pot_coulomb, ene_pot_embed_coulomb_buf);
     populate_potential_energy(ene_pot_pol, ene_pot_embed_pol_buf);
     populate_potential_energy(ene_pot_dist, ene_pot_embed_dist_buf);
-    populate_potential_energy(ene_pot_total, ene_pot_total_buf);
+    populate_potential_energy(ene_pot_coulomb, ene_pot_embed_coulomb_buf);
 
     populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
 }

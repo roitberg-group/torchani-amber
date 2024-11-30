@@ -37,9 +37,9 @@ auto calc_efield(
  * Given efield and alphas, calculate the associated QM/MM energy
  */
 auto polarizable_embedding_energy_from_field(
-    torch::Tensor atomic_alphas, torch::Tensor efield, double k
+    torch::Tensor atomic_alphas, torch::Tensor efield
 ) -> torch::Tensor {
-    return (1 - k) * (-0.5) * torch::sum(atomic_alphas * torch::sum(efield.pow(2), 1));
+    return -0.5 * torch::sum(atomic_alphas * torch::sum(efield.pow(2), 1));
 }
 }  // namespace anon
 
@@ -52,13 +52,12 @@ auto polarizable_embedding_energy(
     torch::Tensor atomic_alphas,
     torch::Tensor env_charge_coords,
     torch::Tensor env_charges,
-    torch::Tensor env_charges_to_atoms_distances,
-    double k
+    torch::Tensor env_charges_to_atoms_distances
 ) -> torch::Tensor {
     torch::Tensor efield = calc_efield(
         coords, env_charge_coords, env_charges, env_charges_to_atoms_distances
     );
-    return polarizable_embedding_energy_from_field(atomic_alphas, efield, k);
+    return polarizable_embedding_energy_from_field(atomic_alphas, efield);
 }
 auto coulombic_embedding_energy(
     torch::Tensor atomic_charges,

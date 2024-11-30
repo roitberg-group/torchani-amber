@@ -7,8 +7,7 @@ auto polarizable_embedding_energy(
     torch::Tensor atomic_alphas,
     torch::Tensor env_charge_coords,
     torch::Tensor env_charges,
-    torch::Tensor env_charges_to_atoms_distances,
-    double k
+    torch::Tensor env_charges_to_atoms_distances
 ) -> torch::Tensor;
 auto coulombic_embedding_energy(
     torch::Tensor atomic_charges,
