@@ -24,12 +24,7 @@ torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 std::vector<std::string> torchani_builtin_models = {
-    "ani1x",
-    "ani1ccx",
-    "ani2x",
-    "animbis",
-    "anidr",
-    "aniala"
+    "ani1x", "ani1ccx", "ani2x", "animbis", "anidr", "aniala"
 };
 }  // namespace
 
@@ -42,15 +37,17 @@ std::vector<torch::jit::IValue> setup_inputs_pbc(
     // return by value is OK since inputs is locally created
     return {
         std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */cell,
-        /* pbc= */config.enabled_pbc(),
-        /* charge= */0,
-        /* atomic= */false,
-        /* ensemble_values= */ensemble_values
+        /* cell= */ cell,
+        /* pbc= */ config.enabled_pbc(),
+        /* charge= */ 0,
+        /* atomic= */ false,
+        /* ensemble_values= */ ensemble_values
     };
 }
 
-std::vector<torch::jit::IValue> setup_inputs_nopbc(torch::Tensor& coords, bool ensemble_values = false) {
+std::vector<torch::jit::IValue> setup_inputs_nopbc(
+    torch::Tensor& coords, bool ensemble_values = false
+) {
     // uses one "global", torchani_atomic_numbers
     // Create a vector of input values, jit::script::Module
     // classes accept and return values of ONLY type torch::jit::IValue so
@@ -58,14 +55,13 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(torch::Tensor& coords, bool e
     // return by value is OK since inputs is locally created
     return {
         std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */torch::indexing::None,
-        /* pbc= */torch::indexing::None,
-        /* charge= */0,
-        /* atomic= */false,
-        /* ensemble_values= */ensemble_values
+        /* cell= */ torch::indexing::None,
+        /* pbc= */ torch::indexing::None,
+        /* charge= */ 0,
+        /* atomic= */ false,
+        /* ensemble_values= */ ensemble_values
     };
 }
-
 
 void calculate_and_populate_charge_derivatives(
     torch::Tensor& coords,
@@ -102,11 +98,12 @@ void calculate_and_populate_qbc_derivatives(
     std::vector<torch::Tensor> qbc_vec = {qbc.sum()};
     std::vector<torch::Tensor> coord_vec = {coords};
     torch::Tensor torchani_qbc_derivatives = torch::autograd::grad(
-        qbc_vec,
-        coord_vec,
-        /* grad_outputs= */ {},
-        /* retain_graph= */ retain_graph
-    )[0] * HARTREE_TO_KCALMOL;
+                                                 qbc_vec,
+                                                 coord_vec,
+                                                 /* grad_outputs= */ {},
+                                                 /* retain_graph= */ retain_graph
+                                             )[0] *
+        HARTREE_TO_KCALMOL;
     torchani_qbc_derivatives = torchani_qbc_derivatives.to(torch::kCPU, torch::kDouble);
 
     auto torchani_qbc_derivatives_a = torchani_qbc_derivatives.accessor<double, 3>();
@@ -130,11 +127,12 @@ void calculate_and_populate_forces(
     // coord_vec (in this case only one) so the [0] element is the array of
     // derivatives, and the negative is the force
     torch::Tensor torchani_force = -torch::autograd::grad(
-        energy_vec,
-        coord_vec,
-        /* grad_outputs= */ {},
-        /* retain_graph= */ retain_graph
-    )[0] * HARTREE_TO_KCALMOL;
+                                       energy_vec,
+                                       coord_vec,
+                                       /* grad_outputs= */ {},
+                                       /* retain_graph= */ retain_graph
+                                   )[0] *
+        HARTREE_TO_KCALMOL;
     // Accessor is used to access tensor elements, but dimensionality has
     // to be known at compile time. Note that this is a CPU accessor.
     // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
@@ -177,7 +175,6 @@ void populate_potential_energy(torch::Tensor& output, double* potential_energy) 
     *potential_energy = (*output.data_ptr<double>()) * HARTREE_TO_KCALMOL;
 }
 
-
 // The output value of the model is of type torch::jit::IValue
 // so it has to be converted to tensor to be correctly used
 // output value is a tuple here
@@ -191,14 +188,14 @@ torch::Tensor calc_qbcs(int num_atoms, torch::Tensor& energy) {
     return qbc / config.tensor_to_torchani_dtype_and_device(num_atoms_tensor).sqrt();
 }
 
-void validate_model_output(const torch::jit::IValue& output, size_t expect_len, bool external = false) {
+void validate_model_output(
+    const torch::jit::IValue& output, size_t expect_len, bool external = false
+) {
     try {
         output.toTuple();
     } catch (const c10::Error& e) {
-        std::cerr
-            << "Error in libtorchani\n"
-            << "Expected model to return a tuple of tensors"
-            << std::endl;
+        std::cerr << "Error in libtorchani\n"
+                  << "Expected model to return a tuple of tensors" << std::endl;
         std::exit(2);
     }
     if (output.toTuple()->elements().size() < expect_len) {
@@ -206,7 +203,7 @@ void validate_model_output(const torch::jit::IValue& output, size_t expect_len, 
         std::cerr << "Expected model to return ";
         if (expect_len == 2) {
             if (external) {
-            std::cerr << "a tuple (energies, atomic_scalars)";
+                std::cerr << "a tuple (energies, atomic_scalars)";
             } else {
                 std::cerr << "a tuple (species, energies, ...)";
             }
@@ -244,28 +241,27 @@ void torchani_init_model(
     std::string model_jit_fname;
 
     if (use_cuaev and not use_cuda_device) {
-        std::cerr
-            << "Error in libtorchani\n"
-            << "A CUDA capable device must be selected to use the cuAEV extension"
-            << std::endl;
+        std::cerr << "Error in libtorchani\n"
+                  << "A CUDA capable device must be selected to use the cuAEV extension"
+                  << std::endl;
         std::exit(2);
     }
 
     model_jit_fname = cached_torchani_model;
-    if (
-        std::find(
+    if (std::find(
             torchani_builtin_models.begin(),
             torchani_builtin_models.end(),
             cached_torchani_model
-        ) != torchani_builtin_models.end()
-    ) {
+        ) != torchani_builtin_models.end()) {
         model_jit_fname = model_jit_fname + ".pt";
     }
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "model_jit_fname: " << model_jit_fname << '\n';
-    #endif
+#endif
 
-    config.set_device_and_precision(use_cuda_device, device_index, use_double_precision);
+    config.set_device_and_precision(
+        use_cuda_device, device_index, use_double_precision
+    );
     // It is VERY important to get types correctly here. If the
     // types don't match then from_blob will not interpret the pointers correctly
     // and as a consequence the tensor will have junk memory inside. If the blob
@@ -281,9 +277,9 @@ void torchani_init_model(
     torchani_atomic_numbers = torch::from_blob(
         atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "jit_model_path: " << jit_model_path << '\n';
-    #endif
+#endif
     torchani_atomic_numbers = torchani_atomic_numbers.to(config.device());
     torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
     // This is necessary since torch has to use this tensor to index internally,
@@ -291,10 +287,10 @@ void torchani_init_model(
     // to be performed.
     // Also, torchani needs an extra dimension as batch dimension
     torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "Initialized torchani with atomic numbers:" << '\n';
     std::cout << torchani_atomic_numbers << '\n';
-    #endif
+#endif
 
     // Disable TF32 and FP16 for accuracy
     torch::jit::setGraphExecutorOptimize(false);
@@ -302,9 +298,9 @@ void torchani_init_model(
     torch::globalContext().setAllowTF32CuDNN(false);
     torch::globalContext().setAllowFP16ReductionCuBLAS(false);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "Disabled JIT optimizations" << '\n';
-    #endif
+#endif
 
     // The model is loaded from a JIT compiled file always.
     try {
@@ -319,20 +315,21 @@ void torchani_init_model(
     // This is only necessary for double precision, since
     // the buffers / parameters are kFloat by default
     model.to(config.dtype());
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "Cast model to the specified precision" << '\n';
-    #endif
+#endif
 
     // Set the correct model configuration
     if (network_index != -1) {
         if (model_has_method("set_active_members")) {
-            model.get_method("set_active_members")({torch::List<std::int64_t>{network_index}});
+            model.get_method("set_active_members")(
+                {torch::List<std::int64_t>{network_index}}
+            );
         } else {
             std::cerr << "Error in libtorchani\n"
                       << "You set 'network_index' to a value != -1"
                       << " but the selected model doesn't export"
-                      << " a method 'set_active_members(str) -> None'"
-                      << std::endl;
+                      << " a method 'set_active_members(str) -> None'" << std::endl;
             std::exit(2);
         }
     }
@@ -344,24 +341,24 @@ void torchani_init_model(
                       << "You set 'use_cuaev=true'"
                       << " but the selected model doesn't export"
                       << " a method 'set_strategy(str) -> None'"
-                      << " that accepts the string 'cuaev'."
-                      << std::endl;
+                      << " that accepts the string 'cuaev'." << std::endl;
             std::exit(2);
         }
     } else {
         // It is not required that models support this
         try {
             model.get_method("set_strategy")({"pyaev"});
-        } catch (const c10::Error& e) {}
+        } catch (const c10::Error& e) {
+        }
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
-    #endif
+#endif
 
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout << "Finalized TorchANI Initialization" << '\n';
-    #endif
+#endif
 }
 
 void torchani_energy_force_from_external_neighbors(
@@ -374,23 +371,25 @@ void torchani_energy_force_from_external_neighbors(
     double forces_buf[][3],
     double* potential_energy_buf
 ) {
-    #ifdef TIMING
+#ifdef TIMING
     auto start = std::chrono::high_resolution_clock::now();
-    #endif
+#endif
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     torch::Tensor shifts = dbl_buf_to_shifts_tensor(config, shifts_buf, num_neighbors);
-    torch::Tensor neighborlist = int_buf_to_neighborlist_tensor(config, neighborlist_buf, num_neighbors);
+    torch::Tensor neighborlist =
+        int_buf_to_neighborlist_tensor(config, neighborlist_buf, num_neighbors);
     std::vector<torch::jit::IValue> inputs{
         torchani_atomic_numbers,
         coords,
         neighborlist,
         shifts,
-        /* total_charge= */0,
-        /* atomic= */false,
-        /* ensemble_values= */false
+        /* total_charge= */ 0,
+        /* atomic= */ false,
+        /* ensemble_values= */ false
     };
     if (model_has_method("compute_from_external_neighbors")) {
-        torch::jit::IValue output = model.get_method("compute_from_external_neighbors")(inputs);
+        torch::jit::IValue output =
+            model.get_method("compute_from_external_neighbors")(inputs);
         validate_model_output(output, 2, true);
         torch::Tensor energy = output.toTuple()->elements()[0].toTensor();
         calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
@@ -399,18 +398,17 @@ void torchani_energy_force_from_external_neighbors(
         std::cerr << "Error in libtorchani\n"
                   << "To use an external neighborlist"
                   << " the model must export 'compute_from_external_neighbors(...)'."
-                  << " Consult the TorchANI-Amber readmi for more info"
-                  << std::endl;
+                  << " Consult the TorchANI-Amber readmi for more info" << std::endl;
         std::exit(2);
     }
-    #ifdef TIMING
+#ifdef TIMING
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
         << "TORCHANI-AMBER: energy force external neighbors time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
-        << "ms"
-        << std::endl;
-    #endif
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
+            1000
+        << "ms" << std::endl;
+#endif
 }
 
 void torchani_energy_force_pbc(
@@ -420,9 +418,9 @@ void torchani_energy_force_pbc(
     double forces_buf[][3],
     double* potential_energy
 ) {
-    #ifdef TIMING
+#ifdef TIMING
     auto start = std::chrono::high_resolution_clock::now();
-    #endif
+#endif
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
     // Inputs are setup with PBC
@@ -432,14 +430,14 @@ void torchani_energy_force_pbc(
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
-    #ifdef TIMING
+#ifdef TIMING
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
         << "TORCHANI-AMBER: energy force PBC time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
-        << "ms"
-        << std::endl;
-    #endif
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
+            1000
+        << "ms" << std::endl;
+#endif
 }
 
 void torchani_energy_force_atomic_charges(
@@ -492,9 +490,9 @@ void torchani_energy_force(
     double forces_buf[][3],
     double* potential_energy
 ) {
-    #ifdef TIMING
+#ifdef TIMING
     auto start = std::chrono::high_resolution_clock::now();
-    #endif
+#endif
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
 
@@ -503,14 +501,14 @@ void torchani_energy_force(
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
-    #ifdef TIMING
+#ifdef TIMING
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
         << "TORCHANI-AMBER: energy force time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop -start).count() * 1000
-        << "ms"
-        << std::endl;
-    #endif
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
+            1000
+        << "ms" << std::endl;
+#endif
 }
 
 void torchani_energy_force_qbc(
@@ -521,7 +519,8 @@ void torchani_energy_force_qbc(
     double* potential_energy
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords, /*ensemble_values=*/true);
+    std::vector<torch::jit::IValue> inputs =
+        setup_inputs_nopbc(coords, /*ensemble_values=*/true);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
@@ -547,13 +546,15 @@ void torchani_data_for_monitored_mlmm(
     double* potential_energy
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords, /*ensemble_values=*/true);
+    std::vector<torch::jit::IValue> inputs =
+        setup_inputs_nopbc(coords, /*ensemble_values=*/true);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor ensemble_energy = output.toTuple()->elements()[1].toTensor();
     // Squeeze ensemble dimension from atomic charges
-    torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor().squeeze(0);
+    torch::Tensor atomic_charges =
+        output.toTuple()->elements()[2].toTensor().squeeze(0);
     torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
     torch::Tensor energy = ensemble_energy.mean(0);
 
