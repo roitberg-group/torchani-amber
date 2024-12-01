@@ -32,6 +32,7 @@ this_dir = Path(__file__).parent
 @dataclass
 class MlmmConfig:
     protocol: tp.Literal["me", "mbispol"] = "me"
+    use_torch_coupling: bool = False
 
 
 @dataclass
@@ -76,7 +77,13 @@ class RunConfig:
 # Generate all configs to be tested
 bools = (True, False)
 cuda_configs = (None, CudaConfig(True), CudaConfig(False))
-mlmm_configs = (None, MlmmConfig("me"), MlmmConfig("mbispol"))
+mlmm_configs = (
+    None,
+    MlmmConfig("me"),
+    MlmmConfig("mbispol"),
+    MlmmConfig("me", True),
+    MlmmConfig("mbispol", True),
+)
 configs: tp.List[RunConfig] = []
 for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools, bools):
     config = RunConfig(*tup)
@@ -164,6 +171,14 @@ class AmberIntegration(unittest.TestCase):
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
             if f.suffix in [".dat", ".mdcrd", ".xyz"]:
+                # These ones are not output by torch coupling
+                if (
+                    config.mlmm
+                    and config.mlmm.use_torch_coupling
+                    and "charges_grad_qm_region" in f.name
+                    or "forces_qmmm_qm_region" in f.name
+                ):
+                    continue
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
                 if not config.shake and config.use_amber_neighborlist:
                     # Lots of slack for amber neighborlist, since it uses slightly ops
@@ -178,8 +193,12 @@ class AmberIntegration(unittest.TestCase):
                     rtol = 1e-7
                     atol = 1e-5
                 if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    # Never overwrite with amber's neighborlist
-                    if not config.use_amber_neighborlist:
+                    # Never overwrite with amber's neighborlist or torch coupling
+                    if (
+                        not config.use_amber_neighborlist
+                        or config.mlmm
+                        and config.mlmm.use_torch_coupling
+                    ):
                         shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
@@ -202,7 +221,22 @@ class AmberIntegration(unittest.TestCase):
         self._testSander(config, f"sander_from_neighbors_{config.name}")
 
     @parameterized.expand(
-        [c for c in configs if not config.use_amber_neighborlist], name_func=name_func
+        [c for c in configs if (c.mlmm and c.mlmm.use_torch_coupling)],
+        name_func=name_func,
+    )
+    def testSanderTorchCoupledMLMM(self, config: RunConfig) -> None:
+        self._testSander(config, f"sander_torch_coupled_{config.name}")
+
+    @parameterized.expand(
+        [
+            c
+            for c in configs
+            if (
+                not c.use_amber_neighborlist
+                and not (c.mlmm and c.mlmm.use_torch_coupling)
+            )
+        ],
+        name_func=name_func,
     )
     def testSander(self, config: RunConfig) -> None:
         self._testSander(config, f"sander_{config.name}")
@@ -255,6 +289,14 @@ class AmberIntegration(unittest.TestCase):
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
             if f.suffix in [".dat", ".mdcrd", ".xyz"]:
+                # These ones are not output by torch coupling
+                if (
+                    config.mlmm
+                    and config.mlmm.use_torch_coupling
+                    and "charges_grad_qm_region" in f.name
+                    or "forces_qmmm_qm_region" in f.name
+                ):
+                    continue
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
                 if not config.shake and config.use_amber_neighborlist:
                     # Lots of slack for amber neighborlist, since it uses slightly
@@ -269,7 +311,11 @@ class AmberIntegration(unittest.TestCase):
                     rtol = 1e-7
                     atol = 1e-5
                 if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    if not config.use_amber_neighborlist:
+                    if (
+                        not config.use_amber_neighborlist
+                        or config.mlmm
+                        and config.mlmm.use_torch_coupling
+                    ):
                         shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
