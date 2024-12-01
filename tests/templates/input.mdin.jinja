@@ -58,6 +58,7 @@
     model_type = "animbis"  ! ANI-mbis can be used for all kinds of dynamics
     use_double_precision = .{{ float64 }}.
 {% if mlmm %}
+    use_torch_coupling=.False.
     {% if mlmm.protocol == "me" %}
     use_torchani_charges = .False.
         {% if not legacy %}
@@ -76,7 +77,6 @@
     polarize_qm_charges = .True.
     distort_qm_energy = .True.
         {% endif %}
-    distortion_k = 0.5d0
     {% endif %}
     write_charges = .True.
     {% if not legacy %}
