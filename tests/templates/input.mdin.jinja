@@ -9,11 +9,11 @@
     nstlim = 5  ! Total num of dynamics steps
     ntx = 1  ! Only read input coords, not vels
     {% if netcdf %}
-        ntxo = 2  ! Dump restart as netCDF
-        ioutfm = 1  ! Dump traj as netCDF
+    ntxo = 2  ! Dump restart as netCDF
+    ioutfm = 1  ! Dump traj as netCDF
     {% else %}
-        ntxo = 1  ! Dump restart as ASCII
-        ioutfm = 0  ! Dump traj as ASCII
+    ntxo = 1  ! Dump restart as ASCII
+    ioutfm = 0  ! Dump traj as ASCII
     {% endif %}
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
@@ -76,7 +76,7 @@
     polarize_qm_charges = .True.
     distort_qm_energy = .True.
         {% endif %}
-    distortion_k = 0.4d0
+    distortion_k = 0.5d0
     {% endif %}
     write_charges = .True.
     {% if not legacy %}
