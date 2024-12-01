@@ -92,6 +92,9 @@ void torchani_energy_force_simple_polarizable_embedding(
     double atomic_alphas_buf[],  // shape (num-atoms,)
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
+    bool predict_charges,
+    bool use_simple_polarization_correction,
+    bool use_charge_derivatives,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)

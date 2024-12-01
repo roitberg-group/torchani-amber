@@ -160,14 +160,17 @@ subroutine torchani_energy_force_from_external_neighbors( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine torchani_energy_force_simple_polarizable_embedding( &
+subroutine internal_energy_force_simple_polarizable_embedding( &
     num_atoms, &
     num_env_charges, &
-    distortion_k, &
+    inv_pol_dielectric, &
     coords, &
     atomic_alphas, &
     env_charge_coords, &
     env_charges, &
+    predict_charges, &
+    use_simple_polarization_correction, &
+    use_charge_derivatives, &
     ! Outputs
     forces_on_atoms, &
     forces_on_env_charges, &
@@ -181,15 +184,18 @@ subroutine torchani_energy_force_simple_polarizable_embedding( &
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), value, intent(in) :: num_env_charges
-    real(c_double), value, intent(in) :: distortion_k
+    real(c_double), value, intent(in) :: inv_pol_dielectric
     real(c_double), intent(in) :: coords(*)
     real(c_double), intent(in) :: atomic_alphas(*)
     real(c_double), intent(in) :: env_charge_coords(*)
     real(c_double), intent(in) :: env_charges(*)
+    logical(c_bool), value, intent(in) :: predict_charges
+    logical(c_bool), value, intent(in) :: use_simple_polarization_correction
+    logical(c_bool), value, intent(in) :: use_charge_derivatives
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
     real(c_double), intent(out) :: forces_on_env_charges(*)
-    real(c_double), intent(out) :: atomic_charges(*)
+    real(c_double), intent(inout) :: atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_invacuo
     real(c_double), intent(out) :: ene_pot_embed_pol
     real(c_double), intent(out) :: ene_pot_embed_dist
@@ -200,8 +206,71 @@ endinterface
 
 contains
 
-! Wrapper over this routine is needed in case fbool don't have the same binary
+! Wrapper over these routines is needed in case fbool don't have the same binary
 ! representation as c_bools.
+subroutine torchani_energy_force_simple_polarizable_embedding( &
+    num_atoms, &
+    num_env_charges, &
+    inv_pol_dielectric, &
+    coords, &
+    atomic_alphas, &
+    env_charge_coords, &
+    env_charges, &
+    predict_charges, &
+    use_simple_polarization_correction, &
+    use_charge_derivatives, &
+    ! Outputs
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    atomic_charges, &
+    ene_pot_invacuo, &
+    ene_pot_embed_pol, &
+    ene_pot_embed_dist, &
+    ene_pot_embed_coulomb, &
+    ene_pot_total &
+)
+    integer, value, intent(in) :: num_atoms
+    integer, value, intent(in) :: num_env_charges
+    double precision, value, intent(in) :: inv_pol_dielectric
+    double precision, contiguous, intent(in) :: coords(:, :)
+    double precision, contiguous, intent(in) :: atomic_alphas(:)
+    double precision, contiguous, intent(in) :: env_charge_coords(:, :)
+    double precision, contiguous, intent(in) :: env_charges(:)
+    logical, intent(in) :: predict_charges
+    logical, intent(in) :: use_simple_polarization_correction
+    logical, intent(in) :: use_charge_derivatives
+    ! Outputs
+    double precision, contiguous, intent(out) :: forces_on_atoms(:, :)
+    double precision, contiguous, intent(out) :: forces_on_env_charges(:, :)
+    double precision, contiguous, intent(inout) :: atomic_charges(:)
+    double precision, intent(out) :: ene_pot_invacuo
+    double precision, intent(out) :: ene_pot_embed_pol
+    double precision, intent(out) :: ene_pot_embed_dist
+    double precision, intent(out) :: ene_pot_embed_coulomb
+    double precision, intent(out) :: ene_pot_total
+    call internal_energy_force_simple_polarizable_embedding( &
+        num_atoms, &
+        num_env_charges, &
+        inv_pol_dielectric, &
+        coords, &
+        atomic_alphas, &
+        env_charge_coords, &
+        env_charges, &
+        fbool_to_cbool(predict_charges), &
+        fbool_to_cbool(use_simple_polarization_correction), &
+        fbool_to_cbool(use_charge_derivatives), &
+        ! Outputs
+        forces_on_atoms, &
+        forces_on_env_charges, &
+        atomic_charges, &
+        ene_pot_invacuo, &
+        ene_pot_embed_pol, &
+        ene_pot_embed_dist, &
+        ene_pot_embed_coulomb, &
+        ene_pot_total &
+    )
+endsubroutine
+
 subroutine torchani_init_model( &
     atomic_nums, &
     device_index, &
