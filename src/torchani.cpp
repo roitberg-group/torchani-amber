@@ -512,7 +512,7 @@ void torchani_energy_force_atomic_charges(
  * Note that currently this function can't split the QM forces in two parts, it only
  * outputs net forces due to the model in vacuum and the potential energies
  */
-void torchani_energy_force_variable_charges_embedding(
+void torchani_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
     double inv_pol_dielectric,

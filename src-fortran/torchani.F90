@@ -11,6 +11,7 @@ public :: &
     torchani_energy_force_qbc, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
+    torchani_energy_force_with_coupling, &
     torchani_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
     convert_pmemd_neighborlist_to_ani_fmt
@@ -160,7 +161,7 @@ subroutine torchani_energy_force_from_external_neighbors( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine internal_energy_force_simple_polarizable_embedding( &
+subroutine internal_energy_force_with_coupling( &
     num_atoms, &
     num_env_charges, &
     inv_pol_dielectric, &
@@ -180,7 +181,7 @@ subroutine internal_energy_force_simple_polarizable_embedding( &
     ene_pot_embed_dist, &
     ene_pot_embed_coulomb, &
     ene_pot_total &
-) bind(c, name="torchani_energy_force_simple_polarizable_embedding")
+) bind(c, name="torchani_energy_force_with_coupling")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), value, intent(in) :: num_env_charges
@@ -208,7 +209,7 @@ contains
 
 ! Wrapper over these routines is needed in case fbool don't have the same binary
 ! representation as c_bools.
-subroutine torchani_energy_force_simple_polarizable_embedding( &
+subroutine torchani_energy_force_with_coupling( &
     num_atoms, &
     num_env_charges, &
     inv_pol_dielectric, &
@@ -248,7 +249,7 @@ subroutine torchani_energy_force_simple_polarizable_embedding( &
     double precision, intent(out) :: ene_pot_embed_dist
     double precision, intent(out) :: ene_pot_embed_coulomb
     double precision, intent(out) :: ene_pot_total
-    call internal_energy_force_simple_polarizable_embedding( &
+    call internal_energy_force_with_coupling( &
         num_atoms, &
         num_env_charges, &
         inv_pol_dielectric, &

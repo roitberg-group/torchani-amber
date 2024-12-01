@@ -84,7 +84,7 @@ void torchani_energy_force_from_external_neighbors(
     double* potential_energy
 );
 
-void torchani_energy_force_simple_polarizable_embedding(
+void torchani_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
     double distortion_k,
