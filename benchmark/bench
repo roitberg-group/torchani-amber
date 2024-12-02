@@ -238,7 +238,11 @@ def benchmark_replica(
 
     replica_dir = this_dir / dirname
     replica_dir.mkdir(exist_ok=True)
-    with open(replica_dir / "results.csv", mode="wt", encoding="utf-8") as f:
+    with open(
+        replica_dir / f"{dirname.split('-')[-1]}-results.csv",
+        mode="wt",
+        encoding="utf-8",
+    ) as f:
         any_config_keys = list(as_flat_dict(configs[-1]).keys())
         any_config_keys.insert(0, "id")
         any_config_keys.append("walltime_ns")
