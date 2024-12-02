@@ -13,6 +13,10 @@ __pycache__/
 # don't save test values
 test/test_values*.txt
 
+# don't save benchmark outputs
+benchmark/serial*
+benchmark/mpi*
+
 # don't save outputs from tests
 amber_examples/outputs/*
 
