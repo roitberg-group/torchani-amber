@@ -324,7 +324,7 @@ def benchmark(
         any_config_keys.append("walltime_ns")
         writer = csv.DictWriter(f, fieldnames=any_config_keys)
         writer.writeheader()
-        for config in configs:
+        for config_idx, config in enumerate(configs):
             input_as_str = env.get_template("mlmm.mdin.jinja").render(
                 **dataclasses.asdict(config)
             )
@@ -339,7 +339,7 @@ def benchmark(
                 else ["mpirun", "-n", str(config.core_num), "sander.MPI"]
             )
             if verbose:
-                console.print(f"Running config {config}")
+                console.print(f"{config_idx}/{len(configs)} Running {config}")
             _start = time.perf_counter_ns()
             subprocess.run(cmd, cwd=config_dir, check=True)
             _end = time.perf_counter_ns()
