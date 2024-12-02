@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=ani-amber-bench
+#SBATCH --output=%j-ani-amber-bench.out
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks={{ core_num }}
+#SBATCH --ntasks-per-node={{ core_num }}
+#SBATCH --cpus-per-task=1
+
+module purge
+module load mamba
+mamba activate /blue/roitberg/share/envs/ani-amber
+source /blue/roitberg/share/amber-latest/amber.sh
+
+'{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'
