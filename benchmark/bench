@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import sys
 import time
 import csv
 import shutil
@@ -79,6 +80,10 @@ class BenchConfig:
 
 @app.command()
 def run(
+    slurm: tpx.Annotated[
+        bool,
+        Option("--slurm/--no-slurm"),
+    ] = False,
     replica_num: tpx.Annotated[
         int,
         Option(
@@ -131,12 +136,27 @@ def run(
             help="Number of timesteps to run benchmark for",
         ),
     ] = 500,
+    bench_dir: tpx.Annotated[
+        tp.Optional[Path],
+        Option(
+            "-b",
+            "--bench-dir",
+            show_default=False,
+            help="Full path to benchmark directory",
+        ),
+    ] = None,
     verbose: tpx.Annotated[
         bool,
         Option("-v/-V", "--verbose/--no-verbose"),
     ] = True,
 ) -> None:
     r"""Run Sander or Sander-MPI ML/MM benchmarks"""
+    if bench_dir is None:
+        kind = "serial" if core_num == 1 else "mpi"
+        dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
+        bench_dir = this_dir / dirname
+        bench_dir.mkdir(exist_ok=True)
+
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
         undefined=jinja2.StrictUndefined,
@@ -144,8 +164,21 @@ def run(
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    kind = "serial" if core_num == 1 else "mpi"
-    dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
+    if slurm:
+        args = " ".join(sys.argv[1:])
+        args = args.replace(" --slurm", "")
+        tmpl = env.get_template("bench.slurm.sh.jinja").render(
+            cli_app_dir=str(this_dir),
+            core_num=core_num,
+            args=args,
+            bench_dir=str(bench_dir),
+        )
+        input_fpath = bench_dir / "hpg.slurm.sh"
+        input_fpath.write_text(tmpl)
+        console.print("Launching slurm script ...")
+        subprocess.run(["sbatch", str(input_fpath)], cwd=bench_dir, check=True)
+        sys.exit(0)
+
     protos = []
     if bench_me:
         protos.append(Protocol.ANI_ME)
@@ -157,35 +190,33 @@ def run(
         protos.extend([Protocol.ANI_ME_MBIS, Protocol.SANDER_ME_MBIS])
     if bench_mbispol_nogradq:
         protos.append(Protocol.ANI_MBISPOL_NOGRADQ)
-    for j in range(replica_num):
-        benchmark_replica(
-            protos,
-            cuda,
-            cpu,
-            env,
-            dirname,
-            j,
-            tstep_num,
-            core_num,
-            replica_num,
-            verbose,
-        )
+    replicas = list(range(replica_num))
+    benchmark(
+        bench_dir,
+        replicas,
+        protos,
+        cuda,
+        cpu,
+        env,
+        tstep_num,
+        core_num,
+        replica_num,
+        verbose,
+    )
 
 
-def benchmark_replica(
+def benchmark(
+    bench_dir: Path,
+    replicas: tp.List[int],
     protocols: tp.Sequence[Protocol],
     cuda: bool,
     cpu: bool,
     env: jinja2.Environment,
-    dirname: str,
-    idx: int,
     tstep_num: int,
     core_num: int,
     total_replicas: int,
     verbose: bool,
 ) -> None:
-    configs = [BenchConfig(replica=idx, core_num=core_num, tstep_num=tstep_num)]
-    # bools = (True, False)
     couple_bools = (True, False)
     dev_bools = []
     if cuda:
@@ -195,9 +226,14 @@ def benchmark_replica(
     if not dev_bools:
         console.print("At least one of '--cpu' or '--cuda' has to be specified")
 
+    # Base, "MM/MM" config
+    configs = [
+        BenchConfig(replica=idx, core_num=core_num, tstep_num=tstep_num)
+        for idx in replicas
+    ]
     selections = [":5", ":4-6", ":3-7", ":2-8", ":1-9"]
-    for proto, torchcouple, cuda, selection in itertools.product(
-        protocols, couple_bools, dev_bools, selections
+    for idx, proto, torchcouple, cuda, selection in itertools.product(
+        replicas, protocols, couple_bools, dev_bools, selections
     ):
         if torchcouple and proto in [Protocol.SANDER_ME, Protocol.SANDER_ME_MBIS]:
             continue
@@ -214,13 +250,15 @@ def benchmark_replica(
         ms_to_s = 1 / 1000
         s_to_hr = 1 / 3600
         s_to_min = 1 / 60
-        console.print(f"Replica {idx + 1} out of {total_replicas}")
+        configs_per_replica = len(configs) / len(replicas)
+        console.print(f"Will run {total_replicas} total replicas")
         console.print(
             f"Will use {core_num} cores ({'serial' if core_num == 1 else 'mpi'})"
         )
-        console.print(f"Will benchmark {len(configs)} configs")
+        console.print(f"Will benchmark {len(configs)} configs total")
+        console.print(f"Will benchmark {int(configs_per_replica)} configs per replica")
         console.print(f"Will run each config for {tstep_num} steps")
-        estimate_ms = total_replicas * len(configs) * 400 * tstep_num / core_num
+        estimate_ms = len(configs) * 400 * tstep_num / core_num
         estimate_hs = estimate_ms * ms_to_s * s_to_hr
         if estimate_hs < 1:
             factor = s_to_min
@@ -232,14 +270,14 @@ def benchmark_replica(
             f"Assuming ~400 ms/step/core on average"
             f" the time estimate is"
             f" {estimate_ms / total_replicas * ms_to_s * factor:.2f} {unit}"
-            f" for this replica"
+            f" for a single replica"
             f" and {estimate_ms * ms_to_s * factor:.2f} {unit} in total"
         )
 
-    replica_dir = this_dir / dirname
-    replica_dir.mkdir(exist_ok=True)
+    results_fpath = bench_dir / f"{bench_dir.name}-results.csv"
+    write_header = not results_fpath.exists()
     with open(
-        replica_dir / f"{dirname.split('-')[-1]}-results.csv",
+        results_fpath,
         mode="wt",
         encoding="utf-8",
     ) as f:
@@ -247,12 +285,13 @@ def benchmark_replica(
         any_config_keys.insert(0, "id")
         any_config_keys.append("walltime_ns")
         writer = csv.DictWriter(f, fieldnames=any_config_keys)
-        writer.writeheader()
+        if write_header:
+            writer.writeheader()
         for config in configs:
             input_as_str = env.get_template("mlmm.mdin.jinja").render(
                 **dataclasses.asdict(config)
             )
-            config_dir = replica_dir / config.name
+            config_dir = bench_dir / config.name
             config_dir.mkdir(exist_ok=True)
             shutil.copy(this_dir / "ala-8-chain.inpcrd", config_dir / "inpcrd")
             shutil.copy(this_dir / "ala-8-chain.prmtop", config_dir / "prmtop")
