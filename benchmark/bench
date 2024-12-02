@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import sys
 import time
 import csv
@@ -155,7 +156,7 @@ def run(
         kind = "serial" if core_num == 1 else "mpi"
         dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
         bench_dir = this_dir / dirname
-        bench_dir.mkdir(exist_ok=True)
+        bench_dir.mkdir()
 
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
@@ -275,7 +276,6 @@ def benchmark(
         )
 
     results_fpath = bench_dir / f"{bench_dir.name}-results.csv"
-    write_header = not results_fpath.exists()
     with open(
         results_fpath,
         mode="wt",
@@ -285,14 +285,13 @@ def benchmark(
         any_config_keys.insert(0, "id")
         any_config_keys.append("walltime_ns")
         writer = csv.DictWriter(f, fieldnames=any_config_keys)
-        if write_header:
-            writer.writeheader()
+        writer.writeheader()
         for config in configs:
             input_as_str = env.get_template("mlmm.mdin.jinja").render(
                 **dataclasses.asdict(config)
             )
             config_dir = bench_dir / config.name
-            config_dir.mkdir(exist_ok=True)
+            config_dir.mkdir()
             shutil.copy(this_dir / "ala-8-chain.inpcrd", config_dir / "inpcrd")
             shutil.copy(this_dir / "ala-8-chain.prmtop", config_dir / "prmtop")
             (config_dir / "mdin").write_text(input_as_str)
@@ -313,6 +312,9 @@ def benchmark(
             config_dict["walltime_ns"] = _end - _start
             config_dict["id"] = config.shorthash
             writer.writerow({k: str(v) for k, v in config_dict.items()})
+            # Ensure data is written to files
+            f.flush()
+            os.fsync(f.fileno())
 
 
 @app.command()
