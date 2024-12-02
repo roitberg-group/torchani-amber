@@ -49,6 +49,8 @@
     {# #}
     {% if mlmm.protocol not in ["sander_me", "sander_me_mbis"] %}
     use_torch_coupling=.{{ mlmm.use_torch_coupling }}.
+    {% else %}
+    use_torch_coupling=.False.
     {% endif %}
     {% if mlmm.protocol in ["ani_me", "ani_me_mbis", "sander_me", "sander_me_mbis"] %}
     mlmm_coupling = 0
