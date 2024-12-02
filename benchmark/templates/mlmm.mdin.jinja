@@ -1,0 +1,78 @@
+! TorchANI-Amber test input
+&cntrl
+    imin = 0  ! Dynamics
+    nstlim = {{ tstep_num }}
+    irest = 0  ! Only read input coords, not vels
+    ntx = 1  ! Only read input coords, not vels
+    dt = 0.001  ! Timestep (ns)
+    ntc = 2  ! Apply SHAKE to H-X
+    ntf = 2  ! Don't calculate H-X forces
+    ig = 5541  ! Manual seed for reproducibility
+    cut = 8.0  !  Non-bonded neighborlist cutoff
+    noshakemask = ":1-9"  ! Specific to the ALA-chain system: Dont' apply SHAKE there
+    {# #}
+    {# No ouptut #}
+    {# #}
+    ioutfm = 1  ! Dump traj as netCDF
+    ntxo = 2  ! Dump restart as netCDF
+    ntwx = {{ tstep_num }}  ! Don't dump traj
+    ntpr = {{ tstep_num }}  ! Don't dump mdout logs
+    {% if mlmm %}
+    ifqnt = 1  ! Use QM/MM
+    {% endif %}
+/
+{% if mlmm %}
+&qmmm
+    qm_theory = "EXTERN"
+    qm_ewald = 0  ! Required
+    qmmask = "{{ mlmm.ml_system_selection }}"  ! Select only these residues as QM
+    qmshake = 0  ! Don't apply SHAKE to QM atoms
+    qmcut = 15.0
+    {% if mlmm.protocol in ["ani_me", "ani_me_mbis", "ani_mbispol", "ani_mbispol_nogradq"] %}
+    qmmm_int = 1  ! ANI-controlled coupling
+    {% elif mlmm.protocol in ["sander_me", "sander_me_mbis"] %}
+    qmmm_int = 5  ! Sander-controlled coupling (ME)
+    {% else %}
+    qmmm_int = -1  {# fail #}
+    {% endif %}
+/
+&ani
+    {% if mlmm.protocol in ["sander_me", "ani_me"] %}
+    model_type = "ani2x"
+    {% else %}
+    model_type = "animbis"
+    {% endif %}
+    use_cuda_device = .{{ mlmm.cuda }}.
+    use_double_precision = .{{ mlmm.float64 }}.
+    {# #}
+    {# Protocol Specific #}
+    {# #}
+    {% if mlmm.protocol not in ["sander_me", "sander_me_mbis"] %}
+    use_torch_coupling=.{{ mlmm.use_torch_coupling }}.
+    {% endif %}
+    {% if mlmm.protocol in ["ani_me", "ani_me_mbis", "sander_me", "sander_me_mbis"] %}
+    mlmm_coupling = 0
+    use_torchani_charges = .False.
+    {% elif mlmm.protocol == "ani_mbispol" %}
+    mlmm_coupling = 1
+    use_torchani_charges = .True.
+    {% elif mlmm.protocol == "ani_mbispol_nogradq" %}
+    mlmm_coupling = 1
+    use_torchani_charges = .True.
+    use_charges_derivatives = .True.
+    {% else %}
+    mlmm_coupling = -1  {# fail #}
+    {% endif %}
+    {% if mlmm.protocol in ["sander_me", "sander_me_mbis", "ani_mbis_nogradq"] %}
+    allow_untested_protocols = .True.
+    {% endif %}
+    {# #}
+    {# No ouptut #}
+    {# #}
+    write_charges = .False.
+    write_charges_grad = .False.
+    write_forces = .False.
+    write_xyz = .False.
+/
+{% endif %}
+! End TorchANI-Amber test input

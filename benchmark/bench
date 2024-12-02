@@ -1,0 +1,282 @@
+#!/usr/bin/env python
+import time
+import csv
+import shutil
+import subprocess
+import uuid
+import json
+import hashlib
+import typing_extensions as tpx
+from typer import Option
+import itertools
+from enum import Enum
+import typing as tp
+import dataclasses
+from pathlib import Path
+
+from rich.console import Console
+from typer import Typer, Abort
+import jinja2
+
+console = Console()
+app = Typer()
+
+this_dir = Path(__file__).parent
+
+
+@dataclasses.dataclass
+class BenchMlmmConfig:
+    protocol: str = "ani_me"
+    use_torch_coupling: bool = True
+    cuda: bool = True
+    ml_system_selection: str = ":1"
+    float64: bool = True
+
+
+def flatten_dict(d: tp.Dict[str, tp.Any], prefix: str = "") -> tp.Dict[str, tp.Any]:
+    flat_d = {}
+    for oldk, v in d.items():
+        k = f"{prefix}{oldk}"
+        if isinstance(v, dict):
+            flat_d.update(flatten_dict(v, f"{k}."))
+        else:
+            flat_d[k] = v
+    return flat_d
+
+
+def as_flat_dict(datacls_obj) -> tp.Dict[str, tp.Any]:
+    return flatten_dict(dataclasses.asdict(datacls_obj))
+
+
+class Protocol(Enum):
+    ANI_ME = "ani_me"
+    SANDER_ME = "sander_me"
+    ANI_MBISPOL = "ani_mbispol"
+    ANI_ME_MBIS = "ani_me_mbis"
+    SANDER_ME_MBIS = "sander_me_mbis"
+    ANI_MBISPOL_NOGRADQ = "ani_mbispol_nogradq"
+
+
+@dataclasses.dataclass
+class BenchConfig:
+    replica: int = 0
+    tstep_num: int = 500
+    core_num: int = 1
+    mlmm: tp.Optional[BenchMlmmConfig] = None
+
+    @property
+    def name(self) -> str:
+        return f"{self.shorthash}-replica-{str(self.replica).zfill(2)}"
+
+    @property
+    def shorthash(self) -> str:
+        hasher = hashlib.shake_128()
+        dict_ = dataclasses.asdict(self)
+        dict_.pop("replica")
+        hasher.update(json.dumps(dict_).encode("utf-8"))
+        return hasher.hexdigest(8)
+
+
+@app.command()
+def run(
+    replica_num: tpx.Annotated[
+        int,
+        Option(
+            "-r",
+            "--replicas",
+            help="Number of times to run benchmark for each configuration",
+        ),
+    ] = 5,
+    bench_me: tpx.Annotated[
+        bool,
+        Option("--bench-me/--no-bench-me"),
+    ] = True,
+    bench_mbispol: tpx.Annotated[
+        bool,
+        Option("--bench-mbispol/--no-bench-mbispol"),
+    ] = True,
+    bench_sander_me: tpx.Annotated[
+        bool,
+        Option("--bench-sander-me/--no-bench-sander-me"),
+    ] = False,
+    bench_mbispol_nogradq: tpx.Annotated[
+        bool,
+        Option("--bench-mbispol-nogradq/--no-bench-mbispol-nogradq "),
+    ] = False,
+    bench_me_mbis: tpx.Annotated[
+        bool,
+        Option("--bench-me-mbis/--no-bench-me-mbis"),
+    ] = False,
+    cpu: tpx.Annotated[
+        bool,
+        Option("--cpu/--no-cpu", help="Benchmark on CPU"),
+    ] = False,
+    cuda: tpx.Annotated[
+        bool,
+        Option("--cuda/--no-cuda", help="Benchmark on CUDA device"),
+    ] = True,
+    core_num: tpx.Annotated[
+        int,
+        Option(
+            "-c",
+            "--cores",
+            help="Number of cores to run benchmark on, if > 1 sander.MPI is used",
+        ),
+    ] = 1,
+    tstep_num: tpx.Annotated[
+        int,
+        Option(
+            "-s",
+            "--tsteps",
+            help="Number of timesteps to run benchmark for",
+        ),
+    ] = 500,
+    verbose: tpx.Annotated[
+        bool,
+        Option("-v/-V", "--verbose/--no-verbose"),
+    ] = True,
+) -> None:
+    r"""Run Sander or Sander-MPI ML/MM benchmarks"""
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
+        undefined=jinja2.StrictUndefined,
+        autoescape=jinja2.select_autoescape(),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    kind = "serial" if core_num == 1 else "mpi"
+    dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
+    protos = []
+    if bench_me:
+        protos.append(Protocol.ANI_ME)
+    if bench_sander_me:
+        protos.append(Protocol.SANDER_ME)
+    if bench_mbispol:
+        protos.append(Protocol.ANI_MBISPOL)
+    if bench_me_mbis:
+        protos.extend([Protocol.ANI_ME_MBIS, Protocol.SANDER_ME_MBIS])
+    if bench_mbispol_nogradq:
+        protos.append(Protocol.ANI_MBISPOL_NOGRADQ)
+    for j in range(replica_num):
+        benchmark_replica(
+            protos,
+            cuda,
+            cpu,
+            env,
+            dirname,
+            j,
+            tstep_num,
+            core_num,
+            replica_num,
+            verbose,
+        )
+
+
+def benchmark_replica(
+    protocols: tp.Sequence[Protocol],
+    cuda: bool,
+    cpu: bool,
+    env: jinja2.Environment,
+    dirname: str,
+    idx: int,
+    tstep_num: int,
+    core_num: int,
+    total_replicas: int,
+    verbose: bool,
+) -> None:
+    configs = [BenchConfig(replica=idx, core_num=core_num, tstep_num=tstep_num)]
+    # bools = (True, False)
+    couple_bools = (True, False)
+    dev_bools = []
+    if cuda:
+        dev_bools.append(True)
+    if cpu:
+        dev_bools.append(False)
+    if not dev_bools:
+        console.print("At least one of '--cpu' or '--cuda' has to be specified")
+
+    selections = [":5", ":4-6", ":3-7", ":2-8", ":1-9"]
+    for proto, torchcouple, cuda, selection in itertools.product(
+        protocols, couple_bools, dev_bools, selections
+    ):
+        if torchcouple and proto in [Protocol.SANDER_ME, Protocol.SANDER_ME_MBIS]:
+            continue
+        configs.append(
+            BenchConfig(
+                replica=idx,
+                core_num=core_num,
+                tstep_num=tstep_num,
+                mlmm=BenchMlmmConfig(proto.value, torchcouple, cuda, selection),
+            )
+        )
+
+    if verbose:
+        ms_to_s = 1 / 1000
+        s_to_hr = 1 / 3600
+        s_to_min = 1 / 60
+        console.print(f"Replica {idx + 1} out of {total_replicas}")
+        console.print(
+            f"Will use {core_num} cores ({'serial' if core_num == 1 else 'mpi'})"
+        )
+        console.print(f"Will benchmark {len(configs)} configs")
+        console.print(f"Will run each config for {tstep_num} steps")
+        estimate_ms = total_replicas * len(configs) * 400 * tstep_num / core_num
+        estimate_hs = estimate_ms * ms_to_s * s_to_hr
+        if estimate_hs < 1:
+            factor = s_to_min
+            unit = "min"
+        else:
+            factor = s_to_hr
+            unit = "hr"
+        console.print(
+            f"Assuming ~400 ms/step/core on average"
+            f" the time estimate is"
+            f" {estimate_ms / total_replicas * ms_to_s * factor:.2f} {unit}"
+            f" for this replica"
+            f" and {estimate_ms * ms_to_s * factor:.2f} {unit} in total"
+        )
+
+    replica_dir = this_dir / dirname
+    replica_dir.mkdir(exist_ok=True)
+    with open(replica_dir / "results.csv", mode="wt", encoding="utf-8") as f:
+        any_config_keys = list(as_flat_dict(configs[-1]).keys())
+        any_config_keys.insert(0, "id")
+        any_config_keys.append("walltime_ns")
+        writer = csv.DictWriter(f, fieldnames=any_config_keys)
+        writer.writeheader()
+        for config in configs:
+            input_as_str = env.get_template("mlmm.mdin.jinja").render(
+                **dataclasses.asdict(config)
+            )
+            config_dir = replica_dir / config.name
+            config_dir.mkdir(exist_ok=True)
+            shutil.copy(this_dir / "ala-8-chain.inpcrd", config_dir / "inpcrd")
+            shutil.copy(this_dir / "ala-8-chain.prmtop", config_dir / "prmtop")
+            (config_dir / "mdin").write_text(input_as_str)
+            cmd = (
+                ["sander"]
+                if config.core_num == 1
+                else ["mpirun", "-n", str(config.core_num), "sander.MPI"]
+            )
+            if verbose:
+                console.print(f"Running config {config}")
+            _start = time.perf_counter_ns()
+            subprocess.run(cmd, cwd=config_dir, check=True)
+            _end = time.perf_counter_ns()
+            config_dict = as_flat_dict(config)
+            if "mlmm" in config_dict:
+                config_dict.pop("mlmm")
+                config_dict["mlmm.protocol"] = "full_mm"
+            config_dict["walltime_ns"] = _end - _start
+            config_dict["id"] = config.shorthash
+            writer.writerow({k: str(v) for k, v in config_dict.items()})
+
+
+@app.command()
+def plot() -> None:
+    console.print("Not implemented yet")
+    raise Abort()
+
+
+if __name__ == "__main__":
+    app()
