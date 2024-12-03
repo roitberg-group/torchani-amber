@@ -335,7 +335,12 @@ def benchmark(
                 tstep_num=tstep_num,
                 system=system,
                 mlmm=BenchMlmmConfig(
-                    proto.value, torchcouple, cuda, selection, float64, use_cuaev,
+                    proto.value,
+                    torchcouple,
+                    cuda,
+                    selection,
+                    float64,
+                    use_cuaev,
                 ),
             )
         )
