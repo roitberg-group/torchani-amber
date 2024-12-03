@@ -35,6 +35,7 @@ class BenchMlmmConfig:
     cuda: bool = True
     ml_system_selection: str = ":1"
     float64: bool = True
+    use_cuaev: bool = False
 
 
 def flatten_dict(d: tp.Dict[str, tp.Any], prefix: str = "") -> tp.Dict[str, tp.Any]:
@@ -81,6 +82,8 @@ class BenchConfig:
         # Bw compat, don't include this field in the hash if using ala-8-chain
         if dict_["system"] == "ala-8-chain":
             dict_.pop("system")
+        if dict_["mlmm"] is not None and not dict_["mlmm"]["use_cuaev"]:
+            dict_["mlmm"].pop("use_cuaev")
         hasher.update(json.dumps(dict_).encode("utf-8"))
         return hasher.hexdigest(8)
 
@@ -128,6 +131,22 @@ def run(
     bench_me_mbis: tpx.Annotated[
         bool,
         Option("--bench-me-mbis/--no-bench-me-mbis"),
+    ] = False,
+    f64: tpx.Annotated[
+        bool,
+        Option("--double/--no-double", "--f64/--no-f64", help="Benchmark float64"),
+    ] = True,
+    f32: tpx.Annotated[
+        bool,
+        Option("--single/--no-single", "--f32/--no-f32", help="Benchmark float32"),
+    ] = False,
+    pytorch: tpx.Annotated[
+        bool,
+        Option("--pytorch/--no-pytorch", help="Benchmark pure pytorch"),
+    ] = True,
+    cuaev: tpx.Annotated[
+        bool,
+        Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
     ] = False,
     cpu: tpx.Annotated[
         bool,
@@ -226,13 +245,37 @@ def run(
     replicas = list(range(replica_num))
     if selections is None:
         selections = [":5", ":4-6", ":3-7", ":2-8", ":1-9"]
+    dev_bools = []
+    if cuda:
+        dev_bools.append(True)
+    if cpu:
+        dev_bools.append(False)
+    if not dev_bools:
+        console.print("At least one of '--cpu' or '--cuda' has to be specified")
+
+    dtype_bools = []
+    if f64:
+        dtype_bools.append(True)
+    if f32:
+        dtype_bools.append(False)
+    if not dtype_bools:
+        console.print("At least one of '--f32' or '--f64' has to be specified")
+
+    cuaev_bools = []
+    if cuaev:
+        cuaev_bools.append(True)
+    if pytorch:
+        cuaev_bools.append(False)
+    if not dtype_bools:
+        console.print("At least one of '--cuaev' or '--pytorch' has to be specified")
     benchmark(
         bench_dir,
         replicas,
         selections,
         protos,
-        cuda,
-        cpu,
+        cuaev_bools,
+        dev_bools,
+        dtype_bools,
         env,
         tstep_num,
         core_num,
@@ -247,8 +290,9 @@ def benchmark(
     replicas: tp.List[int],
     selections: tp.List[str],
     protocols: tp.Sequence[Protocol],
-    cuda: bool,
-    cpu: bool,
+    cuaev_bools: tp.List[bool],
+    dev_bools: tp.List[bool],
+    dtype_bools: tp.List[bool],
     env: jinja2.Environment,
     tstep_num: int,
     core_num: int,
@@ -257,23 +301,32 @@ def benchmark(
     verbose: bool,
 ) -> None:
     couple_bools = (True, False)
-    dev_bools = []
-    if cuda:
-        dev_bools.append(True)
-    if cpu:
-        dev_bools.append(False)
-    if not dev_bools:
-        console.print("At least one of '--cpu' or '--cuda' has to be specified")
-
     # Base, "MM/MM" config
     configs = [
         BenchConfig(replica=idx, core_num=core_num, tstep_num=tstep_num, system=system)
         for idx in replicas
     ]
-    for idx, proto, torchcouple, cuda, selection in itertools.product(
-        replicas, protocols, couple_bools, dev_bools, selections
+    for (
+        idx,
+        proto,
+        torchcouple,
+        cuda,
+        selection,
+        float64,
+        use_cuaev,
+    ) in itertools.product(
+        replicas,
+        protocols,
+        couple_bools,
+        dev_bools,
+        selections,
+        dtype_bools,
+        cuaev_bools,
     ):
+        # Discard incompatible configs
         if torchcouple and proto in [Protocol.SANDER_ME, Protocol.SANDER_ME_MBIS]:
+            continue
+        if use_cuaev and not cuda:
             continue
         configs.append(
             BenchConfig(
@@ -281,7 +334,14 @@ def benchmark(
                 core_num=core_num,
                 tstep_num=tstep_num,
                 system=system,
-                mlmm=BenchMlmmConfig(proto.value, torchcouple, cuda, selection),
+                mlmm=BenchMlmmConfig(
+                    proto.value,
+                    torchcouple,
+                    cuda,
+                    selection,
+                    float64,
+                    use_cuaev,
+                ),
             )
         )
 
