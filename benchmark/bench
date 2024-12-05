@@ -180,6 +180,10 @@ def run(
         bool,
         Option("--torchcouple/--no-torchcouple", help="Benchmark torch coupling"),
     ] = True,
+    skip_slow: tpx.Annotated[
+        bool,
+        Option("--skip-slow/--no-skip-slow", help="Skip unused slow algorithm"),
+    ] = True,
     cuaev: tpx.Annotated[
         bool,
         Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
@@ -294,6 +298,8 @@ def run(
     ):
         # Discard incompatible configs
         if torchcouple and proto == Protocol.SANDER_ME:
+            continue
+        if skip_slow and not torchcouple and proto == Protocol.ANI_MBISPOL:
             continue
         configs.append(
             BenchConfig(
