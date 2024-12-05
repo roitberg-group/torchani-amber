@@ -25,19 +25,19 @@
 &qmmm
     qm_theory = "EXTERN"
     qm_ewald = 0  ! Required
-    qmmask = "{{ mlmm.ml_system_selection }}"  ! Select only these residues as QM
+    qmmask = "{{ mlmm.selection }}"  ! Select only these residues as QM
     qmshake = 0  ! Don't apply SHAKE to QM atoms
-    qmcut = 15.0
-    {% if mlmm.protocol in ["ani_me", "ani_me_mbis", "ani_mbispol", "ani_mbispol_nogradq"] %}
+    qmcut = {{ mlmm.cutoff }}
+    {% if mlmm.protocol in ["ani_me", "ani_mbispol"] %}
     qmmm_int = 1  ! ANI-controlled coupling
-    {% elif mlmm.protocol in ["sander_me", "sander_me_mbis"] %}
+    {% elif mlmm.protocol == "sander_me" %}
     qmmm_int = 5  ! Sander-controlled coupling (ME)
     {% else %}
     qmmm_int = -1  {# fail #}
     {% endif %}
 /
 &ani
-    {% if mlmm.protocol in ["sander_me", "ani_me"] %}
+    {% if mlmm.protocol in ["ani_me", "sander_me"] %}
     model_type = "ani2x"
     {% else %}
     model_type = "animbis"
@@ -47,27 +47,21 @@
     {# #}
     {# Protocol Specific #}
     {# #}
-    {% if mlmm.protocol not in ["sander_me", "sander_me_mbis"] %}
     use_torch_coupling=.{{ mlmm.use_torch_coupling }}.
-    {% endif %}
-    {% if mlmm.protocol in ["ani_me", "ani_me_mbis", "sander_me", "sander_me_mbis"] %}
+    {% if mlmm.protocol in ["ani_me", "sander_me"] %}
     mlmm_coupling = 0
     use_torchani_charges = .False.
+    {% if mlmm.protocol == "sander_me" %}
+    allow_untested_protocols = .True.
+    {% endif %}
     {% elif mlmm.protocol == "ani_mbispol" %}
     mlmm_coupling = 1
     use_torchani_charges = .True.
-    {% elif mlmm.protocol == "ani_mbispol_nogradq" %}
-    mlmm_coupling = 1
-    use_torchani_charges = .True.
-    use_charges_derivatives = .True.
     {% else %}
     mlmm_coupling = -1  {# fail #}
     {% endif %}
-    {% if mlmm.protocol in ["sander_me", "sander_me_mbis", "ani_mbis_nogradq"] %}
-    allow_untested_protocols = .True.
-    {% endif %}
     {# #}
-    {# No ouptut #}
+    {# Ouptut #}
     {# #}
     write_charges = .False.
     write_charges_grad = .False.

@@ -14,6 +14,7 @@ public :: &
     torchani_energy_force_with_coupling, &
     torchani_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
+    torchani_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
 
 interface
@@ -466,4 +467,44 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
         ret = .false._c_bool
     endif
 endfunction
+
+subroutine torchani_dump_walltime()
+    ! State, clock count rate is assumed to be constant between calls
+    logical, save :: first_call = .true.
+    character(len=1), save :: need_walltime = "0"  ! Only set once
+    integer(kind=8), save :: clock_count_rate = 1  ! Only set once
+    double precision, save :: prev_time_ms = 0.0D0  ! Reset every call
+    integer, parameter :: walltime_fd = 280000
+    ! TODO: It is gfortran specific that kind=8 is int64, which makes the clock precise
+    integer(kind=8) :: clock_count
+    double precision :: time_ms
+
+    clock_count = 0_8
+    time_ms = 0.0D0
+
+    if (first_call) then
+        call get_environment_variable("TORCHANI_AMBER_WALLTIME", need_walltime)
+        if (need_walltime /= "1") then
+            return
+        endif
+        open(unit=walltime_fd, file='walltime_ms.dat', status='REPLACE')
+        close(walltime_fd)
+        call system_clock(clock_count, clock_count_rate)
+        prev_time_ms = dble(clock_count) / dble(clock_count_rate) * 1000.0D0
+        first_call = .false.
+    else
+        if (need_walltime /= "1") then
+            return
+        endif
+        ! NOTE: possible wraparound in system clock is disregarded since time
+        ! between calls is extremely short
+        open(unit=walltime_fd, file='walltime_ms.dat', status='OLD', position='APPEND')
+        call system_clock(clock_count)
+        time_ms = dble(clock_count) / dble(clock_count_rate) * 1000.0D0
+        write(walltime_fd, "(es30.15E4)") time_ms - prev_time_ms
+        flush(unit=walltime_fd)
+        prev_time_ms = time_ms
+        close(unit=walltime_fd)
+    endif
+endsubroutine
 endmodule
