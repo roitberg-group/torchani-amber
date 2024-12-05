@@ -99,15 +99,40 @@ class BenchConfig:
     @property
     def style(self) -> tp.Dict[str, tp.Any]:
         if self.mlmm is None:
-            return {"color": "tab:blue", "linestyle": "dashed", "alpha": 1.0}
+            return {
+                "color": "tab:blue",
+                "linestyle": "dashed",
+                "alpha": 1.0,
+                "marker": "o",
+            }
         if self.mlmm.protocol == "ani_me":
             c = "tab:orange" if self.mlmm.use_cuaev else "orangered"
         elif self.mlmm.protocol == "sander_me":
             c = "tab:red" if self.mlmm.use_cuaev else "darkred"
         elif self.mlmm.protocol == "ani_mbispol":
             c = "tab:purple" if self.mlmm.use_cuaev else "deeppink"
-        s = "dashed" if self.mlmm.float64 else "dotted"
-        return {"color": c, "linestyle": s, "alpha": 1.0}
+        if self.mlmm.float64:
+            s = "dashed" if self.mlmm.cuda else "dotted"
+        else:
+            s = "dashdot" if self.mlmm.cuda else (0, (3, 1, 1, 1, 1, 1))  # type: ignore
+
+        if self.mlmm.use_torch_coupling:
+            a = 0.8
+            if self.mlmm.cutoff == 15.0:
+                m = "^"
+            elif self.mlmm.cutoff == 11.5:
+                m = "*"
+            elif self.mlmm.cutoff == 8.0:
+                m = "X"
+        else:
+            a = 1.0
+            if self.mlmm.cutoff == 15.0:
+                m = "o"
+            elif self.mlmm.cutoff == 11.5:
+                m = "d"
+            elif self.mlmm.cutoff == 8.0:
+                m = "x"
+        return {"color": c, "linestyle": s, "alpha": a, "marker": m}
 
     @property
     def ml_residue_num(self) -> int:
@@ -204,11 +229,17 @@ def run(
         bool,
         Option("-v/-V", "--verbose/--no-verbose"),
     ] = True,
+    suffix: tpx.Annotated[
+        str,
+        Option("--suffix", help="Suffix for the benchmark name"),
+    ] = "",
 ) -> None:
     r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if bench_dir is None:
         kind = "serial" if core_num == 1 else "mpi"
         dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
+        if suffix:
+            dirname = f"{dirname}-{suffix}"
         bench_dir = this_dir / dirname
         bench_dir.mkdir()
 
@@ -339,6 +370,10 @@ def plot(
         int,
         Option("-r", "--res", help="Only for cores scaling"),
     ] = 9,
+    torchcouple: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--torchcouple/--no-torchcouple", help="Torch coupling"),
+    ] = None,
     cuda: tpx.Annotated[
         tp.Optional[bool],
         Option("--cuda/--no-cuda"),
@@ -363,15 +398,33 @@ def plot(
         tp.Optional[float],
         Option("--yhi"),
     ] = None,
-    plot_err: tpx.Annotated[
+    err: tpx.Annotated[
+        str,
+        Option("--err"),
+    ] = "sem",
+    cutoff: tpx.Annotated[
+        tp.Optional[float],
+        Option("--cutoff", help="Cutoff of QM part to use"),
+    ] = None,
+    proto: tpx.Annotated[
+        tp.Optional[str],
+        Option("--proto", help="Cutoff of QM part to use"),
+    ] = None,
+    except_proto: tpx.Annotated[
+        tp.Optional[str],
+        Option("--except-proto", help="Cutoff of QM part to use"),
+    ] = None,
+    verbose: tpx.Annotated[
         bool,
-        Option("--plot-err/--no-plot-err"),
+        Option("-v/-V", "--verbose/--no-verbose"),
     ] = False,
 ) -> None:
     # Collect and filter configs
     results: tp.List[tp.Any] = []
     for d in this_dir.glob("*-bench-*"):
         for subd in d.iterdir():
+            if not subd.is_dir():
+                continue
             if not (subd / "config.json").is_file():
                 console.print(f"Error in {subd}, can't finde config.json", style="red")
                 continue
@@ -383,6 +436,18 @@ def plot(
                     mlmm = None
                 config = BenchConfig(**bench)
                 config.mlmm = BenchMlmmConfig(**mlmm) if mlmm is not None else None
+            if torchcouple is not None:
+                if config.mlmm and config.mlmm.use_torch_coupling != torchcouple:
+                    continue
+            if proto is not None:
+                if config.mlmm and config.mlmm.protocol != proto:
+                    continue
+            if except_proto is not None:
+                if config.mlmm and config.mlmm.protocol == except_proto:
+                    continue
+            if cutoff is not None:
+                if config.mlmm and config.mlmm.cutoff != cutoff:
+                    continue
             if cuaev is not None:
                 if config.mlmm and config.mlmm.use_cuaev != cuaev:
                     continue
@@ -409,9 +474,10 @@ def plot(
                 [float(t) for t in (subd / "walltime_ms.dat").read_text().split()]
             )
             results.append({"config": config, "walltime_ms": walltimes})
-            console.print(subd)
-            console.print(config)
-            console.print(len(walltimes))
+            if verbose:
+                console.print(subd)
+                console.print(config)
+                console.print(len(walltimes))
 
     if not results:
         console.print(
@@ -439,23 +505,30 @@ def plot(
         all_res_nums = set()
         for label, xy in scaling_data.items():
             style = styles[label]
+            marker = style.pop("marker")
             ml_res_nums = np.array(list(xy.keys()))
             all_res_nums.update(ml_res_nums.tolist())
             idxs = np.argsort(ml_res_nums)
             ml_res_nums = ml_res_nums[idxs]
             mean_wts = np.array([np.mean(wts).item() for wts in xy.values()])[idxs]
-            sem_wts = np.array([stats.sem(wts).item() for wts in xy.values()])[idxs]
-            if plot_err:
-                ax.errorbar(ml_res_nums, mean_wts, yerr=sem_wts, **style)
+            if err != "no":
+                if err == "sem":
+                    errs = np.array([stats.sem(wts).item() for wts in xy.values()])[
+                        idxs
+                    ]
+                elif err == "std":
+                    errs = np.array([np.std(wts).item() for wts in xy.values()])[idxs]
+                ax.errorbar(ml_res_nums, mean_wts, yerr=errs, **style)
             else:
                 ax.plot(ml_res_nums, mean_wts, **style)
             ax.scatter(
                 ml_res_nums,
                 mean_wts,
                 label=label,
-                s=2,
+                s=7.0,
                 color=style["color"],
                 alpha=style["alpha"],
+                marker=marker,
             )
             if len(ml_res_nums) == 1 and ml_res_nums[0] == 0:
                 ax.axhline(
