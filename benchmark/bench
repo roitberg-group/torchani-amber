@@ -1,14 +1,17 @@
 #!/usr/bin/env python
+from numpy.typing import NDArray
+from scipy import stats
+from collections import defaultdict
+import matplotlib.pyplot as plt
+import numpy as np
+import hashlib
 from copy import deepcopy
 import os
 import sys
-import time
-import csv
 import shutil
 import subprocess
 import uuid
 import json
-import hashlib
 import typing_extensions as tpx
 from typer import Option
 import itertools
@@ -27,65 +30,101 @@ app = Typer()
 this_dir = Path(__file__).parent
 systems_dir = this_dir / "systems"
 
+# Time conversion factors
+ms_to_s = 1 / 1000
+s_to_hr = 1 / 3600
+s_to_min = 1 / 60
+
 
 @dataclasses.dataclass
 class BenchMlmmConfig:
     protocol: str = "ani_me"
     use_torch_coupling: bool = True
     cuda: bool = True
-    ml_system_selection: str = ":1"
+    selection: str = ":1"  # ML system selection, assumed to be of the form ':N-M'
     float64: bool = True
     use_cuaev: bool = False
-
-
-def flatten_dict(d: tp.Dict[str, tp.Any], prefix: str = "") -> tp.Dict[str, tp.Any]:
-    flat_d = {}
-    for oldk, v in d.items():
-        k = f"{prefix}{oldk}"
-        if isinstance(v, dict):
-            flat_d.update(flatten_dict(v, f"{k}."))
-        else:
-            flat_d[k] = v
-    return flat_d
-
-
-def as_flat_dict(datacls_obj) -> tp.Dict[str, tp.Any]:
-    return flatten_dict(dataclasses.asdict(datacls_obj))
+    cutoff: float = 15.0
 
 
 class Protocol(Enum):
     ANI_ME = "ani_me"
     SANDER_ME = "sander_me"
     ANI_MBISPOL = "ani_mbispol"
-    ANI_ME_MBIS = "ani_me_mbis"
-    SANDER_ME_MBIS = "sander_me_mbis"
-    ANI_MBISPOL_NOGRADQ = "ani_mbispol_nogradq"
 
 
 @dataclasses.dataclass
 class BenchConfig:
     system: str = "ala-8-chain"
-    replica: int = 0
-    tstep_num: int = 500
     core_num: int = 1
     mlmm: tp.Optional[BenchMlmmConfig] = None
 
     @property
-    def name(self) -> str:
-        return f"{self.shorthash}-replica-{str(self.replica).zfill(2)}"
+    def shorthash(self) -> str:
+        self_dict = dataclasses.asdict(self)
+        self_dict.pop("core_num")
+        if self.mlmm is not None:
+            self_dict["mlmm"].pop("selection")
+        hasher = hashlib.shake_128()
+        hasher.update(json.dumps(self_dict).encode("utf-8"))
+        return hasher.hexdigest(8)
 
     @property
-    def shorthash(self) -> str:
-        hasher = hashlib.shake_128()
-        dict_ = dataclasses.asdict(self)
-        dict_.pop("replica")
-        # Bw compat, don't include this field in the hash if using ala-8-chain
-        if dict_["system"] == "ala-8-chain":
-            dict_.pop("system")
-        if dict_["mlmm"] is not None and not dict_["mlmm"]["use_cuaev"]:
-            dict_["mlmm"].pop("use_cuaev")
-        hasher.update(json.dumps(dict_).encode("utf-8"))
-        return hasher.hexdigest(8)
+    def id(self) -> tp.Tuple[str, int, int]:
+        return (self.shorthash, self.core_num, self.ml_residue_num)
+
+    @property
+    def label(self) -> str:
+        parts = []
+        if self.mlmm is None:
+            return "Full MM"
+        if self.mlmm.protocol == "ani_me":
+            parts.append("ME")
+        elif self.mlmm.protocol == "sander_me":
+            parts.append("Sander ME")
+        elif self.mlmm.protocol == "ani_mbispol":
+            parts.append("MBIS + Pol")
+
+        if self.mlmm.float64:
+            parts.append("F64")
+        if self.mlmm.use_torch_coupling:
+            parts.append("Torch-accel")
+
+        parts.append("CUDA" if self.mlmm.cuda else "CPU")
+        if self.mlmm.use_cuaev:
+            parts.append("cuAEV")
+        parts.append(f"cutoff: {self.mlmm.cutoff:.1f}")
+        return ", ".join(parts)
+
+    @property
+    def style(self) -> tp.Dict[str, tp.Any]:
+        if self.mlmm is None:
+            return {"color": "tab:blue", "linestyle": "dashed", "alpha": 1.0}
+        if self.mlmm.protocol == "ani_me":
+            c = "tab:orange" if self.mlmm.use_cuaev else "orangered"
+        elif self.mlmm.protocol == "sander_me":
+            c = "tab:red" if self.mlmm.use_cuaev else "darkred"
+        elif self.mlmm.protocol == "ani_mbispol":
+            c = "tab:purple" if self.mlmm.use_cuaev else "deeppink"
+        s = "dashed" if self.mlmm.float64 else "dotted"
+        return {"color": c, "linestyle": s, "alpha": 1.0}
+
+    @property
+    def ml_residue_num(self) -> int:
+        if self.mlmm is None:
+            return 0
+        s = self.mlmm.selection.replace(":", "")
+        if len(s) == 1:
+            return 1
+        lo, hi = s.split("-")
+        return 1 + int(hi) - int(lo)
+
+    def to_file(self, path: Path) -> None:
+        with open(path, mode="wt", encoding="utf-8") as f:
+            json.dump(dataclasses.asdict(self), f, indent=4)
+            # Ensure data is written to files
+            f.flush()
+            os.fsync(f.fileno())
 
 
 @app.command()
@@ -104,53 +143,21 @@ def run(
             help="Name of system to run on. Must be found in 'benchmark/systems'",
         ),
     ] = "ala-8-chain",
-    replica_num: tpx.Annotated[
-        int,
-        Option(
-            "-r",
-            "--replicas",
-            help="Number of times to run benchmark for each config",
-        ),
-    ] = 5,
-    bench_me: tpx.Annotated[
+    cutoff: tpx.Annotated[
+        float,
+        Option("--cutoff", help="Cutoff of QM part to use"),
+    ] = 15.0,
+    float64: tpx.Annotated[
         bool,
-        Option("--bench-me/--no-bench-me"),
+        Option("--f64/--no-f64", help="Benchmark float64"),
     ] = True,
-    bench_mbispol: tpx.Annotated[
+    torchcouple: tpx.Annotated[
         bool,
-        Option("--bench-mbispol/--no-bench-mbispol"),
-    ] = True,
-    bench_sander_me: tpx.Annotated[
-        bool,
-        Option("--bench-sander-me/--no-bench-sander-me"),
-    ] = False,
-    bench_mbispol_nogradq: tpx.Annotated[
-        bool,
-        Option("--bench-mbispol-nogradq/--no-bench-mbispol-nogradq "),
-    ] = False,
-    bench_me_mbis: tpx.Annotated[
-        bool,
-        Option("--bench-me-mbis/--no-bench-me-mbis"),
-    ] = False,
-    f64: tpx.Annotated[
-        bool,
-        Option("--double/--no-double", "--f64/--no-f64", help="Benchmark float64"),
-    ] = True,
-    f32: tpx.Annotated[
-        bool,
-        Option("--single/--no-single", "--f32/--no-f32", help="Benchmark float32"),
-    ] = False,
-    pytorch: tpx.Annotated[
-        bool,
-        Option("--pytorch/--no-pytorch", help="Benchmark pure pytorch"),
+        Option("--torchcouple/--no-torchcouple", help="Benchmark torch coupling"),
     ] = True,
     cuaev: tpx.Annotated[
         bool,
         Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
-    ] = False,
-    cpu: tpx.Annotated[
-        bool,
-        Option("--cpu/--no-cpu", help="Benchmark on CPU"),
     ] = False,
     cuda: tpx.Annotated[
         bool,
@@ -164,12 +171,13 @@ def run(
             help="Number of cores to run benchmark on, if > 1 sander.MPI is used",
         ),
     ] = 1,
+    # At least 200 are needed
     tstep_num: tpx.Annotated[
         int,
         Option(
             "-t",
             "--tsteps",
-            help="Number of timesteps to run benchmark for",
+            help="Number of timesteps to run benchmarks for",
         ),
     ] = 500,
     bench_dir: tpx.Annotated[
@@ -231,194 +239,241 @@ def run(
         subprocess.run(["sbatch", str(input_fpath)], cwd=bench_dir, check=True)
         sys.exit(0)
 
-    protos = []
-    if bench_me:
-        protos.append(Protocol.ANI_ME)
-    if bench_sander_me:
-        protos.append(Protocol.SANDER_ME)
-    if bench_mbispol:
-        protos.append(Protocol.ANI_MBISPOL)
-    if bench_me_mbis:
-        protos.extend([Protocol.ANI_ME_MBIS, Protocol.SANDER_ME_MBIS])
-    if bench_mbispol_nogradq:
-        protos.append(Protocol.ANI_MBISPOL_NOGRADQ)
-    replicas = list(range(replica_num))
+    protos = [Protocol.ANI_ME, Protocol.SANDER_ME, Protocol.ANI_MBISPOL]
     if selections is None:
-        selections = [":5", ":4-6", ":3-7", ":2-8", ":1-9"]
-    dev_bools = []
-    if cuda:
-        dev_bools.append(True)
-    if cpu:
-        dev_bools.append(False)
-    if not dev_bools:
-        console.print("At least one of '--cpu' or '--cuda' has to be specified")
-
-    dtype_bools = []
-    if f64:
-        dtype_bools.append(True)
-    if f32:
-        dtype_bools.append(False)
-    if not dtype_bools:
-        console.print("At least one of '--f32' or '--f64' has to be specified")
-
-    cuaev_bools = []
-    if cuaev:
-        cuaev_bools.append(True)
-    if pytorch:
-        cuaev_bools.append(False)
-    if not dtype_bools:
-        console.print("At least one of '--cuaev' or '--pytorch' has to be specified")
-    benchmark(
-        bench_dir,
-        replicas,
-        selections,
-        protos,
-        cuaev_bools,
-        dev_bools,
-        dtype_bools,
-        env,
-        tstep_num,
-        core_num,
-        replica_num,
-        system,
-        verbose,
-    )
-
-
-def benchmark(
-    bench_dir: Path,
-    replicas: tp.List[int],
-    selections: tp.List[str],
-    protocols: tp.Sequence[Protocol],
-    cuaev_bools: tp.List[bool],
-    dev_bools: tp.List[bool],
-    dtype_bools: tp.List[bool],
-    env: jinja2.Environment,
-    tstep_num: int,
-    core_num: int,
-    total_replicas: int,
-    system: str,
-    verbose: bool,
-) -> None:
-    couple_bools = (True, False)
+        selections = [
+            ":1",
+            ":1-2",
+            ":1-3",
+            ":1-4",
+            ":1-5",
+            ":1-6",
+            ":1-7",
+            ":1-8",
+            ":1-9",
+        ]
     # Base, "MM/MM" config
-    configs = [
-        BenchConfig(replica=idx, core_num=core_num, tstep_num=tstep_num, system=system)
-        for idx in replicas
-    ]
-    for (
-        idx,
-        proto,
-        torchcouple,
-        cuda,
-        selection,
-        float64,
-        use_cuaev,
-    ) in itertools.product(
-        replicas,
-        protocols,
-        couple_bools,
-        dev_bools,
+    configs = [BenchConfig(core_num=core_num, system=system)]
+    if cuaev and not cuda:
+        console.print("cuAEV needs CUDA device")
+        raise Abort()
+    for proto, selection in itertools.product(
+        protos,
         selections,
-        dtype_bools,
-        cuaev_bools,
     ):
         # Discard incompatible configs
-        if torchcouple and proto in [Protocol.SANDER_ME, Protocol.SANDER_ME_MBIS]:
-            continue
-        if use_cuaev and not cuda:
+        if torchcouple and proto == Protocol.SANDER_ME:
             continue
         configs.append(
             BenchConfig(
-                replica=idx,
                 core_num=core_num,
-                tstep_num=tstep_num,
                 system=system,
                 mlmm=BenchMlmmConfig(
                     proto.value,
-                    torchcouple,
-                    cuda,
-                    selection,
-                    float64,
-                    use_cuaev,
+                    use_torch_coupling=torchcouple,
+                    cuda=cuda,
+                    selection=selection,
+                    float64=float64,
+                    use_cuaev=cuaev,
+                    cutoff=cutoff,
                 ),
             )
         )
 
     if verbose:
-        ms_to_s = 1 / 1000
-        s_to_hr = 1 / 3600
-        s_to_min = 1 / 60
-        configs_per_replica = len(configs) / len(replicas)
-        console.print(f"Will run {total_replicas} total replicas")
         console.print(
             f"Will use {core_num} cores ({'serial' if core_num == 1 else 'mpi'})"
         )
         console.print(f"Will benchmark {len(configs)} configs total")
-        console.print(f"Will benchmark {int(configs_per_replica)} configs per replica")
         console.print(f"Will run each config for {tstep_num} steps")
-        estimate_ms = len(configs) * 400 * tstep_num / core_num
-        estimate_hs = estimate_ms * ms_to_s * s_to_hr
-        if estimate_hs < 1:
+        estimate_ms = len(configs) * 800 * tstep_num / core_num
+        if estimate_ms * ms_to_s * s_to_hr < 1:
             factor = s_to_min
             unit = "min"
         else:
             factor = s_to_hr
             unit = "hr"
-        console.print(
-            f"Assuming ~400 ms/step/core on average"
-            f" the time estimate is"
-            f" {estimate_ms / total_replicas * ms_to_s * factor:.2f} {unit}"
-            f" for a single replica"
-            f" and {estimate_ms * ms_to_s * factor:.2f} {unit} in total"
-        )
+        console.print(f"Time estimate {estimate_ms * ms_to_s * factor:.2f} {unit}")
 
-    results_fpath = bench_dir / f"{bench_dir.name}-results.csv"
-    with open(
-        results_fpath,
-        mode="wt",
-        encoding="utf-8",
-    ) as f:
-        any_config_keys = list(as_flat_dict(configs[-1]).keys())
-        any_config_keys.insert(0, "id")
-        any_config_keys.append("walltime_ns")
-        writer = csv.DictWriter(f, fieldnames=any_config_keys)
-        writer.writeheader()
-        for config_idx, config in enumerate(configs):
-            input_as_str = env.get_template("mlmm.mdin.jinja").render(
-                **dataclasses.asdict(config)
-            )
-            config_dir = bench_dir / config.name
-            config_dir.mkdir()
-            shutil.copy(systems_dir / f"{config.system}.inpcrd", config_dir / "inpcrd")
-            shutil.copy(systems_dir / f"{config.system}.prmtop", config_dir / "prmtop")
-            (config_dir / "mdin").write_text(input_as_str)
-            cmd = (
-                ["sander"]
-                if config.core_num == 1
-                else ["mpirun", "-n", str(config.core_num), "sander.MPI"]
-            )
-            if verbose:
-                console.print(f"{config_idx}/{len(configs)} Running {config}")
-            _start = time.perf_counter_ns()
-            subprocess.run(cmd, cwd=config_dir, check=True)
-            _end = time.perf_counter_ns()
-            config_dict = as_flat_dict(config)
-            if "mlmm" in config_dict:
-                config_dict.pop("mlmm")
-                config_dict["mlmm.protocol"] = "full_mm"
-            config_dict["walltime_ns"] = _end - _start
-            config_dict["id"] = config.shorthash
-            writer.writerow({k: str(v) for k, v in config_dict.items()})
-            # Ensure data is written to files
-            f.flush()
-            os.fsync(f.fileno())
+    for config_idx, config in enumerate(configs):
+        input_as_str = env.get_template("mlmm.mdin.jinja").render(
+            tstep_num=tstep_num, **dataclasses.asdict(config)
+        )
+        config_dir = bench_dir / str(uuid.uuid4()).split("-")[0]
+        config_dir.mkdir()
+        shutil.copy(systems_dir / f"{config.system}.inpcrd", config_dir / "inpcrd")
+        shutil.copy(systems_dir / f"{config.system}.prmtop", config_dir / "prmtop")
+        (config_dir / "mdin").write_text(input_as_str)
+        cmd = (
+            ["sander"]
+            if config.core_num == 1
+            else ["mpirun", "-n", str(config.core_num), "sander.MPI"]
+        )
+        if verbose:
+            console.print(f"{config_idx + 1}/{len(configs)} Running {config}")
+        # This requires a version of amber that is hooked with this function
+        os.environ["TORCHANI_AMBER_WALLTIME"] = "1"
+        subprocess.run(cmd, cwd=config_dir, check=True)
+        config.to_file(config_dir / "config.json")
 
 
 @app.command()
-def plot() -> None:
-    console.print("Not implemented yet")
-    raise Abort()
+def plot(
+    system: tpx.Annotated[
+        str,
+        Option("-s", "--system"),
+    ] = "ala-8-chain",
+    mpi_scaling: tpx.Annotated[
+        int,
+        Option("--mpi-scaling"),
+    ] = False,
+    size_scaling: tpx.Annotated[
+        bool,
+        Option("--size-scaling"),
+    ] = True,
+    core_num: tpx.Annotated[
+        int,
+        Option("-c", "--cores", help="Only for size scaling"),
+    ] = 1,
+    ml_residue_num: tpx.Annotated[
+        int,
+        Option("-r", "--res", help="Only for cores scaling"),
+    ] = 9,
+    cuda: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--cuda/--no-cuda"),
+    ] = None,
+    cuaev: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--cuaev/--no-cuaev"),
+    ] = None,
+    float64: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--f64/--no-f64"),
+    ] = None,
+    warm_up: tpx.Annotated[
+        int,
+        Option("-w", "--warm-up"),
+    ] = 100,
+    ylo: tpx.Annotated[
+        tp.Optional[float],
+        Option("--ylo"),
+    ] = None,
+    yhi: tpx.Annotated[
+        tp.Optional[float],
+        Option("--yhi"),
+    ] = None,
+    plot_err: tpx.Annotated[
+        bool,
+        Option("--plot-err/--no-plot-err"),
+    ] = False,
+) -> None:
+    # Collect and filter configs
+    results: tp.List[tp.Any] = []
+    for d in this_dir.glob("*-bench-*"):
+        for subd in d.iterdir():
+            if not (subd / "config.json").is_file():
+                console.print(f"Error in {subd}, can't finde config.json", style="red")
+                continue
+            with open(subd / "config.json", mode="rt", encoding="utf-8") as f:
+                bench = json.load(f)
+                if "mlmm" in bench:
+                    mlmm = bench.pop("mlmm")
+                else:
+                    mlmm = None
+                config = BenchConfig(**bench)
+                config.mlmm = BenchMlmmConfig(**mlmm) if mlmm is not None else None
+            if cuaev is not None:
+                if config.mlmm and config.mlmm.use_cuaev != cuaev:
+                    continue
+            if float64 is not None:
+                if config.mlmm and config.mlmm.float64 != float64:
+                    continue
+            if cuda is not None:
+                if config.mlmm and config.mlmm.cuda != cuda:
+                    continue
+            if config.system != system:
+                continue
+            if size_scaling and config.core_num != core_num:
+                continue
+            if mpi_scaling:
+                if config.ml_residue_num != ml_residue_num:
+                    continue
+
+            if not (subd / "walltime_ms.dat").is_file():
+                console.print(
+                    f"Error in {subd}, can't find walltime_ms.dat", style="red"
+                )
+                continue
+            walltimes = np.array(
+                [float(t) for t in (subd / "walltime_ms.dat").read_text().split()]
+            )
+            results.append({"config": config, "walltime_ms": walltimes})
+            console.print(subd)
+            console.print(config)
+            console.print(len(walltimes))
+
+    if not results:
+        console.print(
+            "No results were found with the requested constraints", style="yellow"
+        )
+        sys.exit(0)
+
+    if size_scaling:
+        fig, ax = plt.subplots()
+        ax.set_xlabel(r"Num. ML residues")
+        ax.set_ylabel(r"Mean walltime per timestep (ms)")
+        scaling_data: tp.Dict[str, tp.Dict[int, NDArray[np.float64]]] = defaultdict(
+            dict
+        )
+        styles = {}
+
+        # TODO: replicas
+        for r in results:
+            config = r["config"]
+            walltimes = r["walltime_ms"]
+            num_res = config.ml_residue_num
+            scaling_data[r["config"].label][num_res] = walltimes[warm_up:]
+            styles[r["config"].label] = r["config"].style
+
+        all_res_nums = set()
+        for label, xy in scaling_data.items():
+            style = styles[label]
+            ml_res_nums = np.array(list(xy.keys()))
+            all_res_nums.update(ml_res_nums.tolist())
+            idxs = np.argsort(ml_res_nums)
+            ml_res_nums = ml_res_nums[idxs]
+            mean_wts = np.array([np.mean(wts).item() for wts in xy.values()])[idxs]
+            sem_wts = np.array([stats.sem(wts).item() for wts in xy.values()])[idxs]
+            if plot_err:
+                ax.errorbar(ml_res_nums, mean_wts, yerr=sem_wts, **style)
+            else:
+                ax.plot(ml_res_nums, mean_wts, **style)
+            ax.scatter(
+                ml_res_nums,
+                mean_wts,
+                label=label,
+                s=2,
+                color=style["color"],
+                alpha=style["alpha"],
+            )
+            if len(ml_res_nums) == 1 and ml_res_nums[0] == 0:
+                ax.axhline(
+                    y=mean_wts[0],
+                    **style,
+                )
+        ax.set_ylim(ylo, yhi)
+        ax.set_xticks(sorted(all_res_nums))
+        ax.set_title(
+            (
+                f"MPI benchmark with {core_num} cores"
+                if core_num > 1
+                else "Serial benchmark"
+            )
+            + f" on {system}"
+        )
+        ax.legend()
+        plt.show()
 
 
 if __name__ == "__main__":
