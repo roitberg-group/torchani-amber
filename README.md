@@ -361,9 +361,6 @@ def compute_from_external_neighbors(
     return energies, atomic_charges
 ```
 
-NOTE: Currently custom models need to implement `set_strategy("pyaev")`, this
-will be fixed.
-
 EXPERIMENTAL: If you want to use the 'switching' feature, the model should correctly
 respect the `ensemble_values` contract. Energies and atomic charges must have
 an extra dim prepended in this case, which indexes the models in the network.
