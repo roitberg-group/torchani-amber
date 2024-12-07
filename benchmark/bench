@@ -208,7 +208,7 @@ def run(
             "--tsteps",
             help="Number of timesteps to run benchmarks for",
         ),
-    ] = 500,
+    ] = 1100,
     bench_dir: tpx.Annotated[
         tp.Optional[Path],
         Option(
@@ -350,8 +350,13 @@ def run(
             console.print(f"{config_idx + 1}/{len(configs)} Running {config}")
         # This requires a version of amber that is hooked with this function
         os.environ["TORCHANI_AMBER_WALLTIME"] = "1"
-        subprocess.run(cmd, cwd=config_dir, check=True)
-        config.to_file(config_dir / "config.json")
+        try:
+            subprocess.run(cmd, cwd=config_dir, check=True)
+            config.to_file(config_dir / "config.json")
+        finally:
+            for fname in ("mdcrd", "inpcrd", "prmtop", "restrt", "mdinfo"):
+                if (config_dir / fname).is_file():
+                    (config_dir / fname).unlink()
 
 
 @app.command()
