@@ -536,7 +536,7 @@ def plot(
             if config.core_num != core_num:
                 continue
         else:
-            if config.ml_residue_num != ml_residue_num:
+            if config.ml_residue_num != ml_residue_num and config.ml_residue_num != 0:
                 continue
         if not (subd / "walltime_ms.dat").is_file():
             console.print(f"Error in {subd}, can't find walltime_ms.dat", style="red")
@@ -638,7 +638,7 @@ def plot(
             num,
             mean_wts,
             **style,
-            label=label if label != "MM/MM" else None,
+            label=label,
         )
         if percent:
             if len(percents) > 1:
