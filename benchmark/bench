@@ -20,12 +20,15 @@ from enum import Enum
 import typing as tp
 import dataclasses
 from pathlib import Path
+import matplotlib as mpl
 
 import pandas as pd
 
 from rich.console import Console
 from typer import Typer, Abort
 import jinja2
+
+mpl.rc("font", size=8)
 
 console = Console()
 app = Typer(pretty_exceptions_enable=False)
@@ -646,7 +649,6 @@ def plot(
                         xytext=(-1.0, -1.5),
                         textcoords="offset fontsize",
                         color=style["color"],
-                        fontsize=6.0,
                     )
         if scatter:
             ax.scatter(
