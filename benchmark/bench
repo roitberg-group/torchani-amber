@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import math
 from numpy.typing import NDArray
 from scipy import stats
 from collections import defaultdict
@@ -13,19 +14,21 @@ import subprocess
 import uuid
 import json
 import typing_extensions as tpx
-from typer import Option
+from typer import Option, Argument
 import itertools
 from enum import Enum
 import typing as tp
 import dataclasses
 from pathlib import Path
 
+import pandas as pd
+
 from rich.console import Console
 from typer import Typer, Abort
 import jinja2
 
 console = Console()
-app = Typer()
+app = Typer(pretty_exceptions_enable=False)
 
 this_dir = Path(__file__).parent
 systems_dir = this_dir / "systems"
@@ -77,14 +80,13 @@ class BenchConfig:
     def label(self) -> str:
         parts = []
         if self.mlmm is None:
-            return "Full MM"
+            return "MM/MM"
         if self.mlmm.protocol == "ani_me":
             parts.append("ME")
         elif self.mlmm.protocol == "sander_me":
             parts.append("Sander ME")
         elif self.mlmm.protocol == "ani_mbispol":
             parts.append("MBIS + Pol")
-
         if self.mlmm.float64:
             parts.append("F64")
         if self.mlmm.use_torch_coupling:
@@ -106,11 +108,15 @@ class BenchConfig:
                 "marker": "o",
             }
         if self.mlmm.protocol == "ani_me":
-            c = "tab:orange" if self.mlmm.use_cuaev else "orangered"
+            c = "tab:orange" if self.mlmm.use_cuaev else "tab:cyan"
+            if self.mlmm.use_cuaev:
+                c = "tab:orange" if self.mlmm.use_torch_coupling else "orangered"
+            else:
+                c = "tab:red" if self.mlmm.use_torch_coupling else "teal"
         elif self.mlmm.protocol == "sander_me":
             c = "tab:red" if self.mlmm.use_cuaev else "darkred"
         elif self.mlmm.protocol == "ani_mbispol":
-            c = "tab:purple" if self.mlmm.use_cuaev else "deeppink"
+            c = "tab:purple" if self.mlmm.use_cuaev else "black"
         if self.mlmm.float64:
             s = "dashed" if self.mlmm.cuda else "dotted"
         else:
@@ -161,6 +167,10 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
+    protos: tpx.Annotated[
+        tp.Optional[tp.List[Protocol]],
+        Option("-p", "--proto"),
+    ] = None,
     system: tpx.Annotated[
         str,
         Option(
@@ -174,7 +184,13 @@ def run(
     ] = 15.0,
     float64: tpx.Annotated[
         bool,
-        Option("--f64/--no-f64", help="Benchmark float64"),
+        Option(
+            "--float64/--no-float64",
+            "--no-f32/--f32",
+            "--no-float32/--float32",
+            "--f64/--no-f64",
+            help="Benchmark float64",
+        ),
     ] = True,
     torchcouple: tpx.Annotated[
         bool,
@@ -273,8 +289,8 @@ def run(
         console.print("Launching slurm script ...")
         subprocess.run(["sbatch", str(input_fpath)], cwd=bench_dir, check=True)
         sys.exit(0)
-
-    protos = [Protocol.ANI_ME, Protocol.SANDER_ME, Protocol.ANI_MBISPOL]
+    if protos is None:
+        protos = list(Protocol)
     if selections is None:
         selections = [
             ":1",
@@ -323,7 +339,7 @@ def run(
         )
         console.print(f"Will benchmark {len(configs)} configs total")
         console.print(f"Will run each config for {tstep_num} steps")
-        estimate_ms = len(configs) * 800 * tstep_num / core_num
+        estimate_ms = len(configs) * 150 * tstep_num / math.sqrt(core_num)
         if estimate_ms * ms_to_s * s_to_hr < 1:
             factor = s_to_min
             unit = "min"
@@ -361,26 +377,42 @@ def run(
 
 @app.command()
 def plot(
+    dirs: tpx.Annotated[
+        tp.Optional[tp.List[Path]],
+        Argument(),
+    ] = None,
+    glob: tpx.Annotated[
+        str,
+        Option("-g", "--glob"),
+    ] = "*",
+    skip_slow: tpx.Annotated[
+        bool,
+        Option("--skip-slow/--no-skip-slow", help="Skip unused slow algorithm"),
+    ] = True,
+    skip_mm: tpx.Annotated[
+        bool,
+        Option("--skip-mm/--no-skip-mm", help="Skip MM"),
+    ] = False,
+    title: tpx.Annotated[
+        bool,
+        Option("-t/-T", "--title/--no-title"),
+    ] = False,
     system: tpx.Annotated[
         str,
-        Option("-s", "--system"),
+        Option("--system"),
     ] = "ala-8-chain",
-    mpi_scaling: tpx.Annotated[
-        int,
-        Option("--mpi-scaling"),
-    ] = False,
     size_scaling: tpx.Annotated[
         bool,
-        Option("--size-scaling"),
+        Option("--size-scaling/--mpi-scaling"),
     ] = True,
     core_num: tpx.Annotated[
         int,
-        Option("-c", "--cores", help="Only for size scaling"),
-    ] = 1,
+        Option("--cores", help="Only for size scaling"),
+    ] = 8,
     ml_residue_num: tpx.Annotated[
         int,
-        Option("-r", "--res", help="Only for cores scaling"),
-    ] = 9,
+        Option("--res", help="Only for cores scaling"),
+    ] = 4,
     torchcouple: tpx.Annotated[
         tp.Optional[bool],
         Option("--torchcouple/--no-torchcouple", help="Torch coupling"),
@@ -421,74 +453,99 @@ def plot(
         tp.Optional[str],
         Option("--proto", help="Cutoff of QM part to use"),
     ] = None,
-    except_proto: tpx.Annotated[
-        tp.Optional[str],
-        Option("--except-proto", help="Cutoff of QM part to use"),
-    ] = None,
+    ns_per_day: tpx.Annotated[
+        bool,
+        Option("--ns-per-day/--no-ns-per-day"),
+    ] = False,
+    table: tpx.Annotated[
+        bool,
+        Option("--table/--no-table"),
+    ] = False,
     verbose: tpx.Annotated[
         bool,
         Option("-v/-V", "--verbose/--no-verbose"),
     ] = False,
+    percent: tpx.Annotated[
+        bool,
+        Option("--percent/--no-percent"),
+    ] = False,
+    scatter: tpx.Annotated[
+        bool,
+        Option("--scatter/--no-scatter"),
+    ] = False,
+    legend_labels: tpx.Annotated[
+        tp.Optional[tp.List[str]],
+        Option("-l", "--legend-labels"),
+    ] = None,
 ) -> None:
-    # Collect and filter configs
+    # Collect and filter requested configurations
+    # Using symlinks for organization, as with tensorboard, is probably a better idea
+    # than the filtering procedure
     results: tp.List[tp.Any] = []
-    for d in this_dir.glob("*-bench-*"):
-        for subd in d.iterdir():
-            if not subd.is_dir():
+    if dirs is None:
+        dirs = [this_dir]
+    files = list(itertools.chain.from_iterable(d.rglob(glob) for d in dirs))
+    for subd in files:
+        if not subd.is_dir():
+            continue
+        if subd.name in ["systems", "templates"]:
+            continue
+        if not (subd / "config.json").is_file():
+            if (subd / "mdin").is_file():
+                console.print(f"Error in {subd}, can't find config.json", style="red")
+            continue
+        with open(subd / "config.json", mode="rt", encoding="utf-8") as f:
+            bench = json.load(f)
+            if "mlmm" in bench:
+                mlmm = bench.pop("mlmm")
+            else:
+                mlmm = None
+            config = BenchConfig(**bench)
+            config.mlmm = BenchMlmmConfig(**mlmm) if mlmm is not None else None
+        if torchcouple is not None:
+            if config.mlmm and config.mlmm.use_torch_coupling != torchcouple:
                 continue
-            if not (subd / "config.json").is_file():
-                console.print(f"Error in {subd}, can't finde config.json", style="red")
+        if proto is not None:
+            if config.mlmm and config.mlmm.protocol != proto:
                 continue
-            with open(subd / "config.json", mode="rt", encoding="utf-8") as f:
-                bench = json.load(f)
-                if "mlmm" in bench:
-                    mlmm = bench.pop("mlmm")
-                else:
-                    mlmm = None
-                config = BenchConfig(**bench)
-                config.mlmm = BenchMlmmConfig(**mlmm) if mlmm is not None else None
-            if torchcouple is not None:
-                if config.mlmm and config.mlmm.use_torch_coupling != torchcouple:
-                    continue
-            if proto is not None:
-                if config.mlmm and config.mlmm.protocol != proto:
-                    continue
-            if except_proto is not None:
-                if config.mlmm and config.mlmm.protocol == except_proto:
-                    continue
-            if cutoff is not None:
-                if config.mlmm and config.mlmm.cutoff != cutoff:
-                    continue
-            if cuaev is not None:
-                if config.mlmm and config.mlmm.use_cuaev != cuaev:
-                    continue
-            if float64 is not None:
-                if config.mlmm and config.mlmm.float64 != float64:
-                    continue
-            if cuda is not None:
-                if config.mlmm and config.mlmm.cuda != cuda:
-                    continue
-            if config.system != system:
+        if (
+            skip_slow
+            and config.mlmm
+            and not config.mlmm.use_torch_coupling
+            and config.mlmm.protocol == "ani_mbispol"
+        ):
+            continue
+        if cutoff is not None:
+            if config.mlmm and config.mlmm.cutoff != cutoff:
                 continue
-            if size_scaling and config.core_num != core_num:
+        if cuaev is not None:
+            if config.mlmm and config.mlmm.use_cuaev != cuaev:
                 continue
-            if mpi_scaling:
-                if config.ml_residue_num != ml_residue_num:
-                    continue
-
-            if not (subd / "walltime_ms.dat").is_file():
-                console.print(
-                    f"Error in {subd}, can't find walltime_ms.dat", style="red"
-                )
+        if float64 is not None:
+            if config.mlmm and config.mlmm.float64 != float64:
                 continue
-            walltimes = np.array(
-                [float(t) for t in (subd / "walltime_ms.dat").read_text().split()]
-            )
-            results.append({"config": config, "walltime_ms": walltimes})
-            if verbose:
-                console.print(subd)
-                console.print(config)
-                console.print(len(walltimes))
+        if cuda is not None:
+            if config.mlmm and config.mlmm.cuda != cuda:
+                continue
+        if config.system not in [system, f"{system}-strip"]:
+            continue
+        if size_scaling:
+            if config.core_num != core_num:
+                continue
+        else:
+            if config.ml_residue_num != ml_residue_num:
+                continue
+        if not (subd / "walltime_ms.dat").is_file():
+            console.print(f"Error in {subd}, can't find walltime_ms.dat", style="red")
+            continue
+        walltimes = np.array(
+            [float(t) for t in (subd / "walltime_ms.dat").read_text().split()]
+        )
+        results.append({"config": config, "walltime_ms": walltimes})
+        if verbose:
+            console.print(subd)
+            console.print(config)
+            console.print(len(walltimes))
 
     if not results:
         console.print(
@@ -496,44 +553,104 @@ def plot(
         )
         sys.exit(0)
 
-    if size_scaling:
-        fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
+    if not size_scaling:
+        ax.set_xlabel(r"Num. MPI processes")
+    else:
         ax.set_xlabel(r"Num. ML residues")
+    if ns_per_day:
+        ax.set_ylabel(r"Simulated time per compute time (ns/day)")
+    else:
         ax.set_ylabel(r"Mean walltime per timestep (ms)")
-        scaling_data: tp.Dict[str, tp.Dict[int, NDArray[np.float64]]] = defaultdict(
-            dict
-        )
-        styles = {}
+    scaling_data: tp.Dict[str, tp.Dict[int, NDArray[np.float64]]] = defaultdict(dict)
+    styles = {}
 
-        # TODO: replicas
-        for r in results:
-            config = r["config"]
-            walltimes = r["walltime_ms"]
-            num_res = config.ml_residue_num
-            scaling_data[r["config"].label][num_res] = walltimes[warm_up:]
-            styles[r["config"].label] = r["config"].style
+    for r in results:
+        config = r["config"]
+        walltimes = r["walltime_ms"]
+        if size_scaling:
+            _num = config.ml_residue_num
+        else:
+            _num = config.core_num
+        conf = scaling_data[r["config"].label]
+        if _num in conf:
+            scaling_data[r["config"].label][_num] = np.concatenate(
+                (conf[_num], walltimes[warm_up:])
+            )
+        else:
+            scaling_data[r["config"].label][_num] = walltimes[warm_up:]
+        styles[r["config"].label] = r["config"].style
 
-        all_res_nums = set()
-        for label, xy in scaling_data.items():
-            style = styles[label]
-            marker = style.pop("marker")
-            ml_res_nums = np.array(list(xy.keys()))
-            all_res_nums.update(ml_res_nums.tolist())
-            idxs = np.argsort(ml_res_nums)
-            ml_res_nums = ml_res_nums[idxs]
-            mean_wts = np.array([np.mean(wts).item() for wts in xy.values()])[idxs]
-            if err != "no":
-                if err == "sem":
-                    errs = np.array([stats.sem(wts).item() for wts in xy.values()])[
-                        idxs
-                    ]
-                elif err == "std":
-                    errs = np.array([np.std(wts).item() for wts in xy.values()])[idxs]
-                ax.errorbar(ml_res_nums, mean_wts, yerr=errs, **style)
+    all_nums = set()
+    if table:
+        dfs = []
+        for k, v in scaling_data.items():
+            num = np.array(list(v.keys()))
+            idxs = np.argsort(num)
+            df = pd.DataFrame()
+            df["Coupling"] = [k] * len(num)
+            if size_scaling:
+                df["Num. ML residues"] = num[idxs]
             else:
-                ax.plot(ml_res_nums, mean_wts, **style)
+                df["Num. MPI processes"] = num[idxs]
+            df["Mean (ms)"] = np.array([np.mean(val) for val in v.values()])[idxs]
+            df["Std. dev. (ms)"] = np.array([np.std(val) for val in v.values()])[idxs]
+            df["Min (ms)"] = np.array([np.min(val) for val in v.values()])[idxs]
+            df["Median (ms)"] = np.array([np.median(val) for val in v.values()])[idxs]
+            df["Max (ms)"] = np.array([np.max(val) for val in v.values()])[idxs]
+            dfs.append(df)
+        df = pd.concat(dfs)
+        df.reset_index(drop=True)
+        table_str = df.style.hide(axis=0).format(precision=2).to_latex(hrules=True)
+        (this_dir / "table.tex").write_text(table_str)
+        sys.exit(0)
+    if percent:
+        mm_wts = np.mean(scaling_data["MM/MM"][0]).item()
+    for label, xy in scaling_data.items():
+        style = styles[label]
+        marker = style.pop("marker")
+        num = np.array(list(xy.keys()))
+        idxs = np.argsort(num)
+        all_nums.update(num.tolist())
+        num = num[idxs]
+        if ns_per_day:
+            # walltime per ts -> ts / per walltime (ms)
+            # Amber dt is ps so 0.001 ps = 1
+            # Assume 1 fs timestep (0.001 ps or 1e-6 ns)
+            itor = [1e-6 / (v * ms_to_s * s_to_hr * 1 / 24) for v in xy.values()]
+        else:
+            itor = list(xy.values())
+        mean_wts = np.array([np.mean(wts).item() for wts in itor])[idxs]
+        if percent:
+            percents = (mean_wts - mm_wts) / mean_wts * 100
+        if skip_mm and label == "MM/MM":
+            continue
+        if err != "no":
+            if err == "sem":
+                errs = np.array([stats.sem(wts).item() for wts in itor])[idxs] * 2
+            elif err == "std":
+                errs = np.array([np.std(wts).item() for wts in itor])[idxs]
+            ax.errorbar(num, mean_wts, yerr=errs, capsize=1.5, **style)
+        ax.plot(
+            num,
+            mean_wts,
+            **style,
+            label=label if label != "MM/MM" else None,
+        )
+        if percent:
+            if len(percents) > 1:
+                for i, p in enumerate(percents):
+                    ax.annotate(
+                        f"{p:.1f}%",
+                        xy=(num[i], mean_wts[i]),
+                        xytext=(-1.0, -1.5),
+                        textcoords="offset fontsize",
+                        color=style["color"],
+                        fontsize=6.0,
+                    )
+        if scatter:
             ax.scatter(
-                ml_res_nums,
+                num,
                 mean_wts,
                 label=label,
                 s=7.0,
@@ -541,13 +658,16 @@ def plot(
                 alpha=style["alpha"],
                 marker=marker,
             )
-            if len(ml_res_nums) == 1 and ml_res_nums[0] == 0:
-                ax.axhline(
-                    y=mean_wts[0],
-                    **style,
-                )
-        ax.set_ylim(ylo, yhi)
-        ax.set_xticks(sorted(all_res_nums))
+        if len(num) == 1 and num[0] == 0:
+            ax.axhline(
+                y=mean_wts[0],
+                label=label,
+                **style,
+            )
+    ax.set_ylim(ylo, yhi)
+    ax.set_xticks(sorted(all_nums))
+    # Not needed for article figures
+    if title:
         ax.set_title(
             (
                 f"MPI benchmark with {core_num} cores"
@@ -556,8 +676,11 @@ def plot(
             )
             + f" on {system}"
         )
-        ax.legend()
-        plt.show()
+    if legend_labels is not None:
+        ax.legend(legend_labels, frameon=False)
+    else:
+        ax.legend(frameon=False)
+    plt.show()
 
 
 if __name__ == "__main__":
