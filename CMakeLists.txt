@@ -210,7 +210,11 @@ target_compile_definitions(
         $<$<COMPILE_LANGUAGE:CUDA>:TORCHANI_OPT>
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
-target_compile_options(cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
+target_compile_options(
+    cuaev
+    PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>
+)
 target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
 target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})

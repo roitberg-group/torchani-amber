@@ -55,6 +55,11 @@ done
 src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 bld_dir="$src_dir/build"
 
+# Overwrite these in case they are set by the env (e.g. the conda compilers set them)
+export CFLAGS="$CFLAGS -mtune=native -march=x86-64"
+export CXXFLAGS="$CXXFLAGS -mtune=native -march=x86-64"
+export FFLAGS="$FFLAGS -mtune=native -march=x86-64"
+
 # Paths to conda compilers are automatically detected by CMake
 cmake \
     -S"$src_dir" \
