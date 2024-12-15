@@ -39,7 +39,7 @@ set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Req
 option(AUTO_DETECT_PYTORCH "Try to find and link to a local PyTorch installation" ON)
 # Exact major.minor versions must match
 set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Request this version of PyTorch/LibTorch")
-set(REQUIRED_CUDATK_VERSION "11.8" CACHE STRING "Request this version of the CUDA Toolkit")
+set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Request this version of the CUDA Toolkit")
 set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Request this version of the cuDNN library")
 
 option(INSTALL_CUSTOM_LIBTORCH "Download LibTorch library and extract locally" OFF)
@@ -74,7 +74,7 @@ endif()
 # CUDA Toolkit: Options and flags
 option(USE_ACTIVE_CONDA_CUDA_TOOLKIT "Use CUDA Toolkit from active conda environment" ON)
 # The following options are only used if "USE_ACTIVE_CONDA_CUDA_TOOLKIT=OFF"
-set(CUSTOM_CUDA_TOOLKIT_VERSION "11.8" CACHE STRING "CUDA Toolkit version used to set dirs")
+set(CUSTOM_CUDA_TOOLKIT_VERSION "12.4" CACHE STRING "CUDA Toolkit version used to set dirs")
 
 # JIT: Options and flags
 option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
