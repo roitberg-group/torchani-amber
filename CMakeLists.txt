@@ -32,32 +32,33 @@ OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
 LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
 # General: options and flags
-set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Requires 'USE_ACTIVE_CONDA_PYTORCH=OFF' and 'INSTALL_CUSTOM_LIBTORCH=ON'")
+set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Requires 'AUTO_DETECT_PYTORCH=OFF' and 'INSTALL_CUSTOM_LIBTORCH=ON'")
 
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
+option(AUTO_DETECT_PYTORCH "Try to find and link to a local PyTorch installation" ON)
+# Exact major.minor versions must match
 set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Request this version of PyTorch/LibTorch")
-option(USE_ACTIVE_CONDA_PYTORCH "Use PyTorch from active conda environment" ON)
+set(REQUIRED_CUDATK_VERSION "11.8" CACHE STRING "Request this version of the CUDA Toolkit")
+set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Request this version of the cuDNN library")
+
 option(INSTALL_CUSTOM_LIBTORCH "Download LibTorch library and extract locally" OFF)
 option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libraries" ON)
-# The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF""
-set(REQUIRED_TORCH_CUDA_VERSION "11.8" CACHE STRING "Request PyTorch/LibTorch binaries precompiled for this CUDA Toolkit version")
-# The following options are only used if "USE_ACTIVE_CONDA_PYTORCH=OFF" and "INSTALL_CUSTOM_LIBTORCH=OFF"
-set(CUSTOM_PYTORCH_CUDNN_VERSION "8.7.0" CACHE STRING "Request PyTorch binaries precompiled for this cuDNN version")
-set(CUSTOM_PYTORCH_PYTHON_VERSION "3.10" CACHE STRING "Request PyTorch binaries precompiled for this Python version")
 
 # Validate options
-if(INSTALL_CUSTOM_LIBTORCH AND USE_ACTIVE_CONDA_PYTORCH)
-    msg_error("'USE_ACTIVE_CONDA_PYTORCH=OFF' needed to install custom LibTorch")
+if(INSTALL_CUSTOM_LIBTORCH AND AUTO_DETECT_PYTORCH)
+    msg_error("'AUTO_DETECT_PYTORCH=OFF' needed to install custom LibTorch")
 endif()
 
-if(COMPILE_WITH_CXX11ABI AND (USE_ACTIVE_CONDA_PYTORCH OR (NOT INSTALL_CUSTOM_LIBTORCH)))
-    msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' and 'USE_ACTIVE_CONDA_PYTORCH=OFF' needed to compile with the CXX11ABI")
+if(COMPILE_WITH_CXX11ABI AND (AUTO_DETECT_PYTORCH OR (NOT INSTALL_CUSTOM_LIBTORCH)))
+    msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' and 'AUTO_DETECT_PYTORCH=OFF' needed to compile with the CXX11ABI")
 elseif(NOT COMPILE_WITH_CXX11ABI)
-    message(STATUS "NOTE: All binaries will be compiled with the pre-C++11 ABI")
-    message(STATUS "Linking to binaries compiled with the C++11 ABI will not be possible")
-    message(STATUS "If you need this feature then reconfigure with the following options:")
-    message(STATUS "-DUSE_ACTIVE_CONDA_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON")
+    msg_banner(
+        "NOTE: All binaries will be compiled with the pre-C++11 ABI
+        Linking to binaries compiled with the C++11 ABI will not be possible
+        If you need this feature then reconfigure with the following options:
+        -DAUTO_DETECT_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON"
+    )
 endif()
 
 # cuDNN: Options and flags
@@ -65,7 +66,6 @@ option(USE_ACTIVE_CONDA_CUDNN "Use cuDNN from active conda environment (if neede
 option(SELECT_CUSTOM_CUDNN "Explicitly specify a cuDNN library" OFF)
 # The following options are only used if "USE_ACTIVE_CONDA_CUDNN=OFF" and "SELECT_CUSTOM_CUDNN=ON"
 set(CUSTOM_CUDNN_VERSION "8.7.0" CACHE STRING "cuDNN version to download")
-set(CUSTOM_CUDNN_CUDA_VERSION "11.8" CACHE STRING "CUDA version cuDNN is compatible with")
 # Validate options
 if(USE_ACTIVE_CONDA_CUDNN AND SELECT_CUSTOM_CUDNN)
     msg_error("'USE_ACTIVE_CONDA_CUDNN=OFF' needed to select a custom cuDNN")
@@ -81,23 +81,59 @@ option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
 option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 
-# PyTorch/LibTorch setup
-if(USE_ACTIVE_CONDA_PYTORCH)
-    msg_info("Will use PyTorch from active Conda env")
-    # Detect PyTorch's location using Python directly
-    message(STATUS "Trying to import PyTorch and find its path")
-    execute_process(
-        COMMAND python -c "import torch; from pathlib import Path; print(Path(torch.__file__).resolve().parent, end='')"
-        OUTPUT_VARIABLE ACTIVE_CONDA_TORCH_ROOT
-        RESULT_VARIABLE CONDA_TORCH_FAILED
-    )
-    if(CONDA_TORCH_FAILED)
-        msg_error("Could not find torch in the active Conda env")
-    else()
-        msg_success("Successfully found PyTorch in the active Conda env")
-    endif()
+if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
+    msg_info("You are running inside a conda env with prefix" $ENV{CONDA_PREFIX})
+    msg_info("Libraries will be searched first under this prefix")
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-    list(APPEND CMAKE_PREFIX_PATH ${ACTIVE_CONDA_TORCH_ROOT})
+endif()
+
+# PyTorch/LibTorch setup
+if(AUTO_DETECT_PYTORCH)
+    # Detect PyTorch's location using Python directly
+    msg_info("Will try to find and link to an existing PyTorch installation")
+    message(STATUS "Trying to use python to import PyTorch and find its path and specs")
+    # Note that the CUDA and torch versions are M.m.p and the cuDNN is Mmmpp
+    execute_process(
+        COMMAND python cmake/detect_pytorch.py
+        OUTPUT_VARIABLE PYTORCH_SPECS
+        RESULT_VARIABLE PYTORCH_DETECTION_FAILED
+    )
+    if(PYTORCH_DETECTION_FAILED)
+        msg_error("Could not find a PyTorch installation compiled with CUDA and cuDNN support")
+    else()
+        list(GET PYTORCH_SPECS 0 DETECTED_TORCH_VERSION)
+        list(GET PYTORCH_SPECS 1 DETECTED_CUDATK_VERSION)
+        list(GET PYTORCH_SPECS 2 DETECTED_CUDNN_VERSION)
+        list(GET PYTORCH_SPECS 3 DETECTED_TORCH_ROOT)
+        msg_success("Successfully found a PyTorch installation compiled with CUDA and cuDNN support")
+        message(STATUS "The PyTorch root is ${DETECTED_TORCH_ROOT}")
+        message(STATUS "Validating the detected PyTorch installation")
+        if(NOT DETECTED_TORCH_VERSION STREQUAL REQUIRED_TORCH_VERSION)
+            msg_error("PyTorch version ${DETECTED_TORCH_VERSION} doesn't match required ${REQUIRED_TORCH_VERSION}")
+        else()
+            msg_success("PyTorch version ${DETECTED_TORCH_VERSION} is consistent with required")
+        endif()
+        if(NOT DETECTED_CUDATK_VERSION STREQUAL REQUIRED_CUDATK_VERSION)
+            msg_error("CUDA-Toolkit PyTorch was compiled against has version: ${DETECTED_CUDATK_VERSION} doesn't match required ${REQUIRED_CUDATK_VERSION}")
+        else()
+            msg_success("CUDA-Toolkit PyTorch was compiled against has version: ${DETECTED_CUDATK_VERSION}, consistent with required")
+        endif()
+        if(NOT DETECTED_CUDNN_VERSION STREQUAL REQUIRED_CUDNN_VERSION)
+            msg_error("cuDNN PyTorch was compiled against has version: ${DETECTED_CUDNN_VERSION} which doesn't match required ${REQUIRED_CUDNN_VERSION}")
+        else()
+            msg_success("cuDNN PyTorch was compiled against has version: ${DETECTED_CUDNN_VERSION}, consistent with required")
+        endif()
+    endif()
+    # Print banner since currently there are no checks for this
+    msg_banner(
+        "This lib requires CUDA Toolkit dev version, *not* bundled with PyTorch
+        CMake doesn't check whether all necessary CUDA Toolkit features are present
+        Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs
+        To ensure this, for example, use the provided conda env
+        Or directly download and install the CUDA Toolkit ${REQUIRED_CUDATK_VERSION}
+        Failures may indicate you are missing a required part of the CUDA Toolkit"
+    )
+    list(APPEND CMAKE_PREFIX_PATH ${DETECTED_TORCH_ROOT})
 elseif(INSTALL_CUSTOM_LIBTORCH)
     msg_info("Will download and install user-specified LibTorch")
     # NOTE: If the requested version already exists it is *not* extracted
@@ -105,30 +141,9 @@ elseif(INSTALL_CUSTOM_LIBTORCH)
     LibtorchHelper_download_and_install(
       CXX11ABI ${COMPILE_WITH_CXX11ABI}
       LIB_VERSION ${REQUIRED_TORCH_VERSION}
-      CUDA_VERSION ${REQUIRED_TORCH_CUDA_VERSION}
+      CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
-else()
-    # Fallback to installing PyTorch with conda from cmake
-    msg_info("Will download and install user-specified PyTorch using Conda")
-    # Don't set any vars
-    PytorchHelper_download_and_install(
-        LIB_VERSION ${REQUIRED_TORCH_VERSION}
-        PYTHON_VERSION ${CUSTOM_PYTORCH_PYTHON_VERSION}
-        CUDNN_VERSION ${CUSTOM_PYTORCH_CUDNN_VERSION}
-        CUDA_VERSION ${REQUIRED_TORCH_CUDA_VERSION}
-    )
-    # Detect PyTorch's location using Python directly
-    execute_process(
-        COMMAND python -c "import torch; from pathlib import Path; print(Path(torch.__file__).resolve().parent, end='')"
-        OUTPUT_VARIABLE ACTIVE_CONDA_TORCH_ROOT
-        RESULT_VARIABLE CONDA_TORCH_FAILED
-    )
-    if(CONDA_TORCH_FAILED)
-        msg_error("Could not find torch in the active Conda env")
-    endif()
-    list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-    list(APPEND CMAKE_PREFIX_PATH ${ACTIVE_CONDA_TORCH_ROOT})
 endif()
 
 # cuDNN setup
@@ -143,7 +158,7 @@ elseif(SELECT_CUSTOM_CUDNN)
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     CudnnHelper_set_custom_paths(
         LIB_VERSION ${CUSTOM_CUDNN_VERSION}
-        CUDA_VERSION ${CUSTOM_CUDNN_CUDA_VERSION}
+        CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
 else()
