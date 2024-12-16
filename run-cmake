@@ -8,19 +8,24 @@ usage() { echo "Usage: [OPTION]...
     -I Don't install
     -B Don't build, only configure and generate
     -T Don't run tests
+    -P Don't auto detect and link to PyTorch
     -C Don't use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
 use_conda=ON
+auto_detect_pytorch=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
 cmake_build_type="Release"
-while getopts "TIBCgh" o; do
+while getopts "TIBPCgh" o; do
     case "${o}" in
         T)
             run_tests=0
+            ;;
+        P)
+            auto_detect_pytorch=OFF
             ;;
         I)
             cmake_install=0
@@ -66,14 +71,18 @@ cmake \
     -B"$bld_dir" \
     -DCMAKE_INSTALL_PREFIX="$HOME/.local/" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
-    -DUSE_ACTIVE_CONDA_PYTORCH=$use_conda \
+    -DAUTO_DETECT_PYTORCH=$auto_detect_pytorch \
     -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
     -DUSE_ACTIVE_CONDA_CUDNN=$use_conda \
+    -DCMAKE_CUDA_HOST_COMPILER="${CONDA_PREFIX}"/bin/x86_64-conda-linux-gnu-g++ \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+CFG_EXITCODE=$?
 
-if [ "$cmake_build" -eq 1 ]; then
+if [ "$cmake_build" -eq 1 ] && [ $CFG_EXITCODE -eq 0 ]; then
     cmake --build "$bld_dir"
-    if [ "$run_tests" -eq 1 ]; then
+    BLD_EXITCODE=$?
+
+    if [ "$run_tests" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
         echo "Starting to run tests ..."
         if ! ./build/tests; then
             echo "Tests failed!!"
@@ -83,12 +92,12 @@ if [ "$cmake_build" -eq 1 ]; then
     else
         echo "Skipping test step"
     fi
-else
-    echo "Skipping build step"
-fi
 
-if [ "$cmake_install" -eq 1 ]; then
-    cmake --install "$bld_dir"
+    if [ "$cmake_install" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
+        cmake --install "$bld_dir"
+    else
+        echo "Skipping install step"
+    fi
 else
-    echo "Skipping install step"
+    echo "Skipping build (and install) step"
 fi

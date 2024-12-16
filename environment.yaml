@@ -8,7 +8,7 @@ dependencies:
   ## Required dependencies to run TorchANI ##
   - python=3.10
   - pip>=24.0
-  - numpy=2.1
+  - numpy=1.26  # 1.26 required due to netCDF 4 for Amber
   - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
   - typing_extensions>=4.0.0
   - h5py  # HDF5 backend for datasets
@@ -23,7 +23,7 @@ dependencies:
   - ase
 
   ## NVIDIA CUDA GPU support ##
-  - pytorch::pytorch-cuda=11.8  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
+  - pytorch::pytorch-cuda=12.4  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
   #- pytorch::cpuonly  # Uncomment this line to **disable** CUDA GPU support in Linux
 
   ## cuAEV and MNP ##
@@ -37,6 +37,7 @@ dependencies:
   - nvidia::cuda-libraries-dev=12.4
   - nvidia::cuda-cccl=12.4
   - nvidia::cuda-nvcc=12.4
+  - nvidia::cuda-cudart-static=12.4
   # Amber dependencies
   - conda-forge::fftw=3.3.10=mpi_openmpi_hdeb57f9_6  # For Sander / Pmemd
   - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
