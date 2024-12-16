@@ -7,7 +7,7 @@ project(
     Torchani
     LANGUAGES C CXX
     VERSION 0.5
-    DESCRIPTION "C++ wrapper to execute ANI-Style models from TorchANI"
+    DESCRIPTION "Fortran, C and C++ interface to execute ANI-Style models built using the TorchANI library"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
 
@@ -31,64 +31,63 @@ include(TorchScriptUtils)
 OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
 LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
-# General: options and flags
-set(COMPILE_WITH_CXX11ABI FALSE CACHE BOOL "Compile binaries with C++11 ABI. Requires 'AUTO_DETECT_PYTORCH=OFF' and 'INSTALL_CUSTOM_LIBTORCH=ON'")
-
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
-option(AUTO_DETECT_PYTORCH "Try to find and link to a local PyTorch installation" ON)
-# Exact major.minor versions must match
-set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Request this version of PyTorch/LibTorch")
-set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Request this version of the CUDA Toolkit")
-set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Request this version of the cuDNN library")
 
-option(INSTALL_CUSTOM_LIBTORCH "Download LibTorch library and extract locally" OFF)
-option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libraries" ON)
+# General: options and flags
+option(LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
+option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs" ON)
+option(COMPILE_WITH_CXX11ABI "Compile binaries with C++11 ABI. Requires 'LINK_TO_PYTORCH_LIBS=OFF'" OFF)
+option(DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract locally to ./external/libtorch<version>-cuda<version>" OFF)
+option(PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
+option(USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
+option(USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
+
+# Exact major.minor versions must match for these
+set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Require this version of the CUDA Toolkit")
+set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Require this version of the cuDNN library")
 
 # Validate options
-if(INSTALL_CUSTOM_LIBTORCH AND AUTO_DETECT_PYTORCH)
-    msg_error("'AUTO_DETECT_PYTORCH=OFF' needed to install custom LibTorch")
+if(LINK_TO_PYTORCH_LIBS AND DOWNLOAD_AND_INSTALL_LIBTORCH)
+    msg_error("'LINK_TO_PYTORCH_LIBS' is incompatible with 'DOWNLOAD_AND_INSTALL_LIBTORCH'")
 endif()
 
-if(COMPILE_WITH_CXX11ABI AND (AUTO_DETECT_PYTORCH OR (NOT INSTALL_CUSTOM_LIBTORCH)))
-    msg_error("'INSTALL_CUSTOM_LIBTORCH=ON' and 'AUTO_DETECT_PYTORCH=OFF' needed to compile with the CXX11ABI")
+if(PREFER_CONDA_LIBS AND (USE_CUSTOM_CUDNN OR USE_CUSTOM_CUDATK))
+    msg_error("'PREFER_CONDA_LIBS' is incompatible with USE_CUSTOM_CUDNN or USE_CUSTOM_CUDATK")
+endif()
+
+if(COMPILE_WITH_CXX11ABI AND LINK_TO_PYTORCH_LIBS)
+    msg_error("'LINK_TO_PYTORCH_LIBS=OFF' is needed to compile with the CXX11ABI")
 elseif(NOT COMPILE_WITH_CXX11ABI)
     msg_banner(
-        "NOTE: All binaries will be compiled with the pre-C++11 ABI
-        Linking to binaries compiled with the C++11 ABI will not be possible
-        If you need this feature then reconfigure with the following options:
-        -DAUTO_DETECT_PYTORCH=OFF -DINSTALL_CUSTOM_LIBTORCH=ON -DCOMPILE_WITH_CXX11ABI=ON"
+        "NOTE: All binaries will be compiled *without* the C++11 ABI
+        This means linking to other binaries compiled *with* the C++11 ABI will *not* be possible
+        If you need this, you will need to link to LibTorch instead
+        of PyTorch, to do this reconfigure with the following options:
+        -DLINK_TO_PYTORCH_LIBS=OFF -DCOMPILE_WITH_CXX11ABI=ON -DDOWNLOAD_AND_INSTALL_LIBTORCH=ON"
     )
 endif()
-
-# cuDNN: Options and flags
-option(USE_ACTIVE_CONDA_CUDNN "Use cuDNN from active conda environment (if needed)" ON)
-option(SELECT_CUSTOM_CUDNN "Explicitly specify a cuDNN library" OFF)
-# The following options are only used if "USE_ACTIVE_CONDA_CUDNN=OFF" and "SELECT_CUSTOM_CUDNN=ON"
-set(CUSTOM_CUDNN_VERSION "8.7.0" CACHE STRING "cuDNN version to download")
-# Validate options
-if(USE_ACTIVE_CONDA_CUDNN AND SELECT_CUSTOM_CUDNN)
-    msg_error("'USE_ACTIVE_CONDA_CUDNN=OFF' needed to select a custom cuDNN")
-endif()
-
-# CUDA Toolkit: Options and flags
-option(USE_ACTIVE_CONDA_CUDA_TOOLKIT "Use CUDA Toolkit from active conda environment" ON)
-# The following options are only used if "USE_ACTIVE_CONDA_CUDA_TOOLKIT=OFF"
-set(CUSTOM_CUDA_TOOLKIT_VERSION "12.4" CACHE STRING "CUDA Toolkit version used to set dirs")
 
 # JIT: Options and flags
 option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
 option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 
-if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
-    msg_info("You are running inside a conda env with prefix" $ENV{CONDA_PREFIX})
-    msg_info("Libraries will be searched first under this prefix")
+if(NOT $ENV{CONDA_PREFIX} STREQUAL "" AND PREFER_CONDA_LIBS)
+    msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
+    msg_info("Libs will be searched first under this prefix")
+    msg_info("If you don't want this, reconfigure with -DPREFER_CONDA_LIBS=OFF")
     list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+    set(USE_CONDA_CUDNN ON)
+    set(USE_CONDA_CUDATK ON)
+else()
+    set(USE_CONDA_CUDNN OFF)
+    set(USE_CONDA_CUDATK OFF)
 endif()
 
 # PyTorch/LibTorch setup
-if(AUTO_DETECT_PYTORCH)
+if(LINK_TO_PYTORCH_LIBS)
     # Detect PyTorch's location using Python directly
     msg_info("Will try to find and link to an existing PyTorch installation")
     message(STATUS "Trying to use python to import PyTorch and find its path and specs")
@@ -124,59 +123,65 @@ if(AUTO_DETECT_PYTORCH)
             msg_success("cuDNN PyTorch was compiled against has version: ${DETECTED_CUDNN_VERSION}, consistent with required")
         endif()
     endif()
-    # Print banner since currently there are no checks for this
-    msg_banner(
-        "This lib requires CUDA Toolkit dev version, *not* bundled with PyTorch
-        CMake doesn't check whether all necessary CUDA Toolkit features are present
-        Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs
-        To ensure this, for example, use the provided conda env
-        Or directly download and install the CUDA Toolkit ${REQUIRED_CUDATK_VERSION}
-        Failures may indicate you are missing a required part of the CUDA Toolkit"
-    )
+    # Print banner since currently there are no checks for the presence of the dev
+    # version of the CUDAToolkit libs
     list(APPEND CMAKE_PREFIX_PATH ${DETECTED_TORCH_ROOT})
-elseif(INSTALL_CUSTOM_LIBTORCH)
+elseif(DOWNLOAD_AND_INSTALL_LIBTORCH)
     msg_info("Will download and install user-specified LibTorch")
     # NOTE: If the requested version already exists it is *not* extracted
     # Set vars LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR
     LibtorchHelper_download_and_install(
-      CXX11ABI ${COMPILE_WITH_CXX11ABI}
-      LIB_VERSION ${REQUIRED_TORCH_VERSION}
-      CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
+        CXX11ABI ${COMPILE_WITH_CXX11ABI}
+        LIB_VERSION ${REQUIRED_TORCH_VERSION}
+        CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
 
 # cuDNN setup
-if(USE_ACTIVE_CONDA_CUDNN)
-    msg_info("Will use cuDNN from active Conda env if needed")
+if(USE_CONDA_CUDNN)
+    msg_info("Will try to use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     CudnnHelper_set_conda_paths()
     list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
-elseif(SELECT_CUSTOM_CUDNN)
-    msg_info("Will use user-specified cuDNN if needed")
-    msg_info("Will assume cuDNN is located in ./external/cudnn<version>-cuda<version>")
+elseif(USE_CUSTOM_CUDNN)
+    msg_info("Will manually set variables that point to cuDNN")
+    msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     CudnnHelper_set_custom_paths(
-        LIB_VERSION ${CUSTOM_CUDNN_VERSION}
+        LIB_VERSION ${REQUIRED_CUDNN_VERSION}
         CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
 else()
     # cuDNN may be directly extracted into the CUDA Toolkit dir,
     # if a user has done this then they don't need to specify an external version
-    msg_info("Will try to find a cuDNN bundled with the CUDA Toolkit if needed")
+    msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
 endif()
 
 # CUDA Toolkit setup
-if(USE_ACTIVE_CONDA_CUDA_TOOLKIT)
-    msg_info("Will use CUDA Toolkit from active Conda env")
+if(USE_CONDA_CUDATK)
+    msg_info("Will try to use CUDA Toolkit from the active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
     CudaToolkitHelper_set_conda_paths()
-else()
-    msg_info("Will use user-specified CUDA Toolkit")
-    msg_info("Will assume CUDA Toolkit is located in /usr/local/cuda-<version>")
+    msg_banner(
+        "TorchANI requires CUDA Toolkit dev version, which is *not* bundled with PyTorch,
+        and is *not* contained in the conda 'nvidia::cudatoolkit' package.
+        At this stage of the configuration, we don't check whether all necessary CUDA
+        Toolkit features are present.
+        Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
+        ensure this, for example, use the provided conda env, which has all
+        dependencies, or directly download and install the CUDA Toolkit
+        ${REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
+        after this point may indicate you are missing a required part of the Toolkit."
+    )
+elseif(USE_CUSTOM_CUDATK)
+    msg_info("Will manually set variables that point to the CUDA Toolkit")
+    msg_info("assuming it is located in /usr/local/cuda-<version>")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    CudaToolkitHelper_set_custom_paths(TOOLKIT_VERSION ${CUDA_TOOLKIT_VERSION})
+    CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${REQUIRED_CUDATK_VERSION})
+else()
+    msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
 endif()
 
 # TODO: Disabling JIT optimizations during scripting probably does nothing
@@ -189,7 +194,6 @@ if(JIT_COMPILE_MODELS)
 else()
     msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
 endif()
-
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
 # LibTorch is a required dep
@@ -280,10 +284,7 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # since the CUDA driver is unrelated to the CUDA Toolkit, but I'm documenting
 # it here for completeness.
 #
-# TODO: Torch libraries have to be force-linked since during runtime libnvrtc
-# can't be found otherwise, it may only be needed to force-link libnvrtc (and
-# maybe nvtoolsext?) but for now I force-link everything since it is easier
-# althought a bit dirtier.
+# TODO: cuAEV needs to be force-loaded due to an internal limitation of Torch extensions
 if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
     set(TORCHANI_LIBRARIES_INSTALL_RPATH
         ${LIBTORCH_LIBRARY_DIR}
@@ -306,21 +307,23 @@ endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
 #
-# NOTE: Catch2 needs to be compiled with the same GLIBCXX_ABI
-# as torch. Manually adding public "target_compile_options" to the Catch2
-# liberaries is the dirty way I found to do this. There may be a better way to
-# do it but I'm not sure how to otherwise propagate these flags to the
-# subproject. Also, note that flags can't be set on alias targets (such as
-# Catch2::Catch2WithMain), they have to be set on "Catch2WithMain" directly, and
-# they have to be set on both, "Catch2" and "Catch2WithMain", since for some reason
-# CMake doesn't propagate the flags between these libraries either.
+# NOTE:
+# Catch2 needs to be compiled with the same GLIBCXX_ABI as torch. Manually adding
+# public "target_compile_options" to the Catch2 liberaries is the dirty way I found to
+# do this. There may be a better way, but I'm not sure how to otherwise propagate these
+# flags to the subproject.
+#
+# Also, note that flags can't be set on alias targets (such as Catch2::Catch2WithMain),
+# they have to be set on "Catch2WithMain" directly, and they have to be set on both,
+# "Catch2" and "Catch2WithMain", since CMake doesn't propagate the flags between these
+# libraries either.
 include(CTest)
 set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
 add_subdirectory(${CATCH2_ROOT})
 target_compile_definitions(Catch2WithMain PUBLIC ${TORCH_CXX_FLAGS})
 target_compile_definitions(Catch2 PUBLIC ${TORCH_CXX_FLAGS})
 # Make Catch2 provided cmake-modules available
-list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras" )
+list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
 include(Catch)
 
 add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
