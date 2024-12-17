@@ -1,31 +1,35 @@
 #!/bin/bash
 
 usage() { echo "Usage: [OPTION]...
-    Configure, Generate buildsystem, build, run tests, and install the TorchANI C++
-    interface.
+    Configure, Generate buildsystem, build, run tests, and install TorchANI-Interface.
 
     All options are boolean flags.
-    -I Don't install
-    -B Don't build, only configure and generate
-    -T Don't run tests
+    -B Don't build or install, only configure and generate
+    -I Don't install, only configure, generate and build
+    -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch
-    -C Don't use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
+    -C Don't use Conda libraries
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
-use_conda=ON
-auto_detect_pytorch=ON
+use_conda_libs=ON
+use_libtorch=OFF
+use_pytorch_libs=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
 cmake_build_type="Release"
 while getopts "TIBPCgh" o; do
     case "${o}" in
+        P)
+            use_pytorch_libs=OFF
+            ;;
+        C)
+            use_conda_libs=OFF
+            use_libtorch=ON
+            ;;
         T)
             run_tests=0
-            ;;
-        P)
-            auto_detect_pytorch=OFF
             ;;
         I)
             cmake_install=0
@@ -34,9 +38,6 @@ while getopts "TIBPCgh" o; do
             cmake_build=0
             cmake_install=0
             run_tests=0
-            ;;
-        C)
-            use_conda=OFF
             ;;
         g)
             cmake_build_type="Debug"
@@ -57,7 +58,7 @@ done
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/
 # how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
-src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+src_dir=$( cd -- "$(dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 bld_dir="$src_dir/build"
 
 # Overwrite these in case they are set by the env (e.g. the conda compilers set them)
@@ -71,10 +72,11 @@ cmake \
     -B"$bld_dir" \
     -DCMAKE_INSTALL_PREFIX="$HOME/.local/" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
-    -DAUTO_DETECT_PYTORCH=$auto_detect_pytorch \
-    -DUSE_ACTIVE_CONDA_CUDA_TOOLKIT=$use_conda \
-    -DUSE_ACTIVE_CONDA_CUDNN=$use_conda \
-    -DCMAKE_CUDA_HOST_COMPILER="${CONDA_PREFIX}"/bin/x86_64-conda-linux-gnu-g++ \
+    -DLINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
+    -DJIT_COMPILE_MODELS=$use_pytorch_libs \
+    -DPREFER_CONDA_LIBS=$use_conda_libs \
+    -DDOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
+    -DCOMPILE_WITH_CXX11ABI=$use_libtorch \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
 
