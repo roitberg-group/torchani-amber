@@ -1,17 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=ani-amber-bench
-#SBATCH --output=%j-ani-amber-bench.out
+#SBATCH --output=%j-ani-amber-bench.slurm.out
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:a100:1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks={{ core_num }}
-#SBATCH --ntasks-per-node={{ core_num }}
 #SBATCH --cpus-per-task=1
+#SBATCH --ntasks={{ core_num }}
 
 module purge
 module load cuda/12.4 gcc/12.2 openmpi/4.1.6 mamba cmake
 mamba activate /blue/roitberg/share/envs/ani-amber-bench
-source /blue/roitberg/share/amber-latest/amber.sh
+source /blue/roitberg/share/amber-latest-linked-to-hpg-modules/amber.sh
 
 '{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'
