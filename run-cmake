@@ -8,11 +8,12 @@ usage() { echo "Usage: [OPTION]...
     -I Don't install, only configure, generate and build
     -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch
-    -C Don't use Conda compilers, CUDA Toolkit, PyTorch, and cuDNN
+    -C Don't use Conda libraries
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
 use_conda_libs=ON
+use_libtorch=OFF
 use_pytorch_libs=ON
 run_tests=1
 cmake_build=1
@@ -25,6 +26,7 @@ while getopts "TIBPCgh" o; do
             ;;
         C)
             use_conda_libs=OFF
+            use_libtorch=ON
             ;;
         T)
             run_tests=0
@@ -56,7 +58,7 @@ done
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/
 # how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
-src_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+src_dir=$( cd -- "$(dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 bld_dir="$src_dir/build"
 
 # Overwrite these in case they are set by the env (e.g. the conda compilers set them)
@@ -71,8 +73,10 @@ cmake \
     -DCMAKE_INSTALL_PREFIX="$HOME/.local/" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
     -DLINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
+    -DJIT_COMPILE_MODELS=$use_pytorch_libs \
     -DPREFER_CONDA_LIBS=$use_conda_libs \
-    -DCMAKE_CUDA_HOST_COMPILER="${CONDA_PREFIX}"/bin/x86_64-conda-linux-gnu-g++ \
+    -DDOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
+    -DCOMPILE_WITH_CXX11ABI=$use_libtorch \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
 

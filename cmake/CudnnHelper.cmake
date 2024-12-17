@@ -31,7 +31,7 @@ function(CudnnHelper_set_custom_paths)
     set(CUDNN_ROOT "${_CUDNN_ROOT}" PARENT_SCOPE)
 
     message(STATUS "cuDNN - Version: ${_FN_LIB_VERSION}")
-    message(STATUS "cuDNN - pre-built for CUDA Toolkit: ${_FN_CUDATK_VERSION}")
+    message(STATUS "cuDNN - Compiled for CUDA Toolkit version: ${_FN_CUDATK_VERSION}")
     message(STATUS "cuDNN - Manually set root to: ${_CUDNN_ROOT}")
     message(STATUS "cuDNN - Manually set include dir to: ${_CUDNN_INCLUDE_DIR}")
     message(STATUS "cuDNN - Manually set lib dir to: ${_CUDNN_LIBRARY}")

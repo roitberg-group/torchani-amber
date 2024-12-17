@@ -42,9 +42,11 @@ option(DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract loca
 option(PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
 option(USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
 option(USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
+option(ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
 
 # Exact major.minor versions must match for these
 set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
 set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Require this version of the CUDA Toolkit")
 set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Require this version of the cuDNN library")
 
@@ -69,18 +71,41 @@ elseif(NOT COMPILE_WITH_CXX11ABI)
     )
 endif()
 
+# Validate compilers
+if(NOT ALLOW_UNSUPPORTED_COMPILERS)
+    set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
+    foreach(COMPILER_ID ${COMPILER_IDS})
+        if(NOT (COMPILER_ID STREQUAL GNU))
+            msg_error("TorchANI-Interface requires GNU compilers (g++, gcc, gfortran)")
+        endif()
+    endforeach()
+    set(COMPILER_VERSIONS ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_FORTRAN_COMPILER_VERSION})
+    foreach(COMPILER_VERSION ${COMPILER_VERSIONS})
+        if(COMPILER_VERSION VERSION_LESS 11.0 OR COMPILER_VERSION VERSION_GREATER 13.2)
+            msg_error("TorchANI-Interface requires GNU compilers with version >11 and <13.2")
+        endif()
+    endforeach()
+endif()
+
 # JIT: Options and flags
 option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
 option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 
-if(NOT $ENV{CONDA_PREFIX} STREQUAL "" AND PREFER_CONDA_LIBS)
-    msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
-    msg_info("Libs will be searched first under this prefix")
-    msg_info("If you don't want this, reconfigure with -DPREFER_CONDA_LIBS=OFF")
-    list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-    set(USE_CONDA_CUDNN ON)
-    set(USE_CONDA_CUDATK ON)
+if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
+    if(PREFER_CONDA_LIBS)
+        msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
+        msg_info("Libs will be searched first under this prefix")
+        msg_info("If you don't want this, reconfigure with -DPREFER_CONDA_LIBS=OFF")
+        list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+        set(USE_CONDA_CUDNN ON)
+        set(USE_CONDA_CUDATK ON)
+    else()
+        msg_warn("You seem to be installing inside a conda env but with PREFER_CONDA_LIBS=OFF")
+        msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
+        set(USE_CONDA_CUDNN OFF)
+        set(USE_CONDA_CUDATK OFF)
+    endif()
 else()
     set(USE_CONDA_CUDNN OFF)
     set(USE_CONDA_CUDATK OFF)
@@ -133,7 +158,8 @@ elseif(DOWNLOAD_AND_INSTALL_LIBTORCH)
     LibtorchHelper_download_and_install(
         CXX11ABI ${COMPILE_WITH_CXX11ABI}
         LIB_VERSION ${REQUIRED_TORCH_VERSION}
-        CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
+        PATCH_VERSION ${REQUIRED_LIBTORCH_PATCH_VERSION}
+        CUDATK_VERSION ${REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
@@ -234,7 +260,9 @@ target_compile_options(
     PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>
 )
-target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
+if(PREFER_CONDA_LIBS)
+    target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
+endif()
 target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
 target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
 
@@ -264,8 +292,13 @@ target_compile_definitions(
             $<$<CONFIG:Debug>:"DEBUG">
             $<$<CONFIG:Debug>:"TIMING">
 )
-target_link_options(torchani PRIVATE "LINKER:-force_load,$<TARGET_FILE:cuaev>")
-target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
+# TODO: cuAEV needs to be force-loaded due to an internal limitation of Torch extensions
+# I'm not sure why, when linking to libtorch instead of PyTorch, --no-as-needed is also
+# required
+target_link_options(torchani PRIVATE LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cuaev>)
+if(PREFER_CONDA_LIBS)
+    target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
+endif()
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
@@ -284,7 +317,6 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # since the CUDA driver is unrelated to the CUDA Toolkit, but I'm documenting
 # it here for completeness.
 #
-# TODO: cuAEV needs to be force-loaded due to an internal limitation of Torch extensions
 if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
     set(TORCHANI_LIBRARIES_INSTALL_RPATH
         ${LIBTORCH_LIBRARY_DIR}
