@@ -359,11 +359,19 @@ def run(
         shutil.copy(systems_dir / f"{config.system}.inpcrd", config_dir / "inpcrd")
         shutil.copy(systems_dir / f"{config.system}.prmtop", config_dir / "prmtop")
         (config_dir / "mdin").write_text(input_as_str)
-        cmd = (
-            ["sander"]
-            if config.core_num == 1
-            else ["mpirun", "-n", str(config.core_num), "sander.MPI"]
-        )
+        if config.core_num == 1:
+            cmd = ["srun", "sander"]
+        else:
+            if os.environ["HPC_PMIX"]:
+                cmd = [
+                    "srun",
+                    f"--mpi={os.environ['HPC_PMIX']}",
+                    "-n",
+                    str(config.core_num),
+                    "sander.MPI",
+                ]
+            else:
+                cmd = ["mpirun", "-n", str(config.core_num), "sander.MPI"]
         if verbose:
             console.print(f"{config_idx + 1}/{len(configs)} Running {config}")
         # This requires a version of amber that is hooked with this function
