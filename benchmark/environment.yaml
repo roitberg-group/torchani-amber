@@ -1,0 +1,17 @@
+name: ani-amber-bench
+channels:
+  - nodefaults
+  - https://conda.anaconda.org/pytorch
+  - https://conda.anaconda.org/nvidia
+  - https://conda.anaconda.org/conda-forge
+dependencies:
+  - pip>=24.0
+  - python=3.11
+  - numpy
+  - scipy
+  - typer
+  - rich
+  - matplotlib
+  - jinja2
+  - pandas
+  - typing_extensions>=4.0.0
