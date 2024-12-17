@@ -10,8 +10,8 @@
 #SBATCH --cpus-per-task=1
 
 module purge
-module load mamba
-mamba activate /blue/roitberg/share/envs/ani-amber
+module load cuda/12.4 gcc/12.2 openmpi/4.1.6 mamba cmake
+mamba activate /blue/roitberg/share/envs/ani-amber-bench
 source /blue/roitberg/share/amber-latest/amber.sh
 
 '{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'

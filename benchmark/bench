@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 import math
-from numpy.typing import NDArray
-from scipy import stats
 from collections import defaultdict
-import matplotlib.pyplot as plt
-import numpy as np
 import hashlib
 from copy import deepcopy
 import os
@@ -13,17 +9,20 @@ import shutil
 import subprocess
 import uuid
 import json
-import typing_extensions as tpx
 from typer import Option, Argument
 import itertools
 from enum import Enum
 import typing as tp
 import dataclasses
 from pathlib import Path
-import matplotlib as mpl
+import typing_extensions as tpx
 
+from scipy import stats
 import pandas as pd
-
+import numpy as np
+from numpy.typing import NDArray
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 from rich.console import Console
 from typer import Typer, Abort
 import jinja2
