@@ -255,6 +255,10 @@ def run(
         str,
         Option("--suffix", help="Suffix for the benchmark name"),
     ] = "",
+    skip_mm: tpx.Annotated[
+        bool,
+        Option("--skip-mm/--no-skip-mm", help="Skip MM"),
+    ] = False,
 ) -> None:
     r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if bench_dir is None:
@@ -280,11 +284,12 @@ def run(
                 arg_list[j + 1] = f"'{arg_list[j + 1]}'"
         args = " ".join(arg_list)
         args = args.replace(" --slurm", "")
-        tmpl = env.get_template("bench.slurm.sh.jinja").render(
+        tmpl = env.get_template("hpg.slurm.sh.jinja").render(
             cli_app_dir=str(this_dir),
             core_num=core_num,
             args=args,
             bench_dir=str(bench_dir),
+            job_prefix=str(bench_dir).split("-")[-1],
         )
         input_fpath = bench_dir / "hpg.slurm.sh"
         input_fpath.write_text(tmpl)
@@ -306,7 +311,9 @@ def run(
             ":1-9",
         ]
     # Base, "MM/MM" config
-    configs = [BenchConfig(core_num=core_num, system=system)]
+    configs = []
+    if skip_mm:
+        configs.append(BenchConfig(core_num=core_num, system=system))
     if cuaev and not cuda:
         console.print("cuAEV needs CUDA device")
         raise Abort()
