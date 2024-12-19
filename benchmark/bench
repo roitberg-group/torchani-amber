@@ -169,6 +169,14 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
+    cleanup: tpx.Annotated[
+        bool,
+        Option("--cleanup/--no-cleanup"),
+    ] = True,
+    dump: tpx.Annotated[
+        bool,
+        Option("--dump/--no-dump"),
+    ] = False,
     protos: tpx.Annotated[
         tp.Optional[tp.List[Protocol]],
         Option("-p", "--proto"),
@@ -359,7 +367,7 @@ def run(
 
     for config_idx, config in enumerate(configs):
         input_as_str = env.get_template("mlmm.mdin.jinja").render(
-            tstep_num=tstep_num, **dataclasses.asdict(config)
+            tstep_num=tstep_num, dump_traj=dump, **dataclasses.asdict(config)
         )
         config_dir = bench_dir / str(uuid.uuid4()).split("-")[0]
         config_dir.mkdir()
@@ -380,10 +388,18 @@ def run(
             else:
                 cmd = [
                     "mpirun",
-                    "--mca", "opal_base_help_aggregate", "0",
-                    "--mca", "pml", "ucx",
-                    "--mca", "osc", "ucx",
-                    "--mca", "btl", '"^openbib"',
+                    "--mca",
+                    "opal_base_help_aggregate",
+                    "0",
+                    "--mca",
+                    "pml",
+                    "ucx",
+                    "--mca",
+                    "osc",
+                    "ucx",
+                    "--mca",
+                    "btl",
+                    '"^openbib"',
                     "sander.MPI",
                 ]
         if verbose:
@@ -394,9 +410,10 @@ def run(
             subprocess.run(cmd, cwd=config_dir, check=True)
             config.to_file(config_dir / "config.json")
         finally:
-            for fname in ("mdcrd", "inpcrd", "prmtop", "restrt", "mdinfo"):
-                if (config_dir / fname).is_file():
-                    (config_dir / fname).unlink()
+            if cleanup:
+                for fname in ("mdcrd", "inpcrd", "prmtop", "restrt", "mdinfo"):
+                    if (config_dir / fname).is_file():
+                        (config_dir / fname).unlink()
 
 
 @app.command()
