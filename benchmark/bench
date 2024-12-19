@@ -289,7 +289,7 @@ def run(
             core_num=core_num,
             args=args,
             bench_dir=str(bench_dir),
-            job_prefix=str(bench_dir).split("-")[2],
+            job_prefix=str(bench_dir.name).split("-")[2],
         )
         input_fpath = bench_dir / "hpg.slurm.sh"
         input_fpath.write_text(tmpl)

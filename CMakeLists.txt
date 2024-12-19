@@ -208,6 +208,7 @@ elseif(USE_CUSTOM_CUDATK)
     CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${REQUIRED_CUDATK_VERSION})
 else()
     msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
+    set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 endif()
 
 # TODO: Disabling JIT optimizations during scripting probably does nothing
