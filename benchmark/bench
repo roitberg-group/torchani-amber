@@ -378,7 +378,14 @@ def run(
                     "sander.MPI",
                 ]
             else:
-                cmd = ["mpirun", "-n", str(config.core_num), "sander.MPI"]
+                cmd = [
+                    "mpirun",
+                    "--mca", "opal_base_help_aggregate", "0",
+                    "--mca", "pml", "ucx",
+                    "--mca", "osc", "ucx",
+                    "--mca", "btl", '"^openbib"',
+                    "sander.MPI",
+                ]
         if verbose:
             console.print(f"{config_idx + 1}/{len(configs)} Running {config}")
         # This requires a version of amber that is hooked with this function
