@@ -9,8 +9,7 @@
 #SBATCH --ntasks={{ core_num }}
 
 module purge
-module load cuda/12.4 gcc/12.2 openmpi/4.1.6 mamba cmake
-mamba activate /blue/roitberg/share/envs/ani-amber-bench
-source /blue/roitberg/share/amber-latest-linked-to-hpg-modules/amber.sh
+mamba activate /blue/roitberg/share/ani-amber-12
+source /blue/roitberg/share/amber-latest/amber.sh
 
 '{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'
