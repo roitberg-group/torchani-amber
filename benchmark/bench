@@ -369,7 +369,7 @@ def run(
         if config.core_num == 1:
             cmd = ["srun", "sander"]
         else:
-            if os.environ["HPC_PMIX"]:
+            if os.environ.get("HPC_PMIX", ""):
                 cmd = [
                     "srun",
                     f"--mpi={os.environ['HPC_PMIX']}",
