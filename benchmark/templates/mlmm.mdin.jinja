@@ -18,8 +18,13 @@
     {# #}
     ioutfm = 1  ! Dump traj as netCDF
     ntxo = 2  ! Dump restart as netCDF
+    {% if dump_traj %}
+    ntwx = 1
+    ntpr = 1
+    {% else %}
     ntwx = {{ tstep_num }}  ! Don't dump traj
     ntpr = {{ tstep_num }}  ! Don't dump mdout logs
+    {% endif %}
     {% if mlmm %}
     ifqnt = 1  ! Use QM/MM
     {% endif %}
