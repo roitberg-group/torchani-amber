@@ -11,7 +11,7 @@
 
 
 module purge
-mamba activate /blue/roitberg/share/ani-amber-12
-source /blue/roitberg/share/amber-latest/amber.sh
+mamba activate /blue/roitberg/share/envs/ani-amber-gcc1104-cuda1204
+source /blue/roitberg/share/amber-latest-dev/amber.sh
 
 '{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'

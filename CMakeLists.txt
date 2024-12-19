@@ -259,6 +259,7 @@ target_compile_definitions(
 target_compile_options(
     cuaev
     PRIVATE
+        $<$<CONFIG:Debug>:"-g">
         $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>
 )
 if(PREFER_CONDA_LIBS)

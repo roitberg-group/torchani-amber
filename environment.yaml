@@ -41,8 +41,7 @@ dependencies:
   # Amber dependencies
   - conda-forge::fftw=3.3.10=mpi_openmpi_hdeb57f9_6  # For Sander / Pmemd
   - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
-  - conda-forge::libpnetcdf  # For cpptraj, "parallel" netCDF
-  - conda-forge::openmpi=4.1.5  # For MNP, Sander-MPI, and Pmemd-MPI
+  - conda-forge::openmpi=4.1.6  # For MNP, Sander-MPI, and Pmemd-MPI
   - conda-forge::ucx  # For openmpi
 
   ## Running torchani-amber/tests ##
