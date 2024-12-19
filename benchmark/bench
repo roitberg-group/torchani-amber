@@ -169,8 +169,14 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
-    cleanup: tpx.Annotated[bool, Option("--cleanup/--no-cleanup"),] = True,
-    dump: tpx.Annotated[bool, Option("--dump/--no-dump"),] = False,
+    cleanup: tpx.Annotated[
+        bool,
+        Option("--cleanup/--no-cleanup"),
+    ] = True,
+    dump: tpx.Annotated[
+        bool,
+        Option("--dump/--no-dump"),
+    ] = False,
     protos: tpx.Annotated[
         tp.Optional[tp.List[Protocol]],
         Option("-p", "--proto"),
@@ -382,10 +388,18 @@ def run(
             else:
                 cmd = [
                     "mpirun",
-                    "--mca", "opal_base_help_aggregate", "0",
-                    "--mca", "pml", "ucx",
-                    "--mca", "osc", "ucx",
-                    "--mca", "btl", '"^openbib"',
+                    "--mca",
+                    "opal_base_help_aggregate",
+                    "0",
+                    "--mca",
+                    "pml",
+                    "ucx",
+                    "--mca",
+                    "osc",
+                    "ucx",
+                    "--mca",
+                    "btl",
+                    '"^openbib"',
                     "sander.MPI",
                 ]
         if verbose:
