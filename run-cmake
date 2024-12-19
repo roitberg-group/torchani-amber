@@ -9,6 +9,7 @@ usage() { echo "Usage: [OPTION]...
     -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch
     -C Don't use Conda libraries
+    -a Builds for archs 6.0, 6.1, 7.0, 7.5, 8.0, 8.9 (auto detect by default)
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
@@ -18,8 +19,9 @@ use_pytorch_libs=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
+torch_cuda_archs=""
 cmake_build_type="Release"
-while getopts "TIBPCgh" o; do
+while getopts "TIBPCagh" o; do
     case "${o}" in
         P)
             use_pytorch_libs=OFF
@@ -41,6 +43,9 @@ while getopts "TIBPCgh" o; do
             ;;
         g)
             cmake_build_type="Debug"
+            ;;
+        a)
+            torch_cuda_archs="6.0;6.1;7.0;7.5;8.0;8.9"
             ;;
         h)
             usage
@@ -77,6 +82,7 @@ cmake \
     -DPREFER_CONDA_LIBS=$use_conda_libs \
     -DDOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
     -DCOMPILE_WITH_CXX11ABI=$use_libtorch \
+    -DTORCH_CUDA_ARCH_LIST=$torch_cuda_archs \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
 
