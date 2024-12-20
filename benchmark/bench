@@ -275,13 +275,14 @@ def run(
         Option("--skip-mm/--no-skip-mm", help="Skip MM"),
     ] = False,
 ) -> None:
+    r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if not slurm:
         if gpu != "default":
             console.print("--gpu requires --slurm", style="red")
             raise Abort()
-    if exclusive and not slurm:
-        console.print("--exclusive requires --slurm", style="red")
-        raise Abort()
+        if exclusive:
+            console.print("--exclusive requires --slurm", style="red")
+            raise Abort()
 
     if gpu == "any":
         gpu = ""
@@ -290,7 +291,6 @@ def run(
     else:
         gpu = f"{gpu}:"
 
-    r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if bench_dir is None:
         kind = "serial" if core_num == 1 else "mpi"
         dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
@@ -309,11 +309,16 @@ def run(
     if slurm:
         arg_list = sys.argv[1:]
         for j, arg in enumerate(deepcopy(arg_list)):
-            if arg in ["-s", "--selection", "--system"]:
+            if arg in ["--gpu"]:
+                arg_list[j + 1] = ""
+            elif arg in ["-s", "--selection", "--system"]:
                 # re-introduce quotes in the selections and system
                 arg_list[j + 1] = f"'{arg_list[j + 1]}'"
+
         args = " ".join(arg_list)
         args = args.replace(" --slurm", "")
+        args = args.replace(" --gpu", "")
+        args = args.replace(" --exclusive", "")
         tmpl = env.get_template("hpg.slurm.sh.jinja").render(
             cli_app_dir=str(this_dir),
             gpu=gpu,
@@ -373,6 +378,9 @@ def run(
                 ),
             )
         )
+    if not configs:
+        console.print("No compatible configs found", style="red")
+        raise Abort()
 
     if verbose:
         console.print(
