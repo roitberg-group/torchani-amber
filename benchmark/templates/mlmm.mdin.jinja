@@ -71,10 +71,17 @@
     {# #}
     {# Ouptut #}
     {# #}
+    {% if dump_traj %}
+    write_charges = .True.
+    write_charges_grad = .True.
+    write_forces = .True.
+    write_xyz = .True.
+    {% else %}
     write_charges = .False.
     write_charges_grad = .False.
     write_forces = .False.
     write_xyz = .False.
+    {% endif %}
 /
 {% endif %}
 ! End TorchANI-Amber test input

@@ -66,6 +66,12 @@ done
 src_dir=$( cd -- "$(dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 bld_dir="$src_dir/build"
 
+if [ "$use_conda_libs" = "ON" ]; then
+    export CFLAGS="-isystem $CONDA_PREFIX/include"
+    export CXXFLAGS="-isystem $CONDA_PREFIX/include"
+    export FFLAGS="-isystem $CONDA_PREFIX/include"
+fi
+
 # Paths to conda compilers are automatically detected by CMake
 cmake \
     -S"$src_dir" \
