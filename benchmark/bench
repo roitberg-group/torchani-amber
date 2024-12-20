@@ -169,6 +169,7 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
+    gpu: tpx.Annotated[str, Option("--gpu")] = "default",
     cleanup: tpx.Annotated[
         bool,
         Option("--cleanup/--no-cleanup"),
@@ -268,6 +269,18 @@ def run(
         Option("--skip-mm/--no-skip-mm", help="Skip MM"),
     ] = False,
 ) -> None:
+    if slurm:
+        if gpu != "default":
+            console.print("--gpu requires --slurm", style="red")
+            raise Abort()
+
+    if gpu == "any":
+        gpu = ""
+    elif gpu == "default":
+        gpu = "geforce:"
+    else:
+        gpu = f"{gpu}:"
+
     r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if bench_dir is None:
         kind = "serial" if core_num == 1 else "mpi"
@@ -294,6 +307,7 @@ def run(
         args = args.replace(" --slurm", "")
         tmpl = env.get_template("hpg.slurm.sh.jinja").render(
             cli_app_dir=str(this_dir),
+            gpu=gpu,
             core_num=core_num,
             args=args,
             bench_dir=str(bench_dir),
@@ -389,9 +403,6 @@ def run(
                 cmd = [
                     "mpirun",
                     "--mca",
-                    "opal_base_help_aggregate",
-                    "0",
-                    "--mca",
                     "pml",
                     "ucx",
                     "--mca",
@@ -399,7 +410,7 @@ def run(
                     "ucx",
                     "--mca",
                     "btl",
-                    '"^openbib"',
+                    '"^openib"',
                     "sander.MPI",
                 ]
         if verbose:
