@@ -7,7 +7,9 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=1
 #SBATCH --ntasks={{ core_num }}
-
+{% if exclusive %}
+#SBATCH --exclusive
+{% endif %}
 
 
 module purge

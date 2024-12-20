@@ -169,6 +169,12 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
+    exclusive: tpx.Annotated[
+        bool,
+        Option(
+            "--exclusive",
+        ),
+    ] = False,
     gpu: tpx.Annotated[str, Option("--gpu")] = "default",
     cleanup: tpx.Annotated[
         bool,
@@ -269,10 +275,13 @@ def run(
         Option("--skip-mm/--no-skip-mm", help="Skip MM"),
     ] = False,
 ) -> None:
-    if slurm:
+    if not slurm:
         if gpu != "default":
             console.print("--gpu requires --slurm", style="red")
             raise Abort()
+    if exclusive and not slurm:
+        console.print("--exclusive requires --slurm", style="red")
+        raise Abort()
 
     if gpu == "any":
         gpu = ""
@@ -308,6 +317,7 @@ def run(
         tmpl = env.get_template("hpg.slurm.sh.jinja").render(
             cli_app_dir=str(this_dir),
             gpu=gpu,
+            exclusive=exclusive,
             core_num=core_num,
             args=args,
             bench_dir=str(bench_dir),
