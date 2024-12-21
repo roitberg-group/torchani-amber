@@ -407,7 +407,7 @@ def run(
         shutil.copy(systems_dir / f"{config.system}.prmtop", config_dir / "prmtop")
         (config_dir / "mdin").write_text(input_as_str)
         if config.core_num == 1:
-            cmd = ["srun", "sander"]
+            cmd = ["sander"]
         else:
             if os.environ.get("HPC_PMIX", ""):
                 cmd = [
