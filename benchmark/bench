@@ -169,6 +169,13 @@ def run(
             help="Generate a sbatch file and execute it (specific for HPG)",
         ),
     ] = False,
+    modules: tpx.Annotated[
+        bool,
+        Option(
+            "--modules",
+            help="Run version compiled with modules",
+        ),
+    ] = False,
     exclusive: tpx.Annotated[
         bool,
         Option(
@@ -277,6 +284,9 @@ def run(
 ) -> None:
     r"""Run Sander or Sander-MPI ML/MM benchmarks"""
     if not slurm:
+        if modules:
+            console.print("--modules requires --slurm", style="red")
+            raise Abort()
         if gpu != "default":
             console.print("--gpu requires --slurm", style="red")
             raise Abort()
@@ -319,9 +329,11 @@ def run(
         args = args.replace(" --slurm", "")
         args = args.replace(" --gpu", "")
         args = args.replace(" --exclusive", "")
+        args = args.replace(" --modules", "")
         tmpl = env.get_template("hpg.slurm.sh.jinja").render(
             cli_app_dir=str(this_dir),
             gpu=gpu,
+            modules=modules,
             exclusive=exclusive,
             core_num=core_num,
             args=args,
@@ -420,6 +432,9 @@ def run(
             else:
                 cmd = [
                     "mpirun",
+                    "--report-bindings",
+                    "--bind-to",
+                    "core",
                     "--mca",
                     "pml",
                     "ucx",

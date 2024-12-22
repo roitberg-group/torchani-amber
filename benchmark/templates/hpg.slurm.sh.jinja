@@ -11,9 +11,15 @@
 #SBATCH --exclusive
 {% endif %}
 
-
 module purge
-mamba activate /blue/roitberg/share/envs/ani-amber-gcc1104-cuda1204
+{% if modules %}
+module load cuda/12.4 gcc/12.2 openmpi/4.1.6 conda/24.7 cmake
+conda activate /blue/roitberg/share/envs/ani-amber-bench
+source /blue/roitberg/share/amber-latest-mods/amber.sh
+{% else %}
+module load conda/24.7
+conda activate /blue/roitberg/share/envs/ani-amber-gcc1104-cuda1204
 source /blue/roitberg/share/amber-latest-dev/amber.sh
+{% endif %}
 
 '{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'
