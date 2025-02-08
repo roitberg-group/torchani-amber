@@ -74,3 +74,8 @@ dependencies:
 
   # TorchANI-Amber specific
   - conda-forge::cmake=3.31.1
+
+  # Extra
+  - tinydb
+  - pyyaml  # for mdrun
+  - netCDF4
