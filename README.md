@@ -159,9 +159,6 @@ There are also some advanced options:
    Whether to use the cuAEV cuda extension to accelerate potentials that support it.
 - `use_amber_neighborlist` (bool)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
-- `use_torch_cell_list` (bool)
-   Whether to use the TorchANI `CellList` to accelerate internal neighborlist
-   calculations.
 - `model_index` (int)
    Select a specific model (0-indexed) from a model ensemble. The default is to use the
    whole ensemble (set to -1). We recommend you do *not* set this flag unless you know
@@ -399,7 +396,7 @@ distortion contribution only, use both `mlmm_coupling = 1` and `distortion_k = 0
 The other extra available *advanced* options are, in format `<option> = <default>  (type)`:
 
 General:
-- `use_numerical_qmmm_ofrces = .false.` (bool)
+- `use_numerical_qmmm_forces = .false.` (bool)
    Wheter to calculate the ML/MM coupling numerically.
 - `use_charges_derivatives = .true.` (bool)
    Only used if `use_torchani_charges=.true.`. It consideres the predicted charges
