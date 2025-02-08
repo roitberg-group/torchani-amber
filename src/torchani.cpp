@@ -28,7 +28,7 @@ torch::Tensor torchani_atomic_numbers;
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
 std::vector<std::string> torchani_builtin_models = {
-    "ani1x", "ani1ccx", "ani2x", "animbis", "anidr", "aniala"
+    "ani1x", "ani1ccx", "ani2x", "ani2xr", "ani2dr", "animbis", "aniala"
 };
 }  // namespace
 
