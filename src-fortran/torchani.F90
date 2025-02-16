@@ -7,7 +7,7 @@ public :: &
     torchani_init_model, &
     torchani_energy_force, &
     torchani_energy_force_from_external_neighbors, &
-    torchani_energy_force_pbc, &
+    torchani_bonded_energy_force_pbc, &
     torchani_energy_force_qbc, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
@@ -115,6 +115,24 @@ subroutine torchani_energy_force_pbc( &
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     real(c_double), intent(in) :: cell(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+endsubroutine
+
+subroutine torchani_bonded_energy_force_pbc( &
+    num_atoms, &
+    coords, &
+    cell, &
+    molecule_idxs, &
+    forces, &
+    potential_energy &
+) bind(c, name="torchani_bonded_energy_force_pbc")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy

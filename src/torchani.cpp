@@ -45,7 +45,26 @@ std::vector<torch::jit::IValue> setup_inputs_pbc(
         /* pbc= */ config.enabled_pbc(),
         /* charge= */ 0,
         /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values
+        /* ensemble_values= */ ensemble_values,
+        torch::indexing::None
+    };
+}
+
+std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
+    torch::Tensor& coords, torch::Tensor& cell, torch::Tensor& molecule_idxs, bool ensemble_values = false
+) {
+    // Create a vector of input values, jit::script::Module
+    // classes accept and return values of ONLY type torch::jit::IValue so
+    // any tensor passed to them has to be wrapped in this
+    // return by value is OK since inputs is locally created
+    return {
+        std::tuple{torchani_atomic_numbers, coords},
+        /* cell= */ cell,
+        /* pbc= */ config.enabled_pbc(),
+        /* charge= */ 0,
+        /* atomic= */ false,
+        /* ensemble_values= */ ensemble_values,
+        /* molecule_idxs */ molecule_idxs
     };
 }
 
@@ -63,7 +82,8 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(
         /* pbc= */ torch::indexing::None,
         /* charge= */ 0,
         /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values
+        /* ensemble_values= */ ensemble_values,
+        torch::indexing::None
     };
 }
 
@@ -453,6 +473,38 @@ void torchani_energy_force_from_external_neighbors(
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
         << "TORCHANI-AMBER: energy force external neighbors time"
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
+            1000
+        << "ms" << std::endl;
+#endif
+}
+
+
+void torchani_bonded_energy_force_pbc(
+    int num_atoms,
+    double coords_buf[][3],
+    double cell_buf[][3],
+    int* molecule_idxs_buf,
+    double forces_buf[][3],
+    double* potential_energy
+) {
+#ifdef TIMING
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
+    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
+    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
+    torch::Tensor molecule_idxs = int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
+    // Inputs are setup with PBC
+    std::vector<torch::jit::IValue> inputs = setup_inputs_only_bonded_pbc(coords, cell, molecule_idxs);
+    torch::jit::IValue output = model.forward(inputs);
+    validate_model_output(output, 2);
+    torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
+    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
+    populate_potential_energy(energy, potential_energy);
+#ifdef TIMING
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout
+        << "TORCHANI-AMBER: energy force PBC time"
         << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
             1000
         << "ms" << std::endl;
