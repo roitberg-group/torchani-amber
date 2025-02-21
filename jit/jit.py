@@ -27,7 +27,19 @@ class ModelSpec:
 def _check_which_models_need_compilation(
     force_recompilation: bool,
 ) -> tp.List[ModelSpec]:
-    model_names = ("ANI1x", "ANI1ccx", "ANI2x", "ANIala", "ANImbis", "ANI2dr", "ANI2xr")
+    model_names = (
+        "ANI1x",
+        "ANI1ccx",
+        "ANI2x",
+        "ANIala",
+        "ANImbis",
+        "ANI2dr",
+        "ANI2xr",
+        "ANIr2s",
+        "ANIr2s_water",
+        "ANIr2s_ch3cn",
+        "ANIr2s_chcl3",
+    )
 
     specs = []
     for name in model_names:
