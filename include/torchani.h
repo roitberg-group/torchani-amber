@@ -52,6 +52,16 @@ void torchani_energy_force_qbc(
     double* potential_energy  // Scalar
 );
 
+void torchani_bonded_energy_force_pbc(
+    int num_atoms,
+    double coords[][3],  // Shape (num_atoms, 3)
+    double cell[][3],  // Shape (3, 3)
+    int* molecule_idxs_buf, // Shape (num_atoms,)
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double* potential_energy  // Scalar
+);
+
 void torchani_energy_force_pbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
