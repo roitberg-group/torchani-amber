@@ -1,0 +1,12 @@
+c_compiler_version:
+  - 12.2
+cxx_compiler_version:
+  - 12.2
+pytorch:
+  - 2.5
+python:
+  - 3.11
+cuda:
+  - 12.4
+numpy:
+  - 2.1
