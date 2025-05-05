@@ -9,12 +9,12 @@ from neurochem_calculator import calc, path
 
 keep_ratio = 0.01  # reduce the size of generated file by discarding
 mol_count = 0
-with open(os.path.join(path, 'nist-dataset/result.json')) as f:
+with open(os.path.join(path, "nist-dataset/result.json")) as f:
     pickle_objects = []
-    for i in tqdm.tqdm(json.load(f), desc='Optim'):
+    for i in tqdm.tqdm(json.load(f), desc="Optim"):
         if random.random() > keep_ratio:
             continue
-        atoms = i['atoms']
+        atoms = i["atoms"]
         natoms = len(atoms)
         species = []
         coordinates = []
@@ -23,13 +23,12 @@ with open(os.path.join(path, 'nist-dataset/result.json')) as f:
             coordinates.append([x, y, z])
         mol = ase.Atoms(species, positions=coordinates)
         mol.calc = calc()
-        opt = BFGS(mol, logfile='/dev/null')
+        opt = BFGS(mol, logfile="/dev/null")
         opt.run()
         mol.calc = None
         pickle_objects.append(mol)
         mol_count += 1
 
-    dumpfile = os.path.join(
-        path, '../../tests/resources/NeuroChemOptimized/all')
-    with open(dumpfile, 'wb') as bf:
+    dumpfile = os.path.join(path, "../../tests/resources/NeuroChemOptimized/all")
+    with open(dumpfile, "wb") as bf:
         pickle.dump(pickle_objects, bf)

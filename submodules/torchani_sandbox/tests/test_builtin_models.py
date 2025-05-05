@@ -3,10 +3,7 @@ import unittest
 import torch
 
 from torchani._testing import ANITestCase, expand
-from torchani.models import (
-    ANI1x, ANI2x, ANIdr, ANImbis,
-    ANI2xr, ANI2dr, ANIr2s
-)
+from torchani.models import ANI1x, ANI2x, ANIdr, ANImbis, ANI2xr, ANI2dr, ANIr2s
 from torchani.datasets import batch_all_in_ram, TestData
 from torchani.neighbors import compute_bounding_cell, reconstruct_shifts
 

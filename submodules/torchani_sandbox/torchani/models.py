@@ -437,7 +437,7 @@ def ANIr2s_ch3cn(
         periodic_table_index,
         device,
         dtype,
-        solvent="ch3cn"
+        solvent="ch3cn",
     )
 
 
@@ -456,7 +456,7 @@ def ANIr2s_chcl3(
         periodic_table_index,
         device,
         dtype,
-        solvent="chcl3"
+        solvent="chcl3",
     )
 
 
@@ -475,7 +475,7 @@ def ANIr2s_water(
         periodic_table_index,
         device,
         dtype,
-        solvent="water"
+        solvent="water",
     )
 
 
@@ -490,7 +490,7 @@ def SnnANI2xr(
     r"""Custom ANI model"""
     model = simple_ani(
         lot="wb97x-631gd",
-        symbols=['H', 'C', 'N', 'O', 'F', 'S', 'Cl'],
+        symbols=["H", "C", "N", "O", "F", "S", "Cl"],
         ensemble_size=8,
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,

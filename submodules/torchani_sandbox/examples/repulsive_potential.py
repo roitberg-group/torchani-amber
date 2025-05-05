@@ -42,9 +42,7 @@ print("Repulsion Energy:", rep_energy)
 print("Force:", force.squeeze())
 
 # Different supported species can be passed down to the constructor
-rep = RepulsionXTB(cutoff=5.2, symbols=("H", "C", "N", "O", "S", "Fe")).to(
-    device
-)
+rep = RepulsionXTB(cutoff=5.2, symbols=("H", "C", "N", "O", "S", "Fe")).to(device)
 # Here we change the species a bit to make a nonesense molecule
 coordinates = torch.tensor(
     [

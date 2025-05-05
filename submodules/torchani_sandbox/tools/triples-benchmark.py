@@ -152,7 +152,6 @@ def run(
 
 @app.command()
 def plot() -> None:
-
     def prettify(label) -> str:
         return f"{label.replace('aev', 'AEV')} fwd + bwd"
 

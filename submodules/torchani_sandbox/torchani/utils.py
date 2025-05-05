@@ -215,7 +215,7 @@ def pad_atomic_properties(
         for n, x in zip(num_molecules, properties):
             original_size = x[k].shape[1]
             # here x[k] is implicitly cast to long if it has another integer type
-            output[k][index0:index0 + n, 0:original_size, ...] = x[k]
+            output[k][index0 : index0 + n, 0:original_size, ...] = x[k]
             index0 += n
     return output
 
@@ -604,6 +604,4 @@ def _validate_user_kwargs(
             )
 
     if not set(trainable).issubset(kwargs_set):
-        raise ValueError(
-            f"trainable={trainable} could not be found in {kwargs_set}"
-        )
+        raise ValueError(f"trainable={trainable} could not be found in {kwargs_set}")

@@ -12,7 +12,12 @@ class TestNNContainers(ANITestCase):
     def setUp(self) -> None:
         self.symbols = SYMBOLS_1X
         seed = 1234
-        self.idxs = make_elem_idxs(2, 4, self.symbols, seed=seed,)
+        self.idxs = make_elem_idxs(
+            2,
+            4,
+            self.symbols,
+            seed=seed,
+        )
         self.idxs[0, 1] = -1
         self.idxs[1, 2] = -1
         self.in_dim = 300

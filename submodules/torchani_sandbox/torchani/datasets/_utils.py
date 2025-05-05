@@ -90,9 +90,7 @@ def _fetch_and_create_builtin_dataset(
     )
 
     # Order dataset paths using the order given in "files and md5s"
-    filenames_order = {
-        Path(k).stem: j for j, k in enumerate(files_and_md5s.keys())
-    }
+    filenames_order = {Path(k).stem: j for j, k in enumerate(files_and_md5s.keys())}
     filenames_and_paths = sorted(
         [(p.stem, p) for p in sorted(dest_dir.glob(f"*{suffix}"))],
         key=lambda tup: filenames_order[tup[0]],

@@ -49,7 +49,6 @@ class TestCustomPotential(ANITestCase):
         self.assertEqual(forces_expect, forces)
 
     def _makeCustomPot(self, trainable: tp.Sequence[str] = ()) -> PairPotential:
-
         class Square(PairPotential):
             tensors = ["bias"]  # Vectors (all with the same len) or scalars
             elem_tensors = ["pair_bias"]

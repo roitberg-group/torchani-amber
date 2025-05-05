@@ -83,15 +83,15 @@ def plot(
         "angstrom": r"\AA",
         "bohr": r"a_0",
     }[runits.lower()]
-    ax.set_xlabel(r"Inter atomic distance, $\left("f"{runit_sym}"r"\right)$")
+    ax.set_xlabel(r"Inter atomic distance, $\left(" f"{runit_sym}" r"\right)$")
     eunit_sym = {
         "hartree": r"E_h",
         "ev": r"\mathrm{eV}",
         "kcalpermol": r"\text{kcal}/\text{mol}",
     }[eunits.lower()]
-    ax.set_ylabel(r"Energy, $\left("f"{eunit_sym}"r"\right)$")
+    ax.set_ylabel(r"Energy, $\left(" f"{eunit_sym}" r"\right)$")
     if force:
-        ax.set_ylabel(r"Force, $\left("f"{eunit_sym}/{runit_sym}"r"\right)$")
+        ax.set_ylabel(r"Force, $\left(" f"{eunit_sym}/{runit_sym}" r"\right)$")
     if ylog:
         ax.set_yscale("log")
     ax.set_ylim(ymin, ymax)

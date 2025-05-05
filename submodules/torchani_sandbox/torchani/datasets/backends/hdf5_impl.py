@@ -195,9 +195,9 @@ class _HDF5ConformerGroup(_ConformerWrapper[h5py.Group]):
         h5_dataset = self._data[p]
         h5_dataset.resize(h5_dataset.shape[0] + v.shape[0], axis=0)
         try:
-            h5_dataset[-v.shape[0]:] = v
+            h5_dataset[-v.shape[0] :] = v
         except TypeError:
-            h5_dataset[-v.shape[0]:] = v.astype(bytes)
+            h5_dataset[-v.shape[0] :] = v.astype(bytes)
 
     def __setitem__(self, p: str, data: NDArray[tp.Any]) -> None:
         # This correctly handles strings and make the first axis resizable

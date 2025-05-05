@@ -65,7 +65,6 @@ class TestCompile(ANITestCasePT2):
 
 
 class TestExport(ANITestCasePT2):
-
     def testRadial(self) -> None:
         neighbors = make_neighbors(10, seed=1234)
         mod = ANIRadial.like_1x()
@@ -132,9 +131,7 @@ class TestExport(ANITestCasePT2):
         _ = torch.export.export(
             m,
             args=(tuple(neighbors),),
-            dynamic_shapes={
-                "neighbors": ((stat, pairs), (pairs,), (pairs, stat))
-            },
+            dynamic_shapes={"neighbors": ((stat, pairs), (pairs,), (pairs, stat))},
         )
 
     @unittest.skipIf(True, "Currently fails due to pbc.any() control flow")

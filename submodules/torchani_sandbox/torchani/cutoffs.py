@@ -81,6 +81,7 @@ class CutoffSmooth(Cutoff):
 # Not meant for users
 class _AltCutoffSmooth(Cutoff):
     r""":meta private:"""
+
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         e = -1.0 / (1.0 - (distances / cutoff).clamp(0, 1.0 - 1e-4).pow(2))
         return torch.exp(e) / 0.3678794411714423

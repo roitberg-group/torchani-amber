@@ -10,12 +10,12 @@ import random
 neurochem = NeuroChem()
 keep_ratio = 0.1  # reduce the size of generated file by discarding
 mol_count = 0
-with open(os.path.join(path, 'nist-dataset/result.json')) as f:
+with open(os.path.join(path, "nist-dataset/result.json")) as f:
     pickle_objects = []
-    for i in tqdm.tqdm(json.load(f), desc='NIST'):
+    for i in tqdm.tqdm(json.load(f), desc="NIST"):
         if random.random() > keep_ratio:
             continue
-        atoms = i['atoms']
+        atoms = i["atoms"]
         natoms = len(atoms)
         species = []
         coordinates = []
@@ -26,7 +26,6 @@ with open(os.path.join(path, 'nist-dataset/result.json')) as f:
         pickle_objects.append(pickleobj)
         mol_count += 1
 
-    dumpfile = os.path.join(
-        path, '../../tests/resources/NIST/all')
-    with open(dumpfile, 'wb') as bf:
+    dumpfile = os.path.join(path, "../../tests/resources/NIST/all")
+    with open(dumpfile, "wb") as bf:
         pickle.dump(pickle_objects, bf)

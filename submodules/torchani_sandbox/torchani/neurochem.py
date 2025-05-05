@@ -317,9 +317,7 @@ def load_member(symbols: tp.Sequence[str], model_dir: StrPath) -> ANINetworks:
     )
 
 
-def load_ensemble(
-    symbols: tp.Sequence[str], prefix: StrPath, count: int
-) -> Ensemble:
+def load_ensemble(symbols: tp.Sequence[str], prefix: StrPath, count: int) -> Ensemble:
     r"""Loads `torchani.nn.Ensemble` from NeuroChem's dirs with a given prefix
 
     Args:

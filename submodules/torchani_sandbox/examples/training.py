@@ -17,6 +17,7 @@ from torchani.arch import ANI, simple_ani
 from torchani.datasets import ANIDataset, ANIBatchedDataset, BatchedDataset
 from torchani.units import hartree2kcalpermol
 from torchani.grad import forces_for_training
+
 # %%
 # Device and dataset to run the training
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

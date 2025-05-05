@@ -43,7 +43,7 @@ aevs[0, 0, :5].tolist()
 # %%
 # The first 5 angular terms of the first atom:
 radial_len = aevcomp.radial_len
-aevs[0, 0, radial_len:radial_len + 5].tolist()
+aevs[0, 0, radial_len : radial_len + 5].tolist()
 # %%
 # Suppose we want to make one that is essentially the same, but using a different cutoff
 # function, such as a smooth cutoff
@@ -66,7 +66,7 @@ aevs[0, 0, :5].tolist()
 # %%
 # The first 5 angular terms of the first atom:
 radial_len = aevcomp_smooth.radial_len
-aevs[0, 0, radial_len:radial_len + 5].tolist()
+aevs[0, 0, radial_len : radial_len + 5].tolist()
 # %%
 # Lets say now we want to experiment with a different cutoff function, such as a
 # biweight cutoff. Since biweight is not coded in TorchANI we can code it ourselves and
@@ -93,7 +93,7 @@ aevs[0, 0, :5].tolist()
 # %%
 # The first 5 angular terms of the first atom:
 radial_len = aevcomp_biweight.radial_len
-aevs[0, 0, radial_len:radial_len + 5].tolist()
+aevs[0, 0, radial_len : radial_len + 5].tolist()
 # %%
 # Lets try something a bit more complicated. Lets experiment with different 2-body and
 # 3-body terms. Our 3-body terms will include a term ``exp(-eta_a * (cos(theta) -
@@ -168,4 +168,4 @@ aevs[0, 0, :5].tolist()
 # %%
 # The first 5 angular terms of the first atom:
 radial_len = custom_aev.radial_len
-aevs[0, 0, radial_len:radial_len + 5].tolist()
+aevs[0, 0, radial_len : radial_len + 5].tolist()

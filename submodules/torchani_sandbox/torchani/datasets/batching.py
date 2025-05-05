@@ -78,7 +78,7 @@ class BatchedDataset(torch.utils.data.Dataset[Conformers]):
         elif isinstance(limit, int):
             if not (0 <= limit <= len(batches)):
                 raise ValueError("limit must lie in (0, num_batches)")
-            batches = batches[: limit]
+            batches = batches[:limit]
         return batches
 
 
@@ -442,7 +442,7 @@ class Batcher:
         conformer_blocks = torch.chunk(conformer_idxs, folds)
         for i in range(folds):
             ith_valid_div = conformer_blocks[i]
-            ith_train_div = torch.cat(conformer_blocks[:i] + conformer_blocks[i + 1:])
+            ith_train_div = torch.cat(conformer_blocks[:i] + conformer_blocks[i + 1 :])
             train = f"training{i}"
             valid = f"validation{i}"
             divs.extend(
@@ -501,7 +501,7 @@ class Batcher:
                 for j in range(0, num_batches, step):
                     packets.append(
                         torch.cat(
-                            batches[j:j + step],
+                            batches[j : j + step],
                             dim=0,
                         )
                     )

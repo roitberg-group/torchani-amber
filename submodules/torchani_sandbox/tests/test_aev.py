@@ -29,7 +29,7 @@ class _TestAEVBase(TestCase):
 
     def assertAEVEqual(self, expected_radial, expected_angular, aev):
         radial = aev[..., : self.radial_len]
-        angular = aev[..., self.radial_len:]
+        angular = aev[..., self.radial_len :]
         if self._debug_aev:
             aid = 1
             print(torch.stack([expected_radial[0, aid, :], radial[0, aid, :]]))
@@ -220,7 +220,7 @@ class TestAEV(_TestAEVBase):
         for expected_radial, expected_angular in radial_angular:
             conformations = expected_radial.shape[0]
             atoms = expected_radial.shape[1]
-            aev_ = aev[start:(start + conformations), 0:atoms]
+            aev_ = aev[start : (start + conformations), 0:atoms]
             start += conformations
             self.assertAEVEqual(expected_radial, expected_angular, aev_)
 

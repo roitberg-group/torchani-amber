@@ -220,7 +220,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
                     splits = torch.split(conformers.pop(k), max_size)
                 else:
                     splits = tuple(
-                        conformers[k][j:j + max_size]
+                        conformers[k][j : j + max_size]
                         for j in range(0, len(conformers[k]), max_size)
                     )
                 splitted_conformers.update({k: splits})
@@ -820,10 +820,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         self._check_unique_element_key()
         new_ds = _ANISubdataset(
-            "tmp",
-            "by_num_atoms",
-            self._store.backend,
-            verbose=False
+            "tmp", "by_num_atoms", self._store.backend, verbose=False
         )
         try:
             with new_ds.keep_open("r+") as rwds:

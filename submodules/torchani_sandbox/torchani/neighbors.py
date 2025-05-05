@@ -34,8 +34,10 @@ def discard_inter_molecule_pairs(
     r"""Discard neighbors that don't belong to the same molecule"""
     molecule_neighbor_idxs = molecule_idxs[neighbors.indices]
     internal_idxs = (
-        molecule_neighbor_idxs[0, :] == molecule_neighbor_idxs[1, :]
-    ).nonzero().view(-1)
+        (molecule_neighbor_idxs[0, :] == molecule_neighbor_idxs[1, :])
+        .nonzero()
+        .view(-1)
+    )
     indices = neighbors.indices.index_select(1, internal_idxs)
     distances = neighbors.distances.index_select(0, internal_idxs)
     diff_vectors = neighbors.diff_vectors.index_select(0, internal_idxs)

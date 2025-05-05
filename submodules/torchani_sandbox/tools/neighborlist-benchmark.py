@@ -145,7 +145,6 @@ def run(
 
 @app.command()
 def plot() -> None:
-
     def prettify(label) -> str:
         return "".join(s.capitalize() for s in label.replace("-nopbc", "").split("_"))
 

@@ -69,11 +69,10 @@ enough, it is tested with 11.4). A tested GCC version is included in the
    use this cmake configuration as a template to generate the buildsystem.
     ```bash
     cmake \
-        -S./amber-src-dir/ \
-        -B./amber-build-dir/ \
-        -DCMAKE_INSTALL_PREFIX=/amber-install-dir/ \
-        -DCMAKE_PREFIX_PATH=$HOME/.local/ \
+        ...
+        -DCMAKE_PREFIX_PATH=$HOME/.local/
         -DCOMPILER=GNU
+        ...
     ```
 <!-- Is it a problem to use amber's miniconda / python? maybe not? -->
 
@@ -82,36 +81,11 @@ binaries *will depend on the torchani libraries being present to run correctly*.
 is true even when running CPU-only calculations, or calculations that don't use torchani
 at all.
 
-## Details on building Amber
-
-When building Amber make sure that:
-
-- You are *not* using `conda`'s compilers to build `Amber` (the ones provided by default
-  in the env). Currently there are some incompatiblities with internal Amber libraries,
-  which means some `sander` and `pmemd` features will not work if you do this (e.g.
-  netCDF output).
-- The install prefix for `TorchANI-Amber` is in the `cmake` search path.
-  If `TorchANI-Amber` was installed to `~/.local/lib` (the default, which doesn't need `sudo`).
-  you may need to add `CMAKE_PREFIX_PATH=${HOME}/.local/`. If this is correctly done,
-  then `Torchani` will show up in the list of enabled software that Amber prints
-  when installing.
-
-## About CUDA and LD_LIBRARY_PATH
-
-TODO: Double check this.
-
-TorchANI-Amber is tested with a specific version of the CUDA Toolkit. It is recommended
-that the CUDA Toolkit be installed using *conda* (or *mamba*) as in the provided
-installation instructions. When installing the library or running the executables,
-however, the paths to the correct CUDA Toolkit's linked libraries may be overriden if
-the system has a different Toolkit available.
-
-This should not cause problems in principle, since the libraries will only be overriden
-*if they are compatible*, if you want to avoid this you can remove the CUDA Toolkit libs
-from `LD_LIBRARY_PATH` before building the library or running Sander or Pmemd.
-
-Note that this situation is pretty rare, most probably you will not experience any
-issues regarding this.
+When building Amber make sure that the install prefix for `TorchANI-Amber` is in the
+`cmake` search path. If `TorchANI-Amber` was installed to `~/.local/lib` (the default,
+which doesn't need `sudo`). you may need to add `CMAKE_PREFIX_PATH=${HOME}/.local/`. If
+this is correctly done, then `Torchani` will show up in the list of enabled software
+that Amber prints when installing.
 
 ## LibTorch (C++) and PyTorch (Python) compatibility
 
@@ -121,8 +95,8 @@ if that is the case.
 
 Its important that the TorchANI models used are JIT-compiled using the same PyTorch
 version as the LibTorch version linked to the libraries. For example, if
-`torch.__version__ == 2.5` for TorchANI, then the linked LibTorch must also be 2.5,
-otherwise LibTorch may fail to load the models, or load it incorrectly.
+`torch.__version__ == 2.6` for TorchANI, then the linked LibTorch must also be 2.6,
+otherwise LibTorch may fail to load the models, or load them incorrectly.
 
 ## CPU-only support
 
