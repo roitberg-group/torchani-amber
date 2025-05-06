@@ -61,6 +61,7 @@ For more details consult the examples documentation
     submodel = model[0]
 """
 
+from pathlib import Path
 import typing as tp
 import importlib
 
@@ -242,7 +243,10 @@ def ANImbis(
     shifter_state_dict = {
         "self_energies": ani2x_state_dict["energy_shifter.self_energies"]
     }
-    charge_nn_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=True)
+    charge_nn_state_dict = _fetch_state_dict(
+        str((Path(__file__).parent / "resources") / "charge_nn_state_dict.pt"),
+        local=True,
+    )
     model.energy_shifter.load_state_dict(shifter_state_dict)
     model.potentials["nnp"].aev_computer.load_state_dict(aev_state_dict)
     model.potentials["nnp"].neural_networks.load_state_dict(energy_nn_state_dict)
