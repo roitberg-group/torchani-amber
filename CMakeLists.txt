@@ -50,6 +50,8 @@ set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. On
 set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Require this version of the CUDA Toolkit")
 set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Require this version of the cuDNN library")
 
+option(USE_PUBLIC_SANDBOX "Use public sandbox" ON)
+
 # Validate options
 if(LINK_TO_PYTORCH_LIBS AND DOWNLOAD_AND_INSTALL_LIBTORCH)
     msg_error("'LINK_TO_PYTORCH_LIBS' is incompatible with 'DOWNLOAD_AND_INSTALL_LIBTORCH'")
@@ -232,7 +234,11 @@ find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
 # Build both libcuaev and libtorchani
-set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+if(USE_PUBLIC_SANDBOX)
+    set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox_pub/torchani/csrc")
+else()
+    set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+endif()
 add_library(
     cuaev
     SHARED

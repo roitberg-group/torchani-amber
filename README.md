@@ -47,7 +47,7 @@ enough, it is tested with 11.4). A tested GCC version is included in the
     ```
 3. Install TorchANI (python), together with its compiled extensions
     ```bash
-    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox
+    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox_pub
     ```
 4. Build and install TorchANI-Amber using the `run-cmake` script
     *ADVANCED:* If you want to perform your custom modifications to the build, this is
