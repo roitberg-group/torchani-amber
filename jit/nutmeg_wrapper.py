@@ -92,5 +92,5 @@ for size in ("small", "medium"):
     torch.jit.save(torch.jit.script(model), out_dir / f"nutmeg-{size}.pt")
 
 # model.set_atomic_charges(
-    # list(map(float, Path("./ace-ala-nme.charge").read_text().split()))
+# list(map(float, Path("./ace-ala-nme.charge").read_text().split()))
 # )

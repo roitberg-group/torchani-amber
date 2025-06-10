@@ -26,8 +26,10 @@ from torchani.neighbors import (
 from torchani.arch import Assembler, ANIq
 from torchani.utils import SYMBOLS_2X
 from torchani.nn._internal import _ANINetworksDiscardFirstScalar, _ZeroANINetworks
+
 try:
     from aimnet2calc.aimnet2ase import AIMNet2ASE
+
     AIMNET2CALC_AVAIL = True
 except ImportError:
     AIMNET2CALC_AVAIL = True
@@ -320,7 +322,8 @@ class AimNet2Mbis(AimNet2Wrapper):
         )
 
         elem_idxs = self._charge_model.species_converter(
-            species, nop=False,
+            species,
+            nop=False,
         )
         # Run charge model only
         atomic_charges = self._charge_model.compute_from_neighbors(
