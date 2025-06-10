@@ -293,15 +293,6 @@ void validate_model_output(
     }
 }
 
-bool model_has_method(std::string name) {
-    try {
-        model.get_method(name);
-        return true;
-    } catch (const c10::Error& e) {
-        return false;
-    }
-}
-
 extern "C" {
 void torchani_init_model(
     int num_atoms,
@@ -421,7 +412,7 @@ void torchani_init_model(
 
     // Set the correct model configuration
     if (network_index != -1) {
-        if (model_has_method("set_active_members")) {
+        if (model.find_method("set_active_members").has_value()) {
             model.get_method("set_active_members")(
                 {torch::List<std::int64_t>{network_index}}
             );
@@ -434,7 +425,7 @@ void torchani_init_model(
         }
     }
     if (use_cuaev) {
-        if (model_has_method("set_strategy")) {
+        if (model.find_method("set_strategy").has_value()) {
             model.get_method("set_strategy")({"cuaev"});
         } else {
             std::cerr << "Error in libtorchani\n"
@@ -454,29 +445,15 @@ void torchani_init_model(
     // Nutmeg models require a set of features passed as floats
     // In general a model can read arbitrary features from a newline separated
     // file with floats
-    if (model_has_method("set_extra_features") and not extra_features_fpath.empty()) {
+    if (model.find_method("set_extra_features").has_value() and (not extra_features_fpath.empty())) {
+        // TODO: This is ugly, it would be better to fail gracefully if the file can't
+        // be parsed
         std::ifstream features_file(extra_features_fpath);
         torch::List<double> features;
         std::string line;
         double val;
-        while (std::getline(features_file, line)) {
-            std::istringstream iss(line);
-            if (!(iss >> val)) {
-                std::cerr << "Error in libtorchani:\n"
-                          << "Incorrect value encountered in extra features file"
-                          << std::endl;
-                std::exit(2);
-            }
-            if (iss >> val) {
-                features.push_back(val);
-            }
-            char extra_chars;
-            if (iss >> extra_chars) {
-                std::cerr << "Error in libtorchani:\n"
-                          << "Extra content after float in extra features file"
-                          << std::endl;
-                std::exit(2);
-            }
+        while (features_file >> val) {
+            features.push_back(val);
         }
         model.get_method("set_extra_features")({features});
     };
@@ -515,7 +492,7 @@ void torchani_energy_force_from_external_neighbors(
         /* atomic= */ false,
         /* ensemble_values= */ false
     };
-    if (model_has_method("compute_from_external_neighbors")) {
+    if (model.find_method("compute_from_external_neighbors").has_value()) {
         torch::jit::IValue output =
             model.get_method("compute_from_external_neighbors")(inputs);
         validate_model_output(output, 2, true);

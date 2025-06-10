@@ -1,0 +1,34 @@
+! TorchANI-Amber test input (ML/MM)
+&cntrl
+    ifqnt = 1  ! Use QM/MM
+    imin = 0  ! Dynamics
+    nstlim = 2000  ! Total num of dynamics steps (2 ps)
+    ntx = 1  ! Only read input coords, not vels
+    ntxo = 2  ! Dump restart as NetCDF 3
+    ioutfm = 1  ! Dump traj as NetCDF 3
+    ntwx = 1  ! Dump coords every step
+    ntpr = 1  ! Dump mdout 'logs' every step
+    dt = 0.001  ! Timestep (ps)
+    ntc = 1  ! Shake OFF
+    ntf = 1  ! Shake OFF
+    ig = 5541  ! Manual seed for reproducibility
+    cut = 10.0  !  Non-bonded neighborlist cutoff
+/
+&qmmm
+    qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
+    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
+    qmmask = ":1-3"  ! Select the first 3 residues as the QM-region
+    qmcut = 8.0  ! 15.0 is recommended, 8.0 used for tests
+/
+&ani
+    cuda_device_index = 0
+    use_cuda_device = .True.
+    use_cuaev = .False.
+    ! After the nutmeg potentials, a file has to be specified with the gestaiger charges
+    model_type = "nutmeg-small::ace-ala-nme-test"
+    use_double_precision = .False.
+    mlmm_coupling = 0  ! Mechanical Embedding
+    model_index = -1
+    use_amber_neighborlist = .False.
+/
+! End TorchANI-Amber test input
