@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -21,14 +23,20 @@
 namespace {
 // Default device is CPU, and default kind is Float32
 GlobalConfig config{};
-std::string cached_torchani_model = "ani1x";
 torch::jit::Module model;
 torch::Tensor torchani_atomic_numbers;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
-double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
+// NOTE: Probably this should be used instead (or nothing)
+// double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
 std::vector<std::string> torchani_builtin_models = {
-    "ani1x", "ani1ccx", "ani2x", "ani2xr", "ani2dr", "animbis", "aniala", "anir2s", "anir2s_water", "anir2s_chcl3", "anir2s_ch3cn"
+    "ani1x", "ani1ccx", "ani2x", "ani2xr", "ani2dr", "animbis",
+    "aniala", "anir2s", "anir2s_water", "anir2s_chcl3", "anir2s_ch3cn",
+    "aimnet2-b973c-dsf", "aimnet2-b973c-ewald", "aimnet2-b973c-nocut",
+    "aimnet2-b973c-mbis-dsf", "aimnet2-b973c-mbis-ewald", "aimnet2-b973c-mbis-nocut",
+    "aimnet2-wb97m-dsf", "aimnet2-wb97m-ewald", "aimnet2-wb97m-nocut",
+    "aimnet2-wb97m-mbis-dsf", "aimnet2-wb97m-mbis-ewald", "aimnet2-wb97m-mbis-nocut",
+    "nutmeg-small", "nutmeg-medium", "nutmeg-large",
 };
 }  // namespace
 
@@ -305,26 +313,54 @@ void torchani_init_model(
     bool use_cuda_device,
     bool use_cuaev
 ) {
-    cached_torchani_model = model_type;
-    std::string model_jit_fname;
-
     if (use_cuaev and not use_cuda_device) {
         std::cerr << "Error in libtorchani\n"
                   << "A CUDA capable device must be selected to use the cuAEV extension"
                   << std::endl;
         std::exit(2);
     }
+    std::string jit_models_dir = __FILE__;
+    // The following is roughtly equivalent to dir.parent.parent
+    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
+    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
+    jit_models_dir = jit_models_dir + "/jit";
 
-    model_jit_fname = cached_torchani_model;
+    std::string jit_model = model_type;
+    // Path to extra features may be inside jit_model, separated by ::
+    std::size_t loc = jit_model.find("::");
+    std::string extra_features_fpath = "";
+    if (loc != std::string::npos) {
+        extra_features_fpath = jit_model.substr(loc + 2);
+        jit_model = jit_model.substr(0, loc);
+        // Use internal test file in this case
+        if (extra_features_fpath == "ace-ala-nme-test") {
+            extra_features_fpath = jit_models_dir + "/ace-ala-nme.charges";
+        }
+    }
+
+    std::string jit_model_path = "";
     if (std::find(
             torchani_builtin_models.begin(),
             torchani_builtin_models.end(),
-            cached_torchani_model
+            jit_model
         ) != torchani_builtin_models.end()) {
-        model_jit_fname = model_jit_fname + ".pt";
+        std::string jit_model_fname = jit_model + ".pt";
+        //  AimNet2 models are stored in a subdirectory
+        std::string aimnet2_prefix = "aimnet2";
+        std::string nutmeg_prefix = "nutmeg";
+        if (jit_model_fname.compare(0, aimnet2_prefix.size(), aimnet2_prefix) == 0) {
+            jit_model_path = jit_models_dir + "/aimnet2" + "/" + jit_model_fname;
+        } else if (jit_model_fname.compare(0, nutmeg_prefix.size(), nutmeg_prefix) == 0){
+            jit_model_path = jit_models_dir + "/nutmeg" + "/" + jit_model_fname;
+        } else {
+            jit_model_path = jit_models_dir + "/" + jit_model_fname;
+        }
+    } else {
+        // Assume the path has been passed directly
+        jit_model_path = jit_model;
     }
 #ifdef DEBUG
-    std::cout << "model_jit_fname: " << model_jit_fname << '\n';
+    std::cout << "jit_model_fname: " << jit_model_fname << '\n';
 #endif
 
     config.set_device_and_precision(
@@ -338,10 +374,6 @@ void torchani_init_model(
     //
     // PBC tensor is initialized even if pbc is not needed afterwards,
     // since the tensor occupies almost no space
-    std::string file_path = __FILE__;
-    file_path = file_path.substr(0, file_path.find_last_of("/"));
-    file_path = file_path.substr(0, file_path.find_last_of("/"));
-    std::string jit_model_path = file_path + "/jit/" + model_jit_fname;
     torchani_atomic_numbers = torch::from_blob(
         atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
@@ -419,7 +451,35 @@ void torchani_init_model(
         } catch (const c10::Error& e) {
         }
     }
-
+    // Nutmeg models require a set of features passed as floats
+    // In general a model can read arbitrary features from a newline separated
+    // file with floats
+    if (model_has_method("set_extra_features") and not extra_features_fpath.empty()) {
+        std::ifstream features_file(extra_features_fpath);
+        torch::List<double> features;
+        std::string line;
+        double val;
+        while (std::getline(features_file, line)) {
+            std::istringstream iss(line);
+            if (!(iss >> val)) {
+                std::cerr << "Error in libtorchani:\n"
+                          << "Incorrect value encountered in extra features file"
+                          << std::endl;
+                std::exit(2);
+            }
+            if (iss >> val) {
+                features.push_back(val);
+            }
+            char extra_chars;
+            if (iss >> extra_chars) {
+                std::cerr << "Error in libtorchani:\n"
+                          << "Extra content after float in extra features file"
+                          << std::endl;
+                std::exit(2);
+            }
+        }
+        model.get_method("set_extra_features")({features});
+    };
 #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
 #endif
