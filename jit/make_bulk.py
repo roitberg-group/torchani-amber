@@ -1,4 +1,5 @@
 from pathlib import Path
+
 # Make a bulk system for nutmeg
 
 dipep = Path("./ace-ala-nme.charges").read_text().split()
