@@ -453,6 +453,7 @@ if __name__ == "__main__":
                     calc.calculate(properties=["energy"])
                     results = calc.results
                     # Compare directly with AimNet2 results
+
                     torch.testing.assert_close(
                         torch.from_numpy(results["energy"] / HARTREE_TO_EV).float(),
                         out.energies.cpu().float(),

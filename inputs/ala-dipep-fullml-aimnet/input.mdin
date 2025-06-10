@@ -1,15 +1,15 @@
 ! TorchANI-Amber test input (ML/MM)
 &cntrl
     imin = 0  ! Dynamics
-    nstlim = 4000  ! Total num of dynamics steps (2 ps)
+    nstlim = 2000  ! Total num of dynamics steps (2 ps)
     ntx = 1  ! Only read input coords, not vels
     ntxo = 2  ! Dump restart as NetCDF 3
     ioutfm = 1  ! Dump traj as NetCDF 3
     ntwx = 1  ! Dump coords every step
     ntpr = 1  ! Dump mdout 'logs' every step
-    dt = 0.0005  ! Timestep (ps) AimNet requires a very small ts, since it sucks
-    ntc = 1  ! Shake OFF
-    ntf = 1  ! Shake OFF
+    dt = 0.001  ! Timestep (ps) AimNet requires a very small ts, since it sucks
+    ntc = 1  ! Shake ON
+    ntf = 1  ! Shake ON
     ig = 5541  ! Manual seed for reproducibility
     cut = 10.0  !  Non-bonded neighborlist cutoff (10 for AimNet)
     iextpot=2  ! Use ANI as an external potential
@@ -23,6 +23,7 @@ extprog = "torchani",  ! Use ANI as an external potential
     use_cuaev = .False.
     model_type = "aimnet2-wb97m-dsf"
     use_double_precision = .False.
+    use_all_amber_nonbond = .True.
     model_index = -1
     use_amber_neighborlist = .False.
 /
