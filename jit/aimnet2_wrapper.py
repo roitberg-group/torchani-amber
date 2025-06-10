@@ -236,6 +236,8 @@ class AimNet2Wrapper(torch.nn.Module):
         pbc: tp.Optional[Tensor],
         _molecule_idxs: tp.Optional[Tensor],
     ) -> Neighbors:
+        # Neighborlist is "complete" (duplicated)
+        # edge_attrs is None for these models
         neigh_lr = self._nlist(self._cutoff_lr, species, coords.detach(), cell, pbc)
         # Experimental _molecule_idxs feature
         if _molecule_idxs is not None:
@@ -459,6 +461,7 @@ if __name__ == "__main__":
                         torch.from_numpy(results["energy"] / HARTREE_TO_EV).float(),
                         out_mbis.energies.cpu().float(),
                     )
+
                 # There are slight differences in E due to difference in neighborlist
                 # order, which displaces different atoms and generate deltas of the
                 # order of f32 precision
