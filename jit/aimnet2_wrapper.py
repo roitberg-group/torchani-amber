@@ -13,7 +13,6 @@ from torch.nn import Module
 from torchani._testing import make_molec
 from torchani.electro import ChargeNormalizer
 from torchani.units import HARTREE_TO_EV
-from torchani.utils import map_to_central
 from torchani.tuples import SpeciesEnergiesAtomicCharges
 from torchani.arch import _fetch_state_dict
 from torchani.neighbors import (
@@ -176,8 +175,6 @@ class AimNet2Wrapper(torch.nn.Module):
             nbmat, shifts, mask = self._sparse_to_dense_pbc(
                 coords.detach(), neigh, inv_cell.detach()
             )
-            # Map coords to central cell
-            coords = map_to_central(coords, cell, pbc)
             data["cell"] = cell
             data["shifts"] = shifts
             data["shifts_lr"] = shifts_lr
