@@ -41,7 +41,4 @@ tests/dump_*
 jit/aimnet2/
 jit/nutmeg/
 # For now hardcode these, although its probably not the best in the long run
-!jit/aimnet2_wb97m_0.raw.jit
-!jit/aimnet2_b973c_0.raw.jit
-!jit/nutmeg-small.raw.jit
-!jit/nutmeg-medium.raw.jit
+!jit/*.raw.pt
