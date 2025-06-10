@@ -38,3 +38,5 @@ tests/dump_*
 
 # No clangd cache
 .cache
+jit/aimnet2/
+jit/nutmeg/
