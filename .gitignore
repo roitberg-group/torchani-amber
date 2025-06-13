@@ -38,3 +38,12 @@ tests/dump_*
 
 # No clangd cache
 .cache
+jit/aimnet2/
+jit/nutmeg/
+# For now hardcode these, although its probably not the best in the long run
+!jit/*.raw.pt
+
+*.info
+*.mdcrd
+*.restart
+*mdout
