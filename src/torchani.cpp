@@ -30,13 +30,32 @@ double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
 // double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
 std::vector<std::string> torchani_builtin_models = {
-    "ani1x", "ani1ccx", "ani2x", "ani2xr", "ani2dr", "animbis",
-    "aniala", "anir2s", "anir2s_water", "anir2s_chcl3", "anir2s_ch3cn",
-    "aimnet2-b973c-dsf", "aimnet2-b973c-ewald", "aimnet2-b973c-nocut",
-    "aimnet2-b973c-mbis-dsf", "aimnet2-b973c-mbis-ewald", "aimnet2-b973c-mbis-nocut",
-    "aimnet2-wb97m-dsf", "aimnet2-wb97m-ewald", "aimnet2-wb97m-nocut",
-    "aimnet2-wb97m-mbis-dsf", "aimnet2-wb97m-mbis-ewald", "aimnet2-wb97m-mbis-nocut",
-    "nutmeg-small", "nutmeg-medium", "nutmeg-large",
+    "ani1x",
+    "ani1ccx",
+    "ani2x",
+    "ani2xr",
+    "ani2dr",
+    "animbis",
+    "aniala",
+    "anir2s",
+    "anir2s_water",
+    "anir2s_chcl3",
+    "anir2s_ch3cn",
+    "aimnet2-b973c-dsf",
+    "aimnet2-b973c-ewald",
+    "aimnet2-b973c-nocut",
+    "aimnet2-b973c-mbis-dsf",
+    "aimnet2-b973c-mbis-ewald",
+    "aimnet2-b973c-mbis-nocut",
+    "aimnet2-wb97m-dsf",
+    "aimnet2-wb97m-ewald",
+    "aimnet2-wb97m-nocut",
+    "aimnet2-wb97m-mbis-dsf",
+    "aimnet2-wb97m-mbis-ewald",
+    "aimnet2-wb97m-mbis-nocut",
+    "nutmeg-small",
+    "nutmeg-medium",
+    "nutmeg-large",
 };
 }  // namespace
 
@@ -59,7 +78,10 @@ std::vector<torch::jit::IValue> setup_inputs_pbc(
 }
 
 std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
-    torch::Tensor& coords, torch::Tensor& cell, torch::Tensor& molecule_idxs, bool ensemble_values = false
+    torch::Tensor& coords,
+    torch::Tensor& cell,
+    torch::Tensor& molecule_idxs,
+    bool ensemble_values = false
 ) {
     // Create a vector of input values, jit::script::Module
     // classes accept and return values of ONLY type torch::jit::IValue so
@@ -77,8 +99,9 @@ std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
 }
 
 std::vector<torch::jit::IValue> setup_inputs_nopbc(
-    torch::Tensor& coords, bool ensemble_values = false
+    torch::Tensor& coords, bool ensemble_values = false, int charge = 0
 ) {
+    std::cout << "Setting up inputs with charge " << charge << '\n';
     // uses one "global", torchani_atomic_numbers
     // Create a vector of input values, jit::script::Module
     // classes accept and return values of ONLY type torch::jit::IValue so
@@ -88,7 +111,7 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(
         std::tuple{torchani_atomic_numbers, coords},
         /* cell= */ torch::indexing::None,
         /* pbc= */ torch::indexing::None,
-        /* charge= */ 0,
+        /* charge= */ charge,
         /* atomic= */ false,
         /* ensemble_values= */ ensemble_values,
         torch::indexing::None
@@ -331,9 +354,7 @@ void torchani_init_model(
 
     std::string jit_model_path = "";
     if (std::find(
-            torchani_builtin_models.begin(),
-            torchani_builtin_models.end(),
-            jit_model
+            torchani_builtin_models.begin(), torchani_builtin_models.end(), jit_model
         ) != torchani_builtin_models.end()) {
         std::string jit_model_fname = jit_model + ".pt";
         //  AimNet2 models are stored in a subdirectory
@@ -341,7 +362,8 @@ void torchani_init_model(
         std::string nutmeg_prefix = "nutmeg";
         if (jit_model_fname.compare(0, aimnet2_prefix.size(), aimnet2_prefix) == 0) {
             jit_model_path = jit_models_dir + "/aimnet2" + "/" + jit_model_fname;
-        } else if (jit_model_fname.compare(0, nutmeg_prefix.size(), nutmeg_prefix) == 0){
+        } else if (jit_model_fname.compare(0, nutmeg_prefix.size(), nutmeg_prefix) ==
+                   0) {
             jit_model_path = jit_models_dir + "/nutmeg" + "/" + jit_model_fname;
         } else {
             jit_model_path = jit_models_dir + "/" + jit_model_fname;
@@ -445,7 +467,8 @@ void torchani_init_model(
     // Nutmeg models require a set of features passed as floats
     // In general a model can read arbitrary features from a newline separated
     // file with floats
-    if (model.find_method("set_extra_features").has_value() and (not extra_features_fpath.empty())) {
+    if (model.find_method("set_extra_features").has_value() and
+        (not extra_features_fpath.empty())) {
         // TODO: This is ugly, it would be better to fail gracefully if the file can't
         // be parsed
         std::ifstream features_file(extra_features_fpath);
@@ -488,7 +511,7 @@ void torchani_energy_force_from_external_neighbors(
         coords,
         neighborlist,
         shifts,
-        /* total_charge= */ 0,
+        /* charge= */ 0,
         /* atomic= */ false,
         /* ensemble_values= */ false
     };
@@ -516,7 +539,6 @@ void torchani_energy_force_from_external_neighbors(
 #endif
 }
 
-
 void torchani_bonded_energy_force_pbc(
     int num_atoms,
     double coords_buf[][3],
@@ -530,9 +552,11 @@ void torchani_bonded_energy_force_pbc(
 #endif
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
-    torch::Tensor molecule_idxs = int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
+    torch::Tensor molecule_idxs =
+        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
     // Inputs are setup with PBC
-    std::vector<torch::jit::IValue> inputs = setup_inputs_only_bonded_pbc(coords, cell, molecule_idxs);
+    std::vector<torch::jit::IValue> inputs =
+        setup_inputs_only_bonded_pbc(coords, cell, molecule_idxs);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
@@ -600,6 +624,8 @@ void torchani_energy_force_atomic_charges(
 /**
  * Note that currently this function can't split the QM forces in two parts, it only
  * outputs net forces due to the model in vacuum and the potential energies
+ *
+ * Currently this is the only code path that supports charged molecules
  */
 void torchani_energy_force_with_coupling(
     int num_atoms,
@@ -623,20 +649,28 @@ void torchani_energy_force_with_coupling(
     double* ene_pot_total_buf
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
+
+    torch::Tensor atomic_charges =
+        torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
+    // Unfortunately currently we pass zeros if we predict charges
+    int total_charge = 0;
+    if (not predict_charges) {
+        atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
+        total_charge =
+            torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
+    }
+    std::vector<torch::jit::IValue> inputs =
+        setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ total_charge);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, predict_charges ? 3 : 2);
     torch::Tensor ene_pot_invacuo = output.toTuple()->elements()[1].toTensor();
 
-    torch::Tensor atomic_charges = torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
     if (predict_charges) {
         atomic_charges = output.toTuple()->elements()[2].toTensor();
         if (not use_charge_derivatives) {
             // Disregard dependence of predicted charges on coordinates
             atomic_charges.detach_();
         }
-    } else {
-        atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
     }
 
     // Embedding part
@@ -656,8 +690,10 @@ void torchani_energy_force_with_coupling(
     auto ene_pot_coulomb = electro::coulombic_embedding_energy(
         atomic_charges, env_charges, env_charges_to_atoms_distances
     );
-    torch::Tensor ene_pot_pol = torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
-    torch::Tensor ene_pot_dist = torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+    torch::Tensor ene_pot_pol =
+        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+    torch::Tensor ene_pot_dist =
+        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     if (simple_polarization_correction) {
         ene_pot_pol = electro::polarizable_embedding_energy(
             coords,
