@@ -31,7 +31,7 @@ try:
 
     AIMNET2CALC_AVAIL = True
 except ImportError:
-    AIMNET2CALC_AVAIL = True
+    AIMNET2CALC_AVAIL = False
     warnings.warn("Disabling tests. Install aimnet2calc for testing")
 
 
