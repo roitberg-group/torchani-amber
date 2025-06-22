@@ -8,7 +8,7 @@ dependencies:
   ## Required dependencies to run TorchANI ##
   - python=3.10
   - pip>=24.0
-  - numpy=1.26  # 1.26 required due to netCDF 4 for Amber
+  - numpy=2.1
   - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
   - typing_extensions>=4.0.0
   - h5py  # HDF5 backend for datasets
