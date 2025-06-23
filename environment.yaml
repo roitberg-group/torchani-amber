@@ -8,7 +8,7 @@ dependencies:
   ## Required dependencies to run TorchANI ##
   - python=3.11
   - conda-forge::pip>=24.0
-  - conda-forge::numpy=2.1
+  - conda-forge::numpy=1.26  # This is required by netcdf-fortran=4.6.1=mpi_openmpi_...
   - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
   - conda-forge::typing_extensions>=4.0.0
   - conda-forge::h5py  # HDF5 backend for datasets
@@ -40,11 +40,8 @@ dependencies:
   - nvidia::cuda-cudart-static=12.4
   # Amber dependencies
   - conda-forge::fftw=3.3.10=mpi_openmpi_hdeb57f9_6  # For Sander / Pmemd
-
   # NetCDF-fortran *requires* numpy 1.26 (!) only if compiled with mpi_openmpi
-  # So for now we only support the non-mpi version of netcdf
-  #- conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
-  - conda-forge::netcdf-fortran=4.6.1
+  - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
   - conda-forge::openmpi=4.1.6  # For MNP, Sander-MPI, and Pmemd-MPI
   - conda-forge::ucx=1.18  # For openmpi
 
