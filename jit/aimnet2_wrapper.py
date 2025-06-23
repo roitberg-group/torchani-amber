@@ -48,7 +48,8 @@ class AimNetArgs:
 
 
 # Basically the only important parameter here is method_lr. It is better to leave the
-# other params as their defaults NOTE: All networks support all methods, and they can be
+# other params as their defaults
+# NOTE: All networks support all methods, and they can be
 # changed internally with no issue
 class AimNet2Wrapper(torch.nn.Module):
     def __init__(
@@ -356,7 +357,7 @@ def sort_model_inputs(inputs: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
     return dict(sorted(inputs.items()))
 
 
-if __name__ == "__main__":
+def generate_aimnet2_wrapper():
     # TODO: Don't run tests here, it is dirty
     device = "cpu"
     atomic_nums = torch.tensor([[6, 1, 1, 1, 1]], device=device)
@@ -388,6 +389,7 @@ if __name__ == "__main__":
     }
     m = make_molec(100, pbc=True, seed=1234, cell_size=30.0, device=device)
     cut = 10.0
+    dsf = 0.2
     atoms = ase.Atoms(
         positions=m.coords.cpu().numpy().squeeze(0),
         numbers=m.atomic_nums.cpu().numpy().squeeze(0),
@@ -409,8 +411,8 @@ if __name__ == "__main__":
         path = (Path(__file__).parent / fname).resolve()
         for kwargs in (
             AimNetArgs("simple"),
-            AimNetArgs("ewald", 10.0),  # Amber cutoff must be 10.0
-            AimNetArgs("dsf", 10.0, 0.2),  # Amber cutoff must be 10.0
+            AimNetArgs("ewald", cut),  # Amber cutoff must be 10.0
+            AimNetArgs("dsf", cut, dsf),  # Amber cutoff must be 10.0
         ):
             model = AimNet2Wrapper.from_jit_file(path, device=device, **asdict(kwargs))
             model_mbis = AimNet2Mbis.from_jit_file(
