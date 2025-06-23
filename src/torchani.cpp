@@ -101,7 +101,6 @@ std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
 std::vector<torch::jit::IValue> setup_inputs_nopbc(
     torch::Tensor& coords, bool ensemble_values = false, int charge = 0
 ) {
-    std::cout << "Setting up inputs with charge " << charge << '\n';
     // uses one "global", torchani_atomic_numbers
     // Create a vector of input values, jit::script::Module
     // classes accept and return values of ONLY type torch::jit::IValue so

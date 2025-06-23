@@ -6,49 +6,48 @@ channels:
   - https://conda.anaconda.org/conda-forge
 dependencies:
   ## Required dependencies to run TorchANI ##
-  - python=3.10
-  - pip>=24.0
-  - numpy=1.26  # 1.26 required due to netCDF 4 for Amber
+  - python=3.11
+  - conda-forge::pip>=24.0
+  - conda-forge::numpy=1.26  # This is required by netcdf-fortran=4.6.1=mpi_openmpi_...
   - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
-  - typing_extensions>=4.0.0
-  - h5py  # HDF5 backend for datasets
-  - tqdm  # progress bar util
-  - typer  # CLI support
-  - rich  # CLI support
-  - huggingface_hub  # Datasets
+  - conda-forge::typing_extensions>=4.0.0
+  - conda-forge::h5py  # HDF5 backend for datasets
+  - conda-forge::tqdm  # progress bar util
+  - conda-forge::typer  # CLI support
+  - conda-forge::rich  # CLI support
+  - conda-forge::huggingface_hub  # Datasets
 
   # Optional dependencies follow:
 
   ## ASE interface ##
   # Used for molecular dynamics and for tests/tools/docs
-  - ase
+  - conda-forge::ase
 
   ## NVIDIA CUDA GPU support ##
   - pytorch::pytorch-cuda=12.4  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
-  #- pytorch::cpuonly  # Uncomment this line to **disable** CUDA GPU support in Linux
 
   ## cuAEV and MNP ##
   # For more details consult the "developer notes" section in README.md
   # If installing on macOS, or if CUDA GPU support is **disabled**, comment all lines on this block
-  - setuptools>=64
-  - setuptools-scm>=8
-  - gxx_linux-64=12.2
-  - gcc_linux-64=12.2
-  - gfortran_linux-64=12.2
+  - conda-forge::setuptools>=64
+  - conda-forge::setuptools-scm>=8
+  - conda-forge::gxx_linux-64=12.2
+  - conda-forge::gcc_linux-64=12.2
+  - conda-forge::gfortran_linux-64=12.2
   - nvidia::cuda-libraries-dev=12.4
   - nvidia::cuda-cccl=12.4
   - nvidia::cuda-nvcc=12.4
   - nvidia::cuda-cudart-static=12.4
   # Amber dependencies
   - conda-forge::fftw=3.3.10=mpi_openmpi_hdeb57f9_6  # For Sander / Pmemd
+  # NetCDF-fortran *requires* numpy 1.26 (!) only if compiled with mpi_openmpi
   - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
   - conda-forge::openmpi=4.1.6  # For MNP, Sander-MPI, and Pmemd-MPI
-  - conda-forge::ucx  # For openmpi
+  - conda-forge::ucx=1.18  # For openmpi
 
   ## Running torchani-amber/tests ##
   - conda-forge::netcdf4
   ## Running torchani/tests ##
-  - coverage  # code coverage
   - black  # formatter
   - flake8  # linter
   - mypy  # type checking
@@ -59,24 +58,10 @@ dependencies:
   # Extra data backends for tests:
   - pandas  # Parquet backend
   - pyarrow  # Parquet backend
-  - zarr  # Zarr backend
-
   ## Running scripts in torchani/tools ##
-  - matplotlib
-  - pynvml
   - jinja2  # Templating engine to build generated code and docs
-
-  ## Building torchani/docs ##
-  - sphinx
-  - sphinx-design
-  - sphinx-gallery
-  - pydata-sphinx-theme
-  - tensorboard
 
   # TorchANI-Amber specific
   - conda-forge::cmake=3.31.1
-
-  # Extra
-  - tinydb
-  - pyyaml  # for mdrun
-  - netCDF4
+  - conda-forge::tinydb
+  - conda-forge::pyyaml
