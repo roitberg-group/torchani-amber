@@ -151,8 +151,9 @@ class NutmegWrapper(torch.nn.Module):
         return species, energy * self._kjpermol_to_hartree
 
 
-for size in ("small", "medium", "large"):
-    model = NutmegWrapper(torch.jit.load(f"./nutmeg-{size}.raw.pt"))
-    out_dir = Path(__file__).parent / "nutmeg"
-    out_dir.mkdir(exist_ok=True)
-    torch.jit.save(torch.jit.script(model), out_dir / f"nutmeg-{size}.pt")
+def generate_nutmeg_wrapper():
+    for size in ("small", "medium", "large"):
+        model = NutmegWrapper(torch.jit.load(f"./nutmeg-{size}.raw.pt"))
+        out_dir = Path(__file__).parent / "nutmeg"
+        out_dir.mkdir(exist_ok=True)
+        torch.jit.save(torch.jit.script(model), out_dir / f"nutmeg-{size}.pt")

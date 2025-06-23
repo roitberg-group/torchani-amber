@@ -87,6 +87,10 @@ def _disable_jit_optimizations() -> None:
 
 
 if __name__ == "__main__":
+
+    from aimnet2_wrapper import generate_aimnet2_wrapper
+    from nutmeg_wrapper import generate_nutmeg_wrapper
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--disable-optimizations",
@@ -95,6 +99,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--force",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--aimnet2",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--nutmeg",
         action="store_true",
         default=False,
     )
@@ -130,6 +144,12 @@ if __name__ == "__main__":
                 console.print("-- JIT - Done (nothing to compile)", style="green")
         else:
             console.print("-- JIT - Done, but failed for some models", style="yellow")
+        if args.aimnet2:
+            console.print("-- JIT - Generating AimNet2 Wrappers")
+            generate_aimnet2_wrapper()
+        if args.nutmeg:
+            console.print("-- JIT - Generating Nutmeg Wrappers")
+            generate_nutmeg_wrapper()
     except Exception as e:
         console.print(f"-- JIT - Failed with exception {type(e)}: {e}", style="red")
         sys.exit(1)
