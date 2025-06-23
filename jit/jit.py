@@ -90,6 +90,7 @@ if __name__ == "__main__":
 
     from aimnet2_wrapper import generate_aimnet2_wrapper
     from nutmeg_wrapper import generate_nutmeg_wrapper
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--disable-optimizations",
