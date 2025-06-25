@@ -166,10 +166,10 @@ def run(
                 "water-8k",
                 "water-9k",
                 "water-10k",
-                "water-15k",
-                "water-20k",
-                "water-25k",
-                "water-30k",
+                # "water-15k",
+                # "water-20k",
+                # "water-25k",
+                # "water-30k",
             ]
     assert systems_src_dir is not None
     assert systems is not None
@@ -183,7 +183,7 @@ def run(
             raise Abort()
 
     if debug:
-        tstep_num = 10
+        tstep_num = 3
     if not hpg:
         if modules or gpu:
             console.print("--modules, --local, --gpu requires --hpg", style="red")
