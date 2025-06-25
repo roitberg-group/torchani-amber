@@ -1,0 +1,46 @@
+! TorchANI-Amber test input
+&cntrl
+{# Main simulation options #}
+    ig = 5541  ! Manual seed for reproducibility
+    iextpot = 2,  ! Use ANI as an external potential
+    imin = 0,  ! Dynamics
+    nstlim = {{ tstep_num }},
+    irest = 0,  ! Only read input coords, not vels
+    ntx = 1,  ! Only read input coords, not vels
+    cut = {{ cutoff }}  !  Non-bonded neighborlist cutoff
+{# Shake and tstep #}
+    {% if shake %}
+    dt = 0.002,  ! Timestep [ps] (2 fs)
+    ntc = 2, ntf = 2,  ! Shake ON for H
+    {% else %}
+    dt = 0.001,  ! Timestep [ps] (1 fs)
+    ntc = 1, ntf = 1,  ! Shake OFF
+    {% endif %}
+{# Thermostat #}
+    tempi = 300.0
+    temp0 = 300.0, ! Target temperature for thermostat [K]
+    ntt = 3  ! Langevin thermostat
+    gamma_ln = 2.0  ! Langevin thermo friction [1/ps]
+{# Output Formatting #}
+    ioutfm = 1  ! Dump traj as netCDF
+    ntxo = 2  ! Dump restart as netCDF
+    {% if dump_traj %}
+    ntwx = 1, ntpr = 1  ! Dump traj and mdout logs every step
+    {% else %}
+    ntwx = {{ tstep_num }},  ntpr = {{ tstep_num }}! Don't dump traj or mdout logs
+    {% endif %}
+/
+&extpot
+    extprog = "torchani",  ! Use ANI as an external potential
+/
+&ani
+    use_cuaev = .{{ cuaev }}.,  ! Toggle cuAEV extension
+    use_cuda_device = .{{ cuda }}.,  ! Toggle GPU use
+    cuda_device_index = -1,  ! GPU index (-1 => CPU or first GPU)
+    use_double_precision = .False.,  ! Toggle float64
+    use_amber_neighborlist = .{{ use_amber_neighborlist }}.,  ! Toggle AMBER neighborlist
+    use_all_amber_nonbond = .{{ use_all_amber_nonbond }}.,
+    model_index = -1,  ! ANI network index
+    model_type = {{ '"' + model + '"'}},  ! Index of ANI network (-1 => full ensemble)
+/
+! End TorchANI-Amber test input
