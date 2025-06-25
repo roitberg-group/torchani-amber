@@ -1,25 +1,31 @@
 #!/bin/bash
-#SBATCH --job-name={{ job_prefix }}-ani-amber-bench
-#SBATCH --output=%j-{{ job_prefix }}-ani-amber-bench.slurm.out
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:{{ gpu }}1
-#SBATCH --time=24:00:00
+#SBATCH --job-name={{ unique_id }}-v{{ version }}-{{ name }}
+#SBATCH --output={{ unique_id }}-v{{ version }}-{{ name }}.slurm.out
+#SBATCH --partition={{ partition }}
+#SBATCH --gres=gpu:{{ gpu }}
+#SBATCH --time={{ hours }}:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=1
 #SBATCH --ntasks={{ core_num }}
-{% if exclusive %}
-#SBATCH --exclusive
-{% endif %}
 
 module purge
-{% if modules %}
+{% if gpu == "b200:1" %}
+module load cuda/12.8
+source /home/ipickering/Conda/etc/profile.d/conda.sh
+source /home/ipickering/Conda/etc/profile.d/mamba.sh
+mamba activate ani-amber-blackwell
+{% elif install == "modules" %}
 module load cuda/12.4 gcc/12.2 openmpi/4.1.6 conda/24.7 cmake
 conda activate /blue/roitberg/share/envs/ani-amber-bench
 source /blue/roitberg/share/amber-latest-mods/amber.sh
+{% elif install == "local" %}
+source /home/ipickering/Conda/etc/profile.d/conda.sh
+source /home/ipickering/Conda/etc/profile.d/mamba.sh
+mamba activate ani-amber
 {% else %}
 module load conda/24.7
 conda activate /blue/roitberg/share/envs/ani-amber-gcc1104-cuda1204
 source /blue/roitberg/share/amber-latest-dev/amber.sh
 {% endif %}
 
-'{{ cli_app_dir }}/bench' {{ args }} --bench-dir '{{ bench_dir }}'
+'{{ cli_app_dir }}/bench' {{ args }}

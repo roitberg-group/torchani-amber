@@ -1,174 +1,102 @@
 #!/usr/bin/env python
-import math
-from collections import defaultdict
-import hashlib
-from copy import deepcopy
-import os
-import sys
-import shutil
-import subprocess
-import uuid
+import time
 import json
-from typer import Option, Argument
-import itertools
-from enum import Enum
-import typing as tp
-import dataclasses
+from dataclasses import dataclass, asdict
+import os
+import subprocess
+import shutil
 from pathlib import Path
+import re
+import socket
+import sys
+import typing as tp
+from uuid import uuid4
 import typing_extensions as tpx
 
-from scipy import stats
-import pandas as pd
-import numpy as np
-from numpy.typing import NDArray
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-from rich.console import Console
-from typer import Typer, Abort
+from typer import Option, Typer, Abort
 import jinja2
+from tqdm import tqdm
+from rich.console import Console
 
-mpl.rc("font", size=8)
+from utils import send_to_scheduler, SUPPORTED_MODELS
+
 
 console = Console()
-app = Typer(pretty_exceptions_enable=False)
-
-this_dir = Path(__file__).parent
-systems_dir = this_dir / "systems"
-
-# Time conversion factors
-ms_to_s = 1 / 1000
-s_to_hr = 1 / 3600
-s_to_min = 1 / 60
+app = Typer(name="bench", pretty_exceptions_enable=False)
 
 
-@dataclasses.dataclass
-class BenchMlmmConfig:
-    protocol: str = "ani_me"
-    use_torch_coupling: bool = True
-    cuda: bool = True
-    selection: str = ":1"  # ML system selection, assumed to be of the form ':N-M'
-    float64: bool = True
-    use_cuaev: bool = False
-    cutoff: float = 15.0
+@dataclass
+class ScalingConfig:
+    cuaev: bool
+    cuda: bool
+    cutoff: float
+    tstep_num: int
+    model: str
+    shake: bool
+    dump_traj: bool
+    use_all_amber_nonbond: bool
+    use_amber_neighborlist: bool
 
-
-class Protocol(Enum):
-    ANI_ME = "ani_me"
-    SANDER_ME = "sander_me"
-    ANI_MBISPOL = "ani_mbispol"
-
-
-@dataclasses.dataclass
-class BenchConfig:
-    system: str = "ala-8-chain"
-    core_num: int = 1
-    mlmm: tp.Optional[BenchMlmmConfig] = None
-
-    @property
-    def shorthash(self) -> str:
-        self_dict = dataclasses.asdict(self)
-        self_dict.pop("core_num")
-        if self.mlmm is not None:
-            self_dict["mlmm"].pop("selection")
-        hasher = hashlib.shake_128()
-        hasher.update(json.dumps(self_dict).encode("utf-8"))
-        return hasher.hexdigest(8)
-
-    @property
-    def id(self) -> tp.Tuple[str, int, int]:
-        return (self.shorthash, self.core_num, self.ml_residue_num)
-
-    @property
-    def label(self) -> str:
-        parts = []
-        if self.mlmm is None:
-            return "MM/MM"
-        if self.mlmm.protocol == "ani_me":
-            parts.append("ME")
-        elif self.mlmm.protocol == "sander_me":
-            parts.append("Sander ME")
-        elif self.mlmm.protocol == "ani_mbispol":
-            parts.append("MBIS + Pol")
-        if self.mlmm.float64:
-            parts.append("F64")
-        if self.mlmm.use_torch_coupling:
-            parts.append("Torch-accel")
-
-        parts.append("CUDA" if self.mlmm.cuda else "CPU")
-        if self.mlmm.use_cuaev:
-            parts.append("cuAEV")
-        parts.append(f"cutoff: {self.mlmm.cutoff:.1f}")
-        return ", ".join(parts)
-
-    @property
-    def style(self) -> tp.Dict[str, tp.Any]:
-        if self.mlmm is None:
-            return {
-                "color": "tab:blue",
-                "linestyle": "dashed",
-                "alpha": 1.0,
-                "marker": "o",
-            }
-        if self.mlmm.protocol == "ani_me":
-            c = "tab:orange" if self.mlmm.use_cuaev else "tab:cyan"
-            if self.mlmm.use_cuaev:
-                c = "tab:orange" if self.mlmm.use_torch_coupling else "orangered"
-            else:
-                c = "tab:red" if self.mlmm.use_torch_coupling else "teal"
-        elif self.mlmm.protocol == "sander_me":
-            c = "tab:red" if self.mlmm.use_cuaev else "darkred"
-        elif self.mlmm.protocol == "ani_mbispol":
-            c = "tab:purple" if self.mlmm.use_cuaev else "black"
-        if self.mlmm.float64:
-            s = "dashed" if self.mlmm.cuda else "dotted"
-        else:
-            s = "dashdot" if self.mlmm.cuda else (0, (3, 1, 1, 1, 1, 1))  # type: ignore
-
-        if self.mlmm.use_torch_coupling:
-            a = 0.8
-            if self.mlmm.cutoff == 15.0:
-                m = "^"
-            elif self.mlmm.cutoff == 11.5:
-                m = "*"
-            elif self.mlmm.cutoff == 8.0:
-                m = "X"
-        else:
-            a = 1.0
-            if self.mlmm.cutoff == 15.0:
-                m = "o"
-            elif self.mlmm.cutoff == 11.5:
-                m = "d"
-            elif self.mlmm.cutoff == 8.0:
-                m = "x"
-        return {"color": c, "linestyle": s, "alpha": a, "marker": m}
-
-    @property
-    def ml_residue_num(self) -> int:
-        if self.mlmm is None:
-            return 0
-        s = self.mlmm.selection.replace(":", "")
-        if len(s) == 1:
-            return 1
-        lo, hi = s.split("-")
-        return 1 + int(hi) - int(lo)
-
-    def to_file(self, path: Path) -> None:
-        with open(path, mode="wt", encoding="utf-8") as f:
-            json.dump(dataclasses.asdict(self), f, indent=4)
-            # Ensure data is written to files
-            f.flush()
-            os.fsync(f.fileno())
+    def to_json_file(self, path: Path) -> None:
+        path.write_text(json.dumps(asdict(self), indent=4))
 
 
 @app.command()
 def run(
-    slurm: tpx.Annotated[
+    hpg: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--hpg/--no-hpg"),
+    ] = None,
+    gpu: tpx.Annotated[str, Option("--gpu")] = "",
+    dump_traj: tpx.Annotated[
         bool,
-        Option(
-            "--slurm/--no-slurm",
-            help="Generate a sbatch file and execute it (specific for HPG)",
-        ),
+        Option("--dump-traj/--no-dump-traj"),
     ] = False,
+    shake: tpx.Annotated[
+        bool,
+        Option("--shake/--no-shake"),
+    ] = False,
+    systems: tpx.Annotated[
+        tp.Optional[tp.List[str]],
+        Option(
+            "-s",
+            "--system",
+            show_default=False,
+            help="Name of system(s) to run on, must be found on benchmark/system",
+        ),
+    ] = None,
+    cuaev: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
+    ] = None,
+    model: tpx.Annotated[
+        str,
+        Option("-m", "--model"),
+    ] = "ani2xr",
+    cutoff: tpx.Annotated[
+        tp.Optional[float],
+        Option("--cutoff"),
+    ] = None,
+    cuda: tpx.Annotated[
+        tp.Optional[bool],
+        Option("--cuda/--no-cuda", help="Benchmark on CUDA device"),
+    ] = None,
+    # At least 200 are needed
+    tstep_num: tpx.Annotated[
+        int,
+        Option(
+            "--tsteps",
+            help="Number of timesteps to run benchmarks for",
+        ),
+    ] = 1000,
+    debug: tpx.Annotated[
+        bool,
+        Option("-g/-G", "--debug/--no-debug"),
+    ] = False,
+    local: tpx.Annotated[
+        bool,
+        Option("--local/--no-local"),
+    ] = True,
     modules: tpx.Annotated[
         bool,
         Option(
@@ -176,139 +104,90 @@ def run(
             help="Run version compiled with modules",
         ),
     ] = False,
-    exclusive: tpx.Annotated[
-        bool,
-        Option(
-            "--exclusive",
-        ),
-    ] = False,
-    gpu: tpx.Annotated[str, Option("--gpu")] = "default",
-    cleanup: tpx.Annotated[
-        bool,
-        Option("--cleanup/--no-cleanup"),
-    ] = True,
-    dump: tpx.Annotated[
-        bool,
-        Option("--dump/--no-dump"),
-    ] = False,
-    protos: tpx.Annotated[
-        tp.Optional[tp.List[Protocol]],
-        Option("-p", "--proto"),
-    ] = None,
-    system: tpx.Annotated[
-        str,
-        Option(
-            "--system",
-            help="Name of system to run on. Must be found in 'benchmark/systems'",
-        ),
-    ] = "ala-8-chain",
-    cutoff: tpx.Annotated[
-        float,
-        Option("--cutoff", help="Cutoff of QM part to use"),
-    ] = 15.0,
-    float64: tpx.Annotated[
-        bool,
-        Option(
-            "--float64/--no-float64",
-            "--no-f32/--f32",
-            "--no-float32/--float32",
-            "--f64/--no-f64",
-            help="Benchmark float64",
-        ),
-    ] = True,
-    torchcouple: tpx.Annotated[
-        bool,
-        Option("--torchcouple/--no-torchcouple", help="Benchmark torch coupling"),
-    ] = True,
-    skip_slow: tpx.Annotated[
-        bool,
-        Option("--skip-slow/--no-skip-slow", help="Skip unused slow algorithm"),
-    ] = True,
-    cuaev: tpx.Annotated[
-        bool,
-        Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
-    ] = False,
-    cuda: tpx.Annotated[
-        bool,
-        Option("--cuda/--no-cuda", help="Benchmark on CUDA device"),
-    ] = True,
-    core_num: tpx.Annotated[
+    hours: tpx.Annotated[
         int,
-        Option(
-            "-c",
-            "--cores",
-            help="Number of cores to run benchmark on, if > 1 sander.MPI is used",
-        ),
+        Option("--hours"),
     ] = 1,
-    # At least 200 are needed
-    tstep_num: tpx.Annotated[
-        int,
-        Option(
-            "-t",
-            "--tsteps",
-            help="Number of timesteps to run benchmarks for",
-        ),
-    ] = 1100,
-    bench_dir: tpx.Annotated[
-        tp.Optional[Path],
-        Option(
-            "-b",
-            "--bench-dir",
-            show_default=False,
-            help="Full path to benchmark directory."
-            " Created automatically by default, so no need to use this opt in general",
-        ),
-    ] = None,
-    selections: tpx.Annotated[
-        tp.Optional[tp.List[str]],
-        Option(
-            "-s",
-            "--selection",
-            help="'Ambermask' that determines which part of the system is QM."
-            " If specified multiple times multiple configs are run"
-            " each with a different selection",
-        ),
-    ] = None,
-    verbose: tpx.Annotated[
-        bool,
-        Option("-v/-V", "--verbose/--no-verbose"),
-    ] = True,
-    suffix: tpx.Annotated[
+    name: tpx.Annotated[
         str,
-        Option("--suffix", help="Suffix for the benchmark name"),
+        Option("-n", "--name"),
     ] = "",
-    skip_mm: tpx.Annotated[
+    out_root: tpx.Annotated[
+        tp.Optional[Path],
+        Option("--out-root", show_default=False),
+    ] = None,
+    sander: tpx.Annotated[
         bool,
-        Option("--skip-mm/--no-skip-mm", help="Skip MM"),
+        Option("--no-pmemd/--pmemd", "--sander/--no-sander"),
+    ] = True,
+    use_amber_neighborlist: tpx.Annotated[
+        bool,
+        Option("--amber-neighborlist/--no-amber-neighborlist"),
     ] = False,
+    use_all_amber_nonbond: tpx.Annotated[
+        bool,
+        Option("--amber-nonbond/--no-amber-nonbond"),
+    ] = False,
+    bench_kind: tpx.Annotated[
+        str,
+        Option("-b", "--bench-kind"),
+    ] = "scaling",
+    systems_src_dir: tpx.Annotated[
+        tp.Optional[Path],
+        Option("--systems-src-dir", show_default=False),
+    ] = None,
 ) -> None:
-    r"""Run Sander or Sander-MPI ML/MM benchmarks"""
-    if not slurm:
-        if modules:
-            console.print("--modules requires --slurm", style="red")
-            raise Abort()
-        if gpu != "default":
-            console.print("--gpu requires --slurm", style="red")
-            raise Abort()
-        if exclusive:
-            console.print("--exclusive requires --slurm", style="red")
+    r"""Run Pmemd or Sander benchmarks
+    Important options: --bench-kind, --model, --tstep-num, --name
+    Specify systems to run benchmark with -s <system> -s <system> etc
+    """
+    unique_id = str(uuid4()).split("-")[-1]
+    if model not in SUPPORTED_MODELS:
+        console.print(f"Model {model} is not supported", style="red")
+        raise Abort()
+    if bench_kind not in ["scaling"]:
+        console.print(f"Unknown bench-kind {bench_kind}")
+        raise Abort()
+
+    if systems is None:
+        if bench_kind == "scaling":
+            if systems_src_dir is None:
+                systems_src_dir = Path(
+                    Path.home(), "Repos", "paper-aniamber", "waterboxes"
+                )
+            systems = [
+                "water-1k",
+                "water-2k",
+                "water-3k",
+                "water-4k",
+                "water-5k",
+                "water-6k",
+                "water-7k",
+                "water-8k",
+                "water-9k",
+                "water-10k",
+                "water-15k",
+                "water-20k",
+                "water-25k",
+                "water-30k",
+            ]
+    assert systems_src_dir is not None
+    assert systems is not None
+
+    for s in systems:
+        if (
+            not (systems_src_dir / f"{s}.prmtop").is_file()
+            or not (systems_src_dir / f"{s}.inpcrd").is_file()
+        ):
+            console.print(f"System {s} inpcrd or prmtop files not found", style="red")
             raise Abort()
 
-    if gpu == "any":
-        gpu = ""
-    elif gpu == "default":
-        gpu = "geforce:"
-    else:
-        gpu = f"{gpu}:"
-
-    if bench_dir is None:
-        kind = "serial" if core_num == 1 else "mpi"
-        dirname = f"{kind}-bench-{str(uuid.uuid4()).split('-')[0]}"
-        if suffix:
-            dirname = f"{dirname}-{suffix}"
-        bench_dir = this_dir / dirname
-        bench_dir.mkdir()
-
+    if debug:
+        tstep_num = 10
+    if not hpg:
+        if modules or gpu:
+            console.print("--modules, --local, --gpu requires --hpg", style="red")
+            raise Abort()
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
         undefined=jinja2.StrictUndefined,
@@ -316,455 +195,67 @@ def run(
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    if slurm:
-        arg_list = sys.argv[1:]
-        for j, arg in enumerate(deepcopy(arg_list)):
-            if arg in ["--gpu"]:
-                arg_list[j + 1] = ""
-            elif arg in ["-s", "--selection", "--system"]:
-                # re-introduce quotes in the selections and system
-                arg_list[j + 1] = f"'{arg_list[j + 1]}'"
-
-        args = " ".join(arg_list)
-        args = args.replace(" --slurm", "")
-        args = args.replace(" --gpu", "")
-        args = args.replace(" --exclusive", "")
-        args = args.replace(" --modules", "")
-        tmpl = env.get_template("hpg.slurm.sh.jinja").render(
-            cli_app_dir=str(this_dir),
-            gpu=gpu,
-            modules=modules,
-            exclusive=exclusive,
-            core_num=core_num,
-            args=args,
-            bench_dir=str(bench_dir),
-            job_prefix=str(bench_dir.name).split("-")[2],
-        )
-        input_fpath = bench_dir / "hpg.slurm.sh"
-        input_fpath.write_text(tmpl)
-        console.print("Launching slurm script ...")
-        subprocess.run(["sbatch", str(input_fpath)], cwd=bench_dir, check=True)
+    if hpg is None:
+        hpg = re.match(r"login\d*\.ufhpc", socket.gethostname()) is not None
+    if hpg:
+        send_to_scheduler("hpg", gpu, name, hours, unique_id, core_num=1, env=env)
         sys.exit(0)
-    if protos is None:
-        protos = list(Protocol)
-    if selections is None:
-        selections = [
-            ":1",
-            ":1-2",
-            ":1-3",
-            ":1-4",
-            ":1-5",
-            ":1-6",
-            ":1-7",
-            ":1-8",
-            ":1-9",
-        ]
-    # Base, "MM/MM" config
-    configs = []
-    if not skip_mm:
-        configs.append(BenchConfig(core_num=core_num, system=system))
-    if cuaev and not cuda:
-        console.print("cuAEV needs CUDA device")
-        raise Abort()
-    for proto, selection in itertools.product(
-        protos,
-        selections,
-    ):
-        # Discard incompatible configs
-        if torchcouple and proto == Protocol.SANDER_ME:
-            continue
-        if skip_slow and not torchcouple and proto == Protocol.ANI_MBISPOL:
-            continue
-        configs.append(
-            BenchConfig(
-                core_num=core_num,
-                system=system,
-                mlmm=BenchMlmmConfig(
-                    proto.value,
-                    use_torch_coupling=torchcouple,
-                    cuda=cuda,
-                    selection=selection,
-                    float64=float64,
-                    use_cuaev=cuaev,
-                    cutoff=cutoff,
-                ),
-            )
-        )
-    if not configs:
-        console.print("No compatible configs found", style="red")
-        raise Abort()
 
-    if verbose:
+    if cuaev is None:
+        cuaev = "ani" in model
+    if cutoff is None:
+        if model == "ani2dr":
+            cutoff = 8.0
+        else:
+            cutoff = 5.2 if "ani" in model else 10.0
+
+    if not name:
+        name = bench_kind
+
+    if cuda is None:
+        import torch
+
+        cuda = torch.cuda.is_available()
+
+    if out_root is None:
+        out_root = Path(Path.home(), "IO", "ani-amber")
+        out_root.mkdir(exist_ok=True, parents=True)
+
+    out_dir = out_root / f"{unique_id}-{name}"
+    out_dir.mkdir(exist_ok=True)
+
+    config = ScalingConfig(
+        cuaev=cuaev,
+        cuda=cuda,
+        dump_traj=dump_traj,
+        shake=shake,
+        use_all_amber_nonbond=use_all_amber_nonbond,
+        use_amber_neighborlist=use_amber_neighborlist,
+        cutoff=cutoff,
+        model=model,
+        tstep_num=tstep_num,
+    )
+    input_tmpl = env.get_template(f"{bench_kind}.mdin.jinja").render(**asdict(config))
+    cmd = "sander" if sander else "pmemd"
+
+    # This requires a version of amber that is hooked with this function
+    os.environ["TORCHANI_AMBER_WALLTIME"] = "1"
+    console.print(f"Output will be written to {out_dir}")
+    pbar = tqdm(total=len(systems), leave=False, position=0)
+    for i, system in enumerate(systems):
+        pbar.set_description(f"Running system {system}, {i + 1}/{len(systems)}")
+        _start = time.perf_counter()
+        system_dir = out_dir / system
+        system_dir.mkdir()
+        (system_dir / "mdin").write_text(input_tmpl)
+        config.to_json_file(system_dir / "config.json")
+        shutil.copy(systems_src_dir / f"{system}.inpcrd", system_dir / "inpcrd")
+        shutil.copy(systems_src_dir / f"{system}.prmtop", system_dir / "prmtop")
+        pbar.update()
+        subprocess.run(cmd, cwd=system_dir, check=True)
         console.print(
-            f"Will use {core_num} cores ({'serial' if core_num == 1 else 'mpi'})"
+            f"Done with system {i + 1}, time {time.perf_counter() - _start:.4f} s"
         )
-        console.print(f"Will benchmark {len(configs)} configs total")
-        console.print(f"Will run each config for {tstep_num} steps")
-        estimate_ms = len(configs) * 150 * tstep_num / math.sqrt(core_num)
-        if estimate_ms * ms_to_s * s_to_hr < 1:
-            factor = s_to_min
-            unit = "min"
-        else:
-            factor = s_to_hr
-            unit = "hr"
-        console.print(f"Time estimate {estimate_ms * ms_to_s * factor:.2f} {unit}")
-
-    for config_idx, config in enumerate(configs):
-        input_as_str = env.get_template("mlmm.mdin.jinja").render(
-            tstep_num=tstep_num, dump_traj=dump, **dataclasses.asdict(config)
-        )
-        config_dir = bench_dir / str(uuid.uuid4()).split("-")[0]
-        config_dir.mkdir()
-        shutil.copy(systems_dir / f"{config.system}.inpcrd", config_dir / "inpcrd")
-        shutil.copy(systems_dir / f"{config.system}.prmtop", config_dir / "prmtop")
-        (config_dir / "mdin").write_text(input_as_str)
-        if config.core_num == 1:
-            cmd = ["sander"]
-        else:
-            if os.environ.get("HPC_PMIX", ""):
-                cmd = [
-                    "srun",
-                    f"--mpi={os.environ['HPC_PMIX']}",
-                    "-n",
-                    str(config.core_num),
-                    "sander.MPI",
-                ]
-            else:
-                cmd = [
-                    "mpirun",
-                    "--report-bindings",
-                    "--bind-to",
-                    "core",
-                    "--mca",
-                    "pml",
-                    "ucx",
-                    "--mca",
-                    "osc",
-                    "ucx",
-                    "--mca",
-                    "btl",
-                    '"^openib"',
-                    "sander.MPI",
-                ]
-        if verbose:
-            console.print(f"{config_idx + 1}/{len(configs)} Running {config}")
-        # This requires a version of amber that is hooked with this function
-        os.environ["TORCHANI_AMBER_WALLTIME"] = "1"
-        try:
-            subprocess.run(cmd, cwd=config_dir, check=True)
-            config.to_file(config_dir / "config.json")
-        finally:
-            if cleanup:
-                for fname in ("mdcrd", "inpcrd", "prmtop", "restrt", "mdinfo"):
-                    if (config_dir / fname).is_file():
-                        (config_dir / fname).unlink()
-
-
-@app.command()
-def plot(
-    dirs: tpx.Annotated[
-        tp.Optional[tp.List[Path]],
-        Argument(),
-    ] = None,
-    glob: tpx.Annotated[
-        str,
-        Option("-g", "--glob"),
-    ] = "*",
-    skip_slow: tpx.Annotated[
-        bool,
-        Option("--skip-slow/--no-skip-slow", help="Skip unused slow algorithm"),
-    ] = True,
-    skip_mm: tpx.Annotated[
-        bool,
-        Option("--skip-mm/--no-skip-mm", help="Skip MM"),
-    ] = False,
-    title: tpx.Annotated[
-        bool,
-        Option("-t/-T", "--title/--no-title"),
-    ] = False,
-    system: tpx.Annotated[
-        str,
-        Option("--system"),
-    ] = "ala-8-chain",
-    size_scaling: tpx.Annotated[
-        bool,
-        Option("--size-scaling/--mpi-scaling"),
-    ] = True,
-    core_num: tpx.Annotated[
-        int,
-        Option("--cores", help="Only for size scaling"),
-    ] = 8,
-    ml_residue_num: tpx.Annotated[
-        int,
-        Option("--res", help="Only for cores scaling"),
-    ] = 4,
-    torchcouple: tpx.Annotated[
-        tp.Optional[bool],
-        Option("--torchcouple/--no-torchcouple", help="Torch coupling"),
-    ] = None,
-    cuda: tpx.Annotated[
-        tp.Optional[bool],
-        Option("--cuda/--no-cuda"),
-    ] = None,
-    cuaev: tpx.Annotated[
-        tp.Optional[bool],
-        Option("--cuaev/--no-cuaev"),
-    ] = None,
-    float64: tpx.Annotated[
-        tp.Optional[bool],
-        Option("--f64/--no-f64"),
-    ] = None,
-    warm_up: tpx.Annotated[
-        int,
-        Option("-w", "--warm-up"),
-    ] = 100,
-    ylo: tpx.Annotated[
-        tp.Optional[float],
-        Option("--ylo"),
-    ] = None,
-    yhi: tpx.Annotated[
-        tp.Optional[float],
-        Option("--yhi"),
-    ] = None,
-    err: tpx.Annotated[
-        str,
-        Option("--err"),
-    ] = "sem",
-    cutoff: tpx.Annotated[
-        tp.Optional[float],
-        Option("--cutoff", help="Cutoff of QM part to use"),
-    ] = None,
-    proto: tpx.Annotated[
-        tp.Optional[str],
-        Option("--proto", help="Cutoff of QM part to use"),
-    ] = None,
-    ns_per_day: tpx.Annotated[
-        bool,
-        Option("--ns-per-day/--no-ns-per-day"),
-    ] = False,
-    table: tpx.Annotated[
-        bool,
-        Option("--table/--no-table"),
-    ] = False,
-    verbose: tpx.Annotated[
-        bool,
-        Option("-v/-V", "--verbose/--no-verbose"),
-    ] = False,
-    percent: tpx.Annotated[
-        bool,
-        Option("--percent/--no-percent"),
-    ] = False,
-    scatter: tpx.Annotated[
-        bool,
-        Option("--scatter/--no-scatter"),
-    ] = False,
-    legend_labels: tpx.Annotated[
-        tp.Optional[tp.List[str]],
-        Option("-l", "--legend-labels"),
-    ] = None,
-) -> None:
-    # Collect and filter requested configurations
-    # Using symlinks for organization, as with tensorboard, is probably a better idea
-    # than the filtering procedure
-    results: tp.List[tp.Any] = []
-    if dirs is None:
-        dirs = [this_dir]
-    files = list(itertools.chain.from_iterable(d.rglob(glob) for d in dirs))
-    for subd in files:
-        if not subd.is_dir():
-            continue
-        if subd.name in ["systems", "templates"]:
-            continue
-        if not (subd / "config.json").is_file():
-            if (subd / "mdin").is_file():
-                console.print(f"Error in {subd}, can't find config.json", style="red")
-            continue
-        with open(subd / "config.json", mode="rt", encoding="utf-8") as f:
-            bench = json.load(f)
-            if "mlmm" in bench:
-                mlmm = bench.pop("mlmm")
-            else:
-                mlmm = None
-            config = BenchConfig(**bench)
-            config.mlmm = BenchMlmmConfig(**mlmm) if mlmm is not None else None
-        if torchcouple is not None:
-            if config.mlmm and config.mlmm.use_torch_coupling != torchcouple:
-                continue
-        if proto is not None:
-            if config.mlmm and config.mlmm.protocol != proto:
-                continue
-        if (
-            skip_slow
-            and config.mlmm
-            and not config.mlmm.use_torch_coupling
-            and config.mlmm.protocol == "ani_mbispol"
-        ):
-            continue
-        if cutoff is not None:
-            if config.mlmm and config.mlmm.cutoff != cutoff:
-                continue
-        if cuaev is not None:
-            if config.mlmm and config.mlmm.use_cuaev != cuaev:
-                continue
-        if float64 is not None:
-            if config.mlmm and config.mlmm.float64 != float64:
-                continue
-        if cuda is not None:
-            if config.mlmm and config.mlmm.cuda != cuda:
-                continue
-        if config.system not in [system, f"{system}-strip"]:
-            continue
-        if size_scaling:
-            if config.core_num != core_num:
-                continue
-        else:
-            if config.ml_residue_num != ml_residue_num and config.ml_residue_num != 0:
-                continue
-        if not (subd / "walltime_ms.dat").is_file():
-            console.print(f"Error in {subd}, can't find walltime_ms.dat", style="red")
-            continue
-        walltimes = np.array(
-            [float(t) for t in (subd / "walltime_ms.dat").read_text().split()]
-        )
-        results.append({"config": config, "walltime_ms": walltimes})
-        if verbose:
-            console.print(subd)
-            console.print(config)
-            console.print(len(walltimes))
-
-    if not results:
-        console.print(
-            "No results were found with the requested constraints", style="yellow"
-        )
-        sys.exit(0)
-
-    fig, ax = plt.subplots()
-    if not size_scaling:
-        ax.set_xlabel(r"Num. MPI processes")
-    else:
-        ax.set_xlabel(r"Num. ML residues")
-    if ns_per_day:
-        ax.set_ylabel(r"Simulated time per compute time (ns/day)")
-    else:
-        ax.set_ylabel(r"Mean walltime per timestep (ms)")
-    scaling_data: tp.Dict[str, tp.Dict[int, NDArray[np.float64]]] = defaultdict(dict)
-    styles = {}
-
-    for r in results:
-        config = r["config"]
-        walltimes = r["walltime_ms"]
-        if size_scaling:
-            _num = config.ml_residue_num
-        else:
-            _num = config.core_num
-        conf = scaling_data[r["config"].label]
-        if _num in conf:
-            scaling_data[r["config"].label][_num] = np.concatenate(
-                (conf[_num], walltimes[warm_up:])
-            )
-        else:
-            scaling_data[r["config"].label][_num] = walltimes[warm_up:]
-        styles[r["config"].label] = r["config"].style
-
-    all_nums = set()
-    if table:
-        dfs = []
-        for k, v in scaling_data.items():
-            num = np.array(list(v.keys()))
-            idxs = np.argsort(num)
-            df = pd.DataFrame()
-            df["Coupling"] = [k] * len(num)
-            if size_scaling:
-                df["Num. ML residues"] = num[idxs]
-            else:
-                df["Num. MPI processes"] = num[idxs]
-            df["Mean (ms)"] = np.array([np.mean(val) for val in v.values()])[idxs]
-            df["Std. dev. (ms)"] = np.array([np.std(val) for val in v.values()])[idxs]
-            df["Min (ms)"] = np.array([np.min(val) for val in v.values()])[idxs]
-            df["Median (ms)"] = np.array([np.median(val) for val in v.values()])[idxs]
-            df["Max (ms)"] = np.array([np.max(val) for val in v.values()])[idxs]
-            dfs.append(df)
-        df = pd.concat(dfs)
-        df.reset_index(drop=True)
-        table_str = df.style.hide(axis=0).format(precision=2).to_latex(hrules=True)
-        (this_dir / "table.tex").write_text(table_str)
-        sys.exit(0)
-    if percent:
-        mm_wts = np.mean(scaling_data["MM/MM"][0]).item()
-    for label, xy in scaling_data.items():
-        style = styles[label]
-        marker = style.pop("marker")
-        num = np.array(list(xy.keys()))
-        idxs = np.argsort(num)
-        all_nums.update(num.tolist())
-        num = num[idxs]
-        if ns_per_day:
-            # walltime per ts -> ts / per walltime (ms)
-            # Amber dt is ps so 0.001 ps = 1
-            # Assume 1 fs timestep (0.001 ps or 1e-6 ns)
-            itor = [1e-6 / (v * ms_to_s * s_to_hr * 1 / 24) for v in xy.values()]
-        else:
-            itor = list(xy.values())
-        mean_wts = np.array([np.mean(wts).item() for wts in itor])[idxs]
-        if percent:
-            percents = (mean_wts - mm_wts) / mean_wts * 100
-        if skip_mm and label == "MM/MM":
-            continue
-        if err != "no":
-            if err == "sem":
-                errs = np.array([stats.sem(wts).item() for wts in itor])[idxs] * 2
-            elif err == "std":
-                errs = np.array([np.std(wts).item() for wts in itor])[idxs]
-            ax.errorbar(num, mean_wts, yerr=errs, capsize=1.5, **style)
-        ax.plot(
-            num,
-            mean_wts,
-            **style,
-            label=label,
-        )
-        if percent:
-            if len(percents) > 1:
-                for i, p in enumerate(percents):
-                    ax.annotate(
-                        f"{p:.1f}%",
-                        xy=(num[i], mean_wts[i]),
-                        xytext=(-1.0, -1.5),
-                        textcoords="offset fontsize",
-                        color=style["color"],
-                    )
-        if scatter:
-            ax.scatter(
-                num,
-                mean_wts,
-                label=label,
-                s=7.0,
-                color=style["color"],
-                alpha=style["alpha"],
-                marker=marker,
-            )
-        if len(num) == 1 and num[0] == 0:
-            ax.axhline(
-                y=mean_wts[0],
-                label=label,
-                **style,
-            )
-    ax.set_ylim(ylo, yhi)
-    ax.set_xticks(sorted(all_nums))
-    # Not needed for article figures
-    if title:
-        ax.set_title(
-            (
-                f"MPI benchmark with {core_num} cores"
-                if core_num > 1
-                else "Serial benchmark"
-            )
-            + f" on {system}"
-        )
-    if legend_labels is not None:
-        ax.legend(legend_labels, frameon=False)
-    else:
-        ax.legend(frameon=False)
-    plt.show()
 
 
 if __name__ == "__main__":
