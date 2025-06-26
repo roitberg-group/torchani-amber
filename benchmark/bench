@@ -195,6 +195,8 @@ def run(
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    if not name:
+        name = f"{model}-{bench_kind}"
     if hpg is None:
         hpg = re.match(r"login\d*\.ufhpc", socket.gethostname()) is not None
     if hpg:
@@ -217,9 +219,6 @@ def run(
             cutoff = 8.0
         else:
             cutoff = 5.2 if "ani" in model else 10.0
-
-    if not name:
-        name = f"{model}-{bench_kind}"
 
     if cuda is None:
         import torch
