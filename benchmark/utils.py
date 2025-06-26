@@ -21,12 +21,17 @@ def send_to_scheduler(
     env: tp.Optional[jinja2.Environment] = None,
 ) -> None:
     if cluster == "hpg":
-        assert gpu in ["a100", "2080ti", "b200", ""]
+        assert gpu in ["2080ti", "b200", "l4", ""]
+        if gpu == "b200":
+            partition = "hpg-b200"
+        elif gpu == "l4":
+            partition = "hpg-turin"
+        else:
+            partition = "gpu"
     else:
+        partition = ""
         console.print(f"Unknown cluster {cluster}", style="red")
         raise Abort()
-
-    partition = "gpu" if gpu != "b200" else "hpg-b200"
     gpu = f"{gpu}:1" if gpu else "1"
     if env is None:
         env = jinja2.Environment(
