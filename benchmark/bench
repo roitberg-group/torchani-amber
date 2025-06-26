@@ -129,6 +129,10 @@ def run(
         tp.Optional[Path],
         Option("--systems-src-dir", show_default=False),
     ] = None,
+    suffix: tpx.Annotated[
+        str,
+        Option("--suffix"),
+    ] = "",
 ) -> None:
     r"""Run Pmemd or Sander benchmarks
     Important options: --bench-kind, --model, --tstep-num, --name
@@ -197,6 +201,8 @@ def run(
     )
     if not name:
         name = f"{model}-{bench_kind}"
+    if suffix:
+        name = f"{name}-{suffix}"
     if hpg is None:
         hpg = re.match(r"login\d*\.ufhpc", socket.gethostname()) is not None
     if hpg:
