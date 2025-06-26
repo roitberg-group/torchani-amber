@@ -39,7 +39,9 @@
     cuda_device_index = -1,  ! GPU index (-1 => CPU or first GPU)
     use_double_precision = .False.,  ! Toggle float64
     use_amber_neighborlist = .{{ use_amber_neighborlist }}.,  ! Toggle AMBER neighborlist
-    use_all_amber_nonbond = .{{ use_all_amber_nonbond }}.,
+    {% if use_all_amber_nonbond %}
+    use_all_amber_nonbond = .True.,
+    {% endif %}
     model_index = -1,  ! ANI network index
     model_type = {{ '"' + model + '"'}},  ! Index of ANI network (-1 => full ensemble)
 /

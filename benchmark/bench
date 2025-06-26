@@ -155,6 +155,8 @@ def run(
                 systems_src_dir = Path(
                     Path.home(), "Repos", "paper-aniamber", "waterboxes"
                 )
+            # Amber neighborlist seems to be slightly slower and use more GPU
+            # Nothing can be handled with nutmeg-small, not even 1k
             systems = [
                 "water-1k",
                 "water-2k",
@@ -163,13 +165,18 @@ def run(
                 "water-5k",
                 "water-6k",
                 "water-7k",
-                "water-8k",
+                "water-8k",  # L4 can handle this with aimnet2-dsf
                 "water-9k",
                 "water-10k",
-                # "water-15k",
-                # "water-20k",
-                # "water-25k",
-                # "water-30k",
+                "water-15k",
+                "water-20k",
+                "water-25k",
+                "water-30k",  # With amber nonbond, aimnet can handle this
+                "water-45k",
+                "water-60k",
+                "water-75k",  # L4 can handle this with ani2dr
+                "water-100k",
+                "water-150k",  # L4 can handle up to this (at least) with ani2xr
             ]
     assert systems_src_dir is not None
     assert systems is not None
@@ -210,7 +217,7 @@ def run(
             cutoff = 5.2 if "ani" in model else 10.0
 
     if not name:
-        name = bench_kind
+        name = f"{model}-{bench_kind}"
 
     if cuda is None:
         import torch
@@ -252,7 +259,14 @@ def run(
         shutil.copy(systems_src_dir / f"{system}.inpcrd", system_dir / "inpcrd")
         shutil.copy(systems_src_dir / f"{system}.prmtop", system_dir / "prmtop")
         pbar.update()
-        subprocess.run(cmd, cwd=system_dir, check=True)
+        out = subprocess.run(
+            cmd, cwd=system_dir, check=False, text=True, capture_output=True
+        )
+        if out.returncode != 0:
+            console.print(f"System {i + 1} failed")
+            console.print(f"stdout: {out.stdout}")
+            console.print(f"stderr: {out.stderr}")
+            break
         console.print(
             f"Done with system {i + 1}, time {time.perf_counter() - _start:.4f} s"
         )
