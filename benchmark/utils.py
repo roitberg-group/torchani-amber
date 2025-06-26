@@ -68,7 +68,7 @@ def send_to_scheduler(
         args=args,
         unique_id=unique_id,
         partition=partition,
-        install=install_kind,
+        install_kind=install_kind,
         hours=hours,
         core_num=core_num,
         version=str(j).zfill(3),
