@@ -18,6 +18,7 @@ def send_to_scheduler(
     hours: int,
     unique_id: str,
     core_num: int,
+    install_kind: str,
     env: tp.Optional[jinja2.Environment] = None,
 ) -> None:
     if cluster == "hpg":
@@ -42,14 +43,13 @@ def send_to_scheduler(
             lstrip_blocks=True,
         )
     arg_list = sys.argv[1:]
-    if "--modules" in arg_list:
-        install = "modules"
-    elif "--local" in arg_list:
-        install = "local"
     for j, arg in enumerate(deepcopy(arg_list)):
-        if arg in ["--hpg", "--modules", "--local"]:
+        if arg in ["--hpg"]:
             arg_list[j] = ""
         elif arg == "--gpu":
+            arg_list[j] = ""
+            arg_list[j + 1] = ""
+        elif arg == "--install-kind":
             arg_list[j] = ""
             arg_list[j + 1] = ""
     args = " ".join(arg_list)
@@ -68,7 +68,7 @@ def send_to_scheduler(
         args=args,
         unique_id=unique_id,
         partition=partition,
-        install=install,
+        install=install_kind,
         hours=hours,
         core_num=core_num,
         version=str(j).zfill(3),

@@ -93,17 +93,10 @@ def run(
         bool,
         Option("-g/-G", "--debug/--no-debug"),
     ] = False,
-    local: tpx.Annotated[
-        bool,
-        Option("--local/--no-local"),
-    ] = True,
-    modules: tpx.Annotated[
-        bool,
-        Option(
-            "--modules",
-            help="Run version compiled with modules",
-        ),
-    ] = False,
+    install_kind: tpx.Annotated[
+        str,
+        Option("--install-kind"),
+    ] = "local",
     hours: tpx.Annotated[
         int,
         Option("--hours"),
@@ -192,8 +185,8 @@ def run(
     if debug:
         tstep_num = 3
     if not hpg:
-        if modules or gpu:
-            console.print("--modules, --local, --gpu requires --hpg", style="red")
+        if install_kind != "local" or gpu:
+            console.print("--install-kind, --gpu requires --hpg", style="red")
             raise Abort()
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
@@ -205,7 +198,16 @@ def run(
     if hpg is None:
         hpg = re.match(r"login\d*\.ufhpc", socket.gethostname()) is not None
     if hpg:
-        send_to_scheduler("hpg", gpu, name, hours, unique_id, core_num=1, env=env)
+        send_to_scheduler(
+            "hpg",
+            gpu,
+            name,
+            hours,
+            unique_id,
+            core_num=1,
+            install_kind=install_kind,
+            env=env,
+        )
         sys.exit(0)
 
     if cuaev is None:
