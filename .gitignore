@@ -17,6 +17,7 @@ test/test_values*.txt
 benchmark/*
 !benchmark/environment.yaml
 !benchmark/bench
+!benchmark/utils.py
 !benchmark/systems/
 !benchmark/templates/
 
