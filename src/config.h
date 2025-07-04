@@ -21,8 +21,8 @@ class GlobalConfig {
         return m_opts.dtype().toScalarType();
     }
 
-    auto device() const -> torch::DeviceType {
-        return m_opts.device().type();
+    auto device() const -> torch::Device {
+        return m_opts.device();
     }
 
     auto set_device_and_precision(bool use_cuda_device, torch::DeviceIndex device_idx, bool use_double_precision) {

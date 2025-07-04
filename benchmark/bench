@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from enum import Enum
+import numpy as np
+from typer import Argument
+import matplotlib.pyplot as plt
 import time
 import json
 from dataclasses import dataclass, asdict
@@ -23,6 +27,11 @@ from utils import send_to_scheduler, SUPPORTED_MODELS
 
 console = Console()
 app = Typer(name="bench", pretty_exceptions_enable=False)
+
+
+class BenchKind(Enum):
+    SCALING = "scaling"
+    REMD = "remd"
 
 
 @dataclass
@@ -89,6 +98,10 @@ def run(
             help="Number of timesteps to run benchmarks for",
         ),
     ] = 1000,
+    time_ps: tpx.Annotated[
+        tp.Optional[float],
+        Option("-t", "--time-ps"),
+    ] = None,
     debug: tpx.Annotated[
         bool,
         Option("-g/-G", "--debug/--no-debug"),
@@ -122,9 +135,9 @@ def run(
         Option("--amber-nonbond/--no-amber-nonbond"),
     ] = False,
     bench_kind: tpx.Annotated[
-        str,
+        tp.Optional[BenchKind],
         Option("-b", "--bench-kind"),
-    ] = "scaling",
+    ] = None,
     systems_src_dir: tpx.Annotated[
         tp.Optional[Path],
         Option("--systems-src-dir", show_default=False),
@@ -142,12 +155,18 @@ def run(
     if model not in SUPPORTED_MODELS:
         console.print(f"Model {model} is not supported", style="red")
         raise Abort()
-    if bench_kind not in ["scaling"]:
-        console.print(f"Unknown bench-kind {bench_kind}")
-        raise Abort()
+    if bench_kind is None:
+        bench_kind == BenchKind.SCALING
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
+        undefined=jinja2.StrictUndefined,
+        autoescape=jinja2.select_autoescape(),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
 
     if systems is None:
-        if bench_kind == "scaling":
+        if bench_kind is BenchKind.SCALING:
             if systems_src_dir is None:
                 systems_src_dir = Path(
                     Path.home(), "Repos", "paper-aniamber", "waterboxes"
@@ -162,7 +181,7 @@ def run(
                 "water-5k",
                 "water-6k",
                 "water-7k",
-                "water-8k",  # L4 can handle this with aimnet2-dsf
+                "water-8k",  # L4 can handle this with aimnet2-dsf (explodes few tsteps)
                 "water-9k",
                 "water-10k",
                 "water-15k",
@@ -173,8 +192,14 @@ def run(
                 "water-60k",
                 "water-75k",  # L4 can handle this with ani2dr
                 "water-100k",
+                "water-125k",
                 "water-150k",  # L4 can handle up to this (at least) with ani2xr
+                "water-175k",
+                "water-200k",
             ]
+            template = env.get_template("scaling.mdin.jinja")
+        elif bench_kind is BenchKind.REMD:
+            raise NotImplementedError("Not implemented yet")
     assert systems_src_dir is not None
     assert systems is not None
 
@@ -185,20 +210,12 @@ def run(
         ):
             console.print(f"System {s} inpcrd or prmtop files not found", style="red")
             raise Abort()
-
     if debug:
         tstep_num = 3
     if not hpg:
         if install_kind != "local" or gpu:
             console.print("--install-kind, --gpu requires --hpg", style="red")
             raise Abort()
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
-        undefined=jinja2.StrictUndefined,
-        autoescape=jinja2.select_autoescape(),
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
     if not name:
         name = f"{model}-{bench_kind}"
     if suffix:
@@ -238,6 +255,9 @@ def run(
     out_dir = out_root / f"{unique_id}-{name}"
     out_dir.mkdir(exist_ok=True)
 
+    if time_ps is not None:
+        tstep_num = max(int(round(time_ps * (2000 if shake else 1000))), 1)
+
     config = ScalingConfig(
         cuaev=cuaev,
         cuda=cuda,
@@ -249,7 +269,6 @@ def run(
         model=model,
         tstep_num=tstep_num,
     )
-    input_tmpl = env.get_template(f"{bench_kind}.mdin.jinja").render(**asdict(config))
     cmd = "sander" if sander else "pmemd"
 
     # This requires a version of amber that is hooked with this function
@@ -261,7 +280,7 @@ def run(
         _start = time.perf_counter()
         system_dir = out_dir / system
         system_dir.mkdir()
-        (system_dir / "mdin").write_text(input_tmpl)
+        (system_dir / "mdin").write_text(template.render(**asdict(config)))
         config.to_json_file(system_dir / "config.json")
         shutil.copy(systems_src_dir / f"{system}.inpcrd", system_dir / "inpcrd")
         shutil.copy(systems_src_dir / f"{system}.prmtop", system_dir / "prmtop")
@@ -277,6 +296,91 @@ def run(
         console.print(
             f"Done with system {i + 1}, time {time.perf_counter() - _start:.4f} s"
         )
+
+
+@app.command()
+def plot(
+    names_or_paths: tpx.Annotated[list[str], Argument()],
+    burn_in_tstep_num: tpx.Annotated[
+        int,
+        Option("-b", "--burn-in-tstep-num"),
+    ] = 100,
+    labels: tpx.Annotated[
+        tp.Optional[list[str]],
+        Option("--labels"),
+    ] = None,
+    out_root: tpx.Annotated[
+        tp.Optional[Path],
+        Option("--out-root", show_default=False),
+    ] = None,
+) -> None:
+    if labels is None:
+        labels = []
+        for n in names_or_paths:
+            fname = Path(n).name if Path(n).is_dir() else n
+            label = "-".join(fname.split("-")[1:-1])
+            label = label.replace("aimnet2-wb97m-dsf", "AimNet2").replace("ani", "ANI-")
+            labels.append(label)
+    if out_root is None:
+        out_root = Path(Path.home(), "IO", "ani-amber")
+    possible_paths = sorted(out_root.iterdir())
+    fig, ax = plt.subplots()
+    for n, label in zip(names_or_paths, labels):
+        _plot_single(ax, n, possible_paths, burn_in_tstep_num, label)
+    ax.set_xlabel("Num. atoms")
+    ax.set_ylabel("Time per timestep (ms)")
+    ax.legend()
+    plt.show()
+
+
+def _plot_single(
+    ax: plt.Axes,
+    name: str,
+    paths: list[Path],
+    burn_in_tstep_num: int = 0,
+    label: str = "",
+) -> None:
+    if Path(name).is_dir():
+        fpath = Path(name)
+    else:
+        paths = [p for p in paths if re.match(f".*{name}", p.name)]
+        if not paths:
+            console.print("Found no matching paths", style="red")
+            raise Abort()
+        if len(paths) > 1:
+            console.print(
+                f"Found more than one possible matching paths {list(map(str, paths))}",
+                style="red",
+            )
+            raise Abort()
+        fpath = paths[0]
+    _atoms_num = []
+    _means = []
+    _stds = []
+    for d in fpath.iterdir():
+        inpcrd_fpath = Path(d, "inpcrd")
+        walltimes_path = Path(d, "walltime_ms.dat")
+        if not walltimes_path.is_file():
+            continue
+        with open(inpcrd_fpath, mode="rt", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i == 1:
+                    _atoms_num.append(int(line))
+                    print(_atoms_num)
+                    break
+        walltimes_ms = list(map(float, walltimes_path.read_text().split()))
+        walltimes_ms = walltimes_ms[burn_in_tstep_num:]
+        walltimes_ms_arr = np.array(walltimes_ms)
+        _means.append(np.mean(walltimes_ms_arr))
+        _stds.append(np.std(walltimes_ms_arr))
+    atoms_num = np.array(_atoms_num)
+    means = np.array(_means)
+    stds = np.array(_stds)
+    sort_idxs = np.argsort(atoms_num)
+    atoms_num = atoms_num[sort_idxs]
+    means = means[sort_idxs]
+    stds = stds[sort_idxs]
+    ax.errorbar(atoms_num, means, yerr=stds, capsize=1.0, marker="s", ms=3, label=label)
 
 
 if __name__ == "__main__":
