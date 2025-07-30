@@ -53,7 +53,8 @@ def _check_which_models_need_compilation(
             infer=(
                 infer
                 if (
-                    name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
+                    name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"]
+                    or name.startswith("ANIr2s")
                 )
                 else False
             ),

@@ -3,9 +3,9 @@ from pathlib import Path
 
 # Make a bulk system for nutmeg
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='make_bulk')
-    parser.add_argument('--num-waters', type=int, default=630)
-    parser.add_argument('--solute-path', type=str, default="")
+    parser = argparse.ArgumentParser(prog="make_bulk")
+    parser.add_argument("--num-waters", type=int, default=630)
+    parser.add_argument("--solute-path", type=str, default="")
     args = parser.parse_args()
     if not args.solute_path:
         solute_path = Path("water")
