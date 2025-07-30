@@ -15,17 +15,21 @@ JIT_DIR = Path(__file__).resolve().parent
 @dataclass
 class ModelSpec:
     cls: str
+    infer: bool = False
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
         return {"neighborlist": "adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
+        if self.infer:
+            return Path(JIT_DIR / f"{self.cls.lower()}-infer.pt")
         return Path(JIT_DIR / f"{self.cls.lower()}.pt")
 
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
+    infer: bool,
 ) -> tp.List[ModelSpec]:
     model_names = (
         "ANI1x",
@@ -43,7 +47,18 @@ def _check_which_models_need_compilation(
 
     specs = []
     for name in model_names:
-        spec = ModelSpec(cls=name)
+        # TODO: With infer this segfaults sometime !!! not sure what's up
+        spec = ModelSpec(
+            cls=name,
+            infer=(
+                infer
+                if (
+                    name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
+                )
+                else False
+            ),
+        )
+        print(spec)
         if spec.file_path().exists() and not force_recompilation:
             continue
         specs.append(spec)
@@ -64,6 +79,8 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
     # First construction of models will trigger download of the model data if needed
     try:
         model = getattr(torchani.models, spec.cls)(**spec.kwargs)
+        if spec.infer:
+            model = model.to_infer_model(use_mnp=False)
     except Exception as e:
         console.print(f"-- JIT - {e}", style="yellow")
         console.print(f"-- JIT - Failed to instantiate {spec}", style="yellow")
@@ -98,6 +115,11 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
+        "--infer",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         default=False,
@@ -116,6 +138,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
+            infer=args.infer,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
