@@ -240,8 +240,10 @@ def run(
     if cutoff is None:
         if model == "ani2dr":
             cutoff = 8.0
+        elif model.startswith("nutmeg") or model.startswith("aimnet"):
+            cutoff = 10.0
         else:
-            cutoff = 5.2 if "ani" in model else 10.0
+            cutoff = 5.2
 
     if cuda is None:
         import torch
@@ -276,10 +278,13 @@ def run(
     console.print(f"Output will be written to {out_dir}")
     pbar = tqdm(total=len(systems), leave=False, position=0)
     for i, system in enumerate(systems):
+        if model.startswith("nutmeg"):
+            config.model = f"{model}:{system}.charges"
         pbar.set_description(f"Running system {system}, {i + 1}/{len(systems)}")
         _start = time.perf_counter()
         system_dir = out_dir / system
         system_dir.mkdir()
+
         (system_dir / "mdin").write_text(template.render(**asdict(config)))
         config.to_json_file(system_dir / "config.json")
         shutil.copy(systems_src_dir / f"{system}.inpcrd", system_dir / "inpcrd")
@@ -307,13 +312,14 @@ def plot(
     ] = 100,
     labels: tpx.Annotated[
         tp.Optional[list[str]],
-        Option("--labels"),
+        Option("-l", "--label"),
     ] = None,
     out_root: tpx.Annotated[
         tp.Optional[Path],
         Option("--out-root", show_default=False),
     ] = None,
 ) -> None:
+    # pass names, automatically plots things in ~/IO/ani-amber
     if labels is None:
         labels = []
         for n in names_or_paths:
@@ -366,7 +372,6 @@ def _plot_single(
             for i, line in enumerate(f):
                 if i == 1:
                     _atoms_num.append(int(line))
-                    print(_atoms_num)
                     break
         walltimes_ms = list(map(float, walltimes_path.read_text().split()))
         walltimes_ms = walltimes_ms[burn_in_tstep_num:]
