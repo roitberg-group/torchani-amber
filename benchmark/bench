@@ -175,7 +175,7 @@ def run(
             # Nothing can be handled with nutmeg-small, not even 1k
             systems = [
                 "water-1k",
-                "water-2k",
+                "water-2_5k",
                 "water-3k",
                 "water-4k",
                 "water-5k",
@@ -279,7 +279,7 @@ def run(
     pbar = tqdm(total=len(systems), leave=False, position=0)
     for i, system in enumerate(systems):
         if model.startswith("nutmeg"):
-            config.model = f"{model}::{system}.charges"
+            config.model = f"{model}::{(systems_src_dir / system).with_suffix('.charges')}"
         pbar.set_description(f"Running system {system}, {i + 1}/{len(systems)}")
         _start = time.perf_counter()
         system_dir = out_dir / system
