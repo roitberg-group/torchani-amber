@@ -156,7 +156,7 @@ def run(
         console.print(f"Model {model} is not supported", style="red")
         raise Abort()
     if bench_kind is None:
-        bench_kind == BenchKind.SCALING
+        bench_kind = BenchKind.SCALING
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "templates/"),
         undefined=jinja2.StrictUndefined,
@@ -217,7 +217,7 @@ def run(
             console.print("--install-kind, --gpu requires --hpg", style="red")
             raise Abort()
     if not name:
-        name = f"{model}-{bench_kind}"
+        name = f"{model}-{bench_kind.value}"
     if suffix:
         name = f"{name}-{suffix}"
     if hpg is None:
