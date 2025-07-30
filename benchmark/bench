@@ -279,7 +279,7 @@ def run(
     pbar = tqdm(total=len(systems), leave=False, position=0)
     for i, system in enumerate(systems):
         if model.startswith("nutmeg"):
-            config.model = f"{model}:{system}.charges"
+            config.model = f"{model}::{system}.charges"
         pbar.set_description(f"Running system {system}, {i + 1}/{len(systems)}")
         _start = time.perf_counter()
         system_dir = out_dir / system
