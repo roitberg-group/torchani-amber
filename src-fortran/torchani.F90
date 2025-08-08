@@ -4,11 +4,16 @@ use, intrinsic :: iso_c_binding
 implicit none (type, external)
 ! Plan for the interface
 public :: &
+    ! shim for bw compat
     torchani_init_model, &
     torchani_energy_force, &
-    torchani_energy_force_from_external_neighbors, &
+    torchani_energy_force_pbc, &
     torchani_bonded_energy_force_pbc, &
-    torchani_energy_force_qbc, &
+    torchani_energy_force_from_external_neighbors, &
+    ! Actuall interface
+    torchani_initialize, &
+    torchani_calc_energy_force, &
+    torchani_calc_energy_force_from_external_neighbors, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_energy_force_with_coupling, &
@@ -18,19 +23,21 @@ public :: &
     convert_pmemd_neighborlist_to_ani_fmt
 
 interface
-subroutine internal_init_model( &
+subroutine internal_initialize( &
     num_atoms, &
     atomic_nums, &
+    no_eval_atoms, &
     model_type, &
     device_index, &
     network_index, &
     use_double_precision, &
     use_cuda_device, &
     use_cuaev &
-) bind(c, name="torchani_init_model")
+) bind(c, name="torchani_initialize")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), intent(in) :: atomic_nums(*)
+    integer(c_int), intent(in) :: no_eval_atoms(*)
     character(len=1, kind=c_char), intent(in) :: model_type(*)
     integer(c_int), value, intent(in) :: device_index
     integer(c_int), value, intent(in) :: network_index
@@ -38,6 +45,56 @@ subroutine internal_init_model( &
     logical(c_bool), value, intent(in) :: use_double_precision
     logical(c_bool), value, intent(in) :: use_cuda_device
     logical(c_bool), value, intent(in) :: use_cuaev
+endsubroutine
+
+subroutine internal_energy_force( &
+    num_atoms, &
+    coords, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    forces, &
+    potential_energy &
+) bind(c, name="torchani_calc_energy_force")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: net_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+endsubroutine
+
+subroutine internal_energy_force_from_external_neighbors( &
+    num_atoms, &
+    num_neighbors, &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    forces, &
+    potential_energy &
+) bind(c, name="torchani_calc_energy_force_from_external_neighbors")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_neighbors
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), intent(in) :: neighborlist(*)
+    real(c_double), intent(in) :: shifts(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: net_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
 endsubroutine
 
 subroutine torchani_energy_force_atomic_charges( &
@@ -74,20 +131,6 @@ subroutine torchani_energy_force_atomic_charges_with_derivatives( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine torchani_energy_force( &
-    num_atoms, &
-    coords, &
-    forces, &
-    potential_energy &
-) bind(c, name="torchani_energy_force")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
 subroutine torchani_energy_force_qbc( &
     num_atoms, &
     coords, &
@@ -101,40 +144,6 @@ subroutine torchani_energy_force_qbc( &
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-subroutine torchani_energy_force_pbc( &
-    num_atoms, &
-    coords, &
-    cell, &
-    forces, &
-    potential_energy &
-) bind(c, name="torchani_energy_force_pbc")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: cell(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-subroutine torchani_bonded_energy_force_pbc( &
-    num_atoms, &
-    coords, &
-    cell, &
-    molecule_idxs, &
-    forces, &
-    potential_energy &
-) bind(c, name="torchani_bonded_energy_force_pbc")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: cell(*)
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
@@ -157,26 +166,6 @@ subroutine torchani_data_for_monitored_mlmm( &
     real(c_double), intent(out) :: atomic_charges_grad(*)
     real(c_double), intent(out) :: qbc
     real(c_double), intent(out) :: qbc_grad(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-subroutine torchani_energy_force_from_external_neighbors( &
-    num_atoms, &
-    num_neighbors, &
-    coords, &
-    neighborlist, &
-    shifts, &
-    forces, &
-    potential_energy &
-) bind(c, name="torchani_energy_force_from_external_neighbors")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_neighbors
-    real(c_double), intent(in) :: coords(*)
-    integer(c_int), intent(in) :: neighborlist(*)
-    real(c_double), intent(in) :: shifts(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
@@ -291,6 +280,117 @@ subroutine torchani_energy_force_with_coupling( &
     )
 endsubroutine
 
+subroutine torchani_initialize( &
+    atomic_nums, &
+    no_eval_atoms, &
+    device_index, &
+    model_type, &
+    network_index, &
+    use_double_precision, &
+    use_cuda_device, &
+    use_cuaev &
+)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    integer(c_int), contiguous, intent(in) :: no_eval_atoms(:)
+    integer(c_int), value, intent(in) :: device_index
+    character(len=*, kind=kind("a")), intent(in) :: model_type
+    integer(c_int), intent(in) :: network_index
+    ! Flags
+    logical, intent(in) :: use_double_precision
+    logical, intent(in) :: use_cuda_device
+    logical, intent(in) :: use_cuaev
+
+    character(len=len_trim(model_type) + 1, kind=c_char) :: c_model_type
+    ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
+    c_model_type = trim(model_type) // c_null_char
+    call internal_initialize( &
+        size(atomic_nums), &
+        atomic_nums, &
+        no_eval_atoms, &
+        c_model_type, &
+        device_index, &
+        network_index, &
+        fbool_to_cbool(use_double_precision), &
+        fbool_to_cbool(use_cuda_device), &
+        fbool_to_cbool(use_cuaev) &
+    )
+endsubroutine
+
+subroutine torchani_calc_energy_force( &
+    num_atoms, &
+    coords, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    integer(c_int), value, intent(in) :: net_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    logical, intent(in) :: calc_only_bonded
+    logical, intent(in) :: use_pbc
+    call internal_energy_force( &
+        num_atoms, &
+        coords, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        net_charge, &
+        forces, &
+        potential_energy &
+    )
+endsubroutine
+
+subroutine torchani_calc_energy_force_from_external_neighbors( &
+    num_atoms, &
+    num_neighbors, &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_neighbors
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), intent(in) :: neighborlist(*)
+    real(c_double), intent(in) :: shifts(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    integer(c_int), value, intent(in) :: net_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    logical, intent(in) :: calc_only_bonded
+
+call internal_energy_force_from_external_neighbors( &
+    num_atoms, &
+    num_neighbors, &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    fbool_to_cbool(calc_only_bonded), &
+    net_charge, &
+    forces, &
+    potential_energy &
+)
+endsubroutine
+
+! Shim for bw compat
 subroutine torchani_init_model( &
     atomic_nums, &
     device_index, &
@@ -308,19 +408,172 @@ subroutine torchani_init_model( &
     logical, intent(in) :: use_double_precision
     logical, intent(in) :: use_cuda_device
     logical, intent(in) :: use_cuaev
-
+    integer(c_int), allocatable :: no_eval_atoms(:)
     character(len=len_trim(model_type) + 1, kind=c_char) :: c_model_type
+
+    allocate(no_eval_atoms(size(atomic_nums)))
+    no_eval_atoms = 0
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_model_type = trim(model_type) // c_null_char
-    call internal_init_model( &
+    call internal_initialize( &
         size(atomic_nums), &
         atomic_nums, &
+        no_eval_atoms, &
         c_model_type, &
         device_index, &
         network_index, &
         fbool_to_cbool(use_double_precision), &
         fbool_to_cbool(use_cuda_device), &
         fbool_to_cbool(use_cuaev) &
+    )
+endsubroutine
+
+
+subroutine torchani_energy_force_from_external_neighbors( &
+    num_atoms, &
+    num_neighbors, &
+    coords, &
+    neighborlist, &
+    shifts, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_neighbors
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), intent(in) :: neighborlist(*)
+    real(c_double), intent(in) :: shifts(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    logical :: calc_only_bonded
+    integer(c_int), allocatable :: molecule_idxs(:)
+    integer(c_int) :: net_charge
+    net_charge = 0
+    calc_only_bonded = .false.
+    allocate(molecule_idxs(num_atoms))
+    molecule_idxs = 0
+
+call internal_energy_force_from_external_neighbors( &
+    num_atoms, &
+    num_neighbors, &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    fbool_to_cbool(calc_only_bonded), &
+    net_charge, &
+    forces, &
+    potential_energy &
+)
+endsubroutine
+
+subroutine torchani_energy_force( &
+    num_atoms, &
+    coords, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    integer(c_int) :: net_charge
+    logical :: calc_only_bonded
+    logical :: use_pbc
+    real(c_double), allocatable :: cell(:, :)
+    integer(c_int), allocatable :: molecule_idxs(:)
+    allocate(cell(3, 3))
+    allocate(molecule_idxs(num_atoms))
+    molecule_idxs = 0
+    cell = 0.0d0
+    use_pbc = .false.
+    calc_only_bonded = .false.
+    net_charge = 0
+    call internal_energy_force( &
+        num_atoms, &
+        coords, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        net_charge, &
+        forces, &
+        potential_energy &
+    )
+endsubroutine
+
+subroutine torchani_energy_force_pbc( &
+    num_atoms, &
+    coords, &
+    cell, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    integer(c_int) :: net_charge
+    logical :: calc_only_bonded
+    logical :: use_pbc
+    integer(c_int), allocatable :: molecule_idxs(:)
+    allocate(molecule_idxs(num_atoms))
+    molecule_idxs = 0
+    use_pbc = .true.
+    calc_only_bonded = .false.
+    net_charge = 0
+    call internal_energy_force( &
+        num_atoms, &
+        coords, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        net_charge, &
+        forces, &
+        potential_energy &
+    )
+endsubroutine
+
+subroutine torchani_bonded_energy_force_pbc( &
+    num_atoms, &
+    coords, &
+    cell, &
+    molecule_idxs, &
+    forces, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+
+    integer(c_int) :: net_charge
+    logical :: calc_only_bonded
+    logical :: use_pbc
+    use_pbc = .true.
+    calc_only_bonded = .true.
+    net_charge = 0
+    call internal_energy_force( &
+        num_atoms, &
+        coords, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        net_charge, &
+        forces, &
+        potential_energy &
     )
 endsubroutine
 

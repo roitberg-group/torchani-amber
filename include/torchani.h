@@ -1,15 +1,43 @@
 #pragma once
 
 extern "C" {
-void torchani_init_model(
+void torchani_initialize(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
+    int no_eval_atoms[],  // Shape (num_atoms,)
     const char* model_type,
     int device_index,
     int network_index,
     bool use_double_precision,
     bool use_cuda_device,
     bool use_cuaev
+);
+
+void torchani_calc_energy_force(
+    int num_atoms,
+    double coords[][3],  // Shape (num_atoms, 3)
+    double cell[][3],  // Shape (3, 3)
+    bool use_pbc,
+    int* molecule_idxs_buf, // Shape (num_atoms,)
+    bool calc_only_bonded,
+    int net_charge,
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double* potential_energy  // Scalar
+);
+
+void torchani_calc_energy_force_from_external_neighbors(
+    int num_atoms,
+    int num_neighbors,
+    double coords[][3],  // Shape (num_atoms, 3)
+    int* neighborlist[2],  // Shape (2, num_atoms)
+    double shifts[][3], // Shape (num_atoms, 3)
+    int* molecule_idxs_buf, // Shape (num_atoms,)
+    bool calc_only_bonded,
+    int net_charge,
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double* potential_energy
 );
 
 void torchani_energy_force_atomic_charges(
@@ -35,39 +63,12 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     double* potential_energy  // Scalar
 );
 
-void torchani_energy_force(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy  // Scalar
-);
-
 void torchani_energy_force_qbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* qbc, // Scalar
-    double* potential_energy  // Scalar
-);
-
-void torchani_bonded_energy_force_pbc(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    double cell[][3],  // Shape (3, 3)
-    int* molecule_idxs_buf, // Shape (num_atoms,)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy  // Scalar
-);
-
-void torchani_energy_force_pbc(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    double cell[][3],  // Shape (3, 3)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
     double* potential_energy  // Scalar
 );
 
@@ -81,17 +82,6 @@ void torchani_data_for_monitored_mlmm(
     double* qbc,  // Scalar
     double qbc_grad[][3],  // Shape (num_atoms, 3)
     double* potential_energy  // Scalar
-);
-
-void torchani_energy_force_from_external_neighbors(
-    int num_atoms,
-    int num_neighbors,
-    double coords[][3],  // Shape (num_atoms, 3)
-    int* neighborlist[2],  // Shape (2, num_atoms)
-    double shifts[][3], // Shape (num_atoms, 3)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
 );
 
 void torchani_energy_force_with_coupling(

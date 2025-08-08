@@ -34,7 +34,9 @@ static std::string file_directory = file_path.substr(
 
 TEST_CASE("C bindings") {
     double coords[][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    int molecule_idxs_buf[] = {1, 1};
     int atomic_numbers[] = {1, 6};
+    int no_eval_atoms[] = {0, 0};
     int size = 2;
     double forces[size][3];
     double qbc;
@@ -89,9 +91,10 @@ TEST_CASE("C bindings") {
         // output
         double potential_energy;
 
-        torchani_init_model(
+        torchani_initialize(
             size,
             atomic_numbers,
+            no_eval_atoms,
             model_type.c_str(),
             device_index,
             network_index,
@@ -122,10 +125,14 @@ TEST_CASE("C bindings") {
                 infile >> test_values[j];
             }
             for (long j = 0; j != 10; ++j) {
-                torchani_energy_force_pbc(
+                torchani_calc_energy_force(
                     size,
                     coords,
                     cell,
+                    true,
+                    molecule_idxs_buf,
+                    false,
+                    0,
                     forces,
                     &potential_energy
                 );
