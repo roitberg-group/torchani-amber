@@ -81,10 +81,14 @@ def send_to_scheduler(
 
 SUPPORTED_MODELS = [
     "ani1x",
+    "ani1x-infer",
     "ani1ccx",
     "ani2x",
+    "ani2x-infer",
     "ani2xr",
+    "ani2xr-infer",
     "ani2dr",
+    "ani2dr-infer",
     "animbis",
     "aniala",
     "anir2s",

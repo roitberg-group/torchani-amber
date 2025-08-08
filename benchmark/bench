@@ -238,7 +238,7 @@ def run(
     if cuaev is None:
         cuaev = "ani" in model
     if cutoff is None:
-        if model == "ani2dr":
+        if model.startswith("ani2dr"):
             cutoff = 8.0
         elif model.startswith("nutmeg") or model.startswith("aimnet"):
             cutoff = 10.0
