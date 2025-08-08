@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import pandas as pd
 from enum import Enum
 import numpy as np
 from typer import Argument
@@ -309,7 +310,7 @@ def plot(
     burn_in_tstep_num: tpx.Annotated[
         int,
         Option("-b", "--burn-in-tstep-num"),
-    ] = 100,
+    ] = 50,
     labels: tpx.Annotated[
         tp.Optional[list[str]],
         Option("-l", "--label"),
@@ -318,6 +319,22 @@ def plot(
         tp.Optional[Path],
         Option("--out-root", show_default=False),
     ] = None,
+    ns_per_day: tpx.Annotated[
+        bool,
+        Option("--ns-per-day/--no-ns-per-day"),
+    ] = False,
+    max_num_atoms: tpx.Annotated[
+        int,
+        Option("--max-num-atoms"),
+    ] = int(1e12),
+    ymax: tpx.Annotated[
+        tp.Optional[float],
+        Option("-y", "--ymax"),
+    ] = None,
+    manual_ticks: tpx.Annotated[
+        bool,
+        Option("--manual-ticks/--no-manual-ticks"),
+    ] = True,
 ) -> None:
     # pass names, automatically plots things in ~/IO/ani-amber
     if labels is None:
@@ -329,12 +346,38 @@ def plot(
             labels.append(label)
     if out_root is None:
         out_root = Path(Path.home(), "IO", "ani-amber")
+    if ymax is None and ns_per_day:
+        ymax = 6
     possible_paths = sorted(out_root.iterdir())
     fig, ax = plt.subplots()
-    for n, label in zip(names_or_paths, labels):
-        _plot_single(ax, n, possible_paths, burn_in_tstep_num, label)
+    colors = [
+        "#AF7AA1",
+        "#E15759",
+        "#4E79A7",
+        "#76B7B2",
+        "#FFBE7D",
+        "#79706E",
+        "#F28E2B",
+        "#59A14F",
+    ]
+    for n, label, c in zip(names_or_paths, labels, colors):
+        _plot_single(
+            ax,
+            n,
+            possible_paths,
+            burn_in_tstep_num,
+            label,
+            c,
+            ns_per_day,
+            max_num_atoms,
+            ymax,
+            manual_ticks,
+        )
     ax.set_xlabel("Num. atoms")
-    ax.set_ylabel("Time per timestep (ms)")
+    if ns_per_day:
+        ax.set_ylabel("Simulation time per walltime (ns/day)")
+    else:
+        ax.set_ylabel("Walltime per timestep (ms)")
     ax.legend()
     plt.show()
 
@@ -345,6 +388,11 @@ def _plot_single(
     paths: list[Path],
     burn_in_tstep_num: int = 0,
     label: str = "",
+    color: str = "",
+    ns_per_day: bool = False,
+    max_num_atoms: int = int(1e12),
+    ymax: tp.Optional[float] = None,
+    manual_ticks: bool = True,
 ) -> None:
     if Path(name).is_dir():
         fpath = Path(name)
@@ -368,14 +416,17 @@ def _plot_single(
         walltimes_path = Path(d, "walltime_ms.dat")
         if not walltimes_path.is_file():
             continue
-        with open(inpcrd_fpath, mode="rt", encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                if i == 1:
-                    _atoms_num.append(int(line))
-                    break
         walltimes_ms = list(map(float, walltimes_path.read_text().split()))
         walltimes_ms = walltimes_ms[burn_in_tstep_num:]
         walltimes_ms_arr = np.array(walltimes_ms)
+        with open(inpcrd_fpath, mode="rt", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i == 1:
+                    num_atoms = int(line)
+                    break
+        if num_atoms > max_num_atoms:
+            continue
+        _atoms_num.append(num_atoms)
         _means.append(np.mean(walltimes_ms_arr))
         _stds.append(np.std(walltimes_ms_arr))
     atoms_num = np.array(_atoms_num)
@@ -385,7 +436,32 @@ def _plot_single(
     atoms_num = atoms_num[sort_idxs]
     means = means[sort_idxs]
     stds = stds[sort_idxs]
-    ax.errorbar(atoms_num, means, yerr=stds, capsize=1.0, marker="s", ms=3, label=label)
+    values_ns_per_day = 86.4 / means
+    if ns_per_day:
+        # magic num to convert to ns / day
+        values = values_ns_per_day
+    else:
+        values = means
+    ax.scatter(atoms_num, values, marker="s", s=3, label=label, color=color)
+    ax.plot(
+        atoms_num,
+        values,
+        linestyle="dashed",
+        color=color,
+    )
+    if manual_ticks:
+        ax.set_xticks(list(range(0, 250_000, 25_000)))
+        ax.set_xticklabels(
+            ["0", "25k", "50k", "75k", "100k", "125k", "150k", "175k", "200k", "225k"]
+        )
+    ax.set_ylim(0, ymax)
+    pd.DataFrame(
+        {
+            "Num. atoms": atoms_num,
+            "Perf. (ns/day)": values_ns_per_day,
+            "Walltime per step (ms)": means,
+        }
+    ).to_csv(f"./{label}.csv", index=False)
 
 
 if __name__ == "__main__":
