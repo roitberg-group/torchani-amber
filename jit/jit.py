@@ -32,33 +32,26 @@ def _check_which_models_need_compilation(
     infer: bool,
 ) -> tp.List[ModelSpec]:
     model_names = (
-        "ANI1x",
-        "ANI1ccx",
-        "ANI2x",
-        "ANIala",
-        "ANImbis",
-        "ANI2dr",
+        # "ANI1x",
+        # "ANI1ccx",
+        # "ANI2x",
+        # "ANImbis",
+        # "ANI2dr",
         "ANI2xr",
-        "ANIr2s",
-        "ANIr2s_water",
-        "ANIr2s_ch3cn",
-        "ANIr2s_chcl3",
+        # "ANIr2s",
+        # "ANIr2s_water",
+        # "ANIr2s_ch3cn",
+        # "ANIr2s_chcl3",
     )
 
     specs = []
     for name in model_names:
-        # TODO: With infer this segfaults sometime !!! not sure what's up
-        spec = ModelSpec(
-            cls=name,
-            infer=(
-                infer
-                if (
-                    name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"]
-                    or name.startswith("ANIr2s")
-                )
-                else False
-            ),
-        )
+        # TODO: With infer this segfaults sometimes !!! not sure what's up
+        if infer and not (
+            name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
+        ):
+            continue
+        spec = ModelSpec(cls=name, infer=infer)
         print(spec)
         if spec.file_path().exists() and not force_recompilation:
             continue
@@ -80,12 +73,15 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
     # First construction of models will trigger download of the model data if needed
     try:
         model = getattr(torchani.models, spec.cls)(**spec.kwargs)
-        if spec.infer:
-            model = model.to_infer_model(use_mnp=False)
     except Exception as e:
         console.print(f"-- JIT - {e}", style="yellow")
         console.print(f"-- JIT - Failed to instantiate {spec}", style="yellow")
         return False
+    if spec.infer:
+        model.potentials["nnp"].neural_networks = model.potentials[
+            "nnp"
+        ].neural_networks.to_infer_model(use_mnp=False)
+
     # TODO: is this still needed?
     _reset_jit_registry()
     torch.jit.save(torch.jit.script(model), spec.file_path())
