@@ -36,15 +36,7 @@ torch::Tensor dbl_buf_to_cell_tensor(
     const GlobalConfig& config,
     double cell_buf[][3]
 ) {
-    torch::Tensor cell = dbl_buf_to_tensor(config, cell_buf, {3, 3});
-    // Cell needs to be transposed due to ANI using opposite cell convention
-#   ifdef DEBUG
-    std::cout << "Torch cell:" << '\n'
-              << cell << '\n'
-              << "Transposed torch cell" << '\n'
-              << torch::transpose(cell, 0, 1) << std::endl;
-#   endif
-    return torch::transpose(cell, 0, 1);
+    return dbl_buf_to_tensor(config, cell_buf, {3, 3});
 }
 
 torch::Tensor int_buf_to_neighborlist_tensor(
