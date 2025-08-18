@@ -231,7 +231,25 @@ find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 # Set Python_LIBRARIES, Python_INCLUDE_DIRS
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
-# Build both libcuaev and libtorchani
+# Build both libcuaev, libcell_list, and libtorchani
+set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+add_library(
+    cell_list
+    SHARED
+    "${CELL_ROOT}/cell_list.cpp"
+)
+target_compile_features(cell_list PRIVATE cxx_std_17)
+target_compile_options(
+    cell_list
+    PRIVATE
+        $<$<CONFIG:Debug>:"-g">
+)
+if(PREFER_CONDA_LIBS)
+    target_link_directories(cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
+endif()
+target_link_libraries(cell_list PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
+target_include_directories(cell_list PRIVATE ${CELL_ROOT} ${Python_INCLUDE_DIRS})
+
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
     cuaev
@@ -297,14 +315,14 @@ target_compile_definitions(
 # TODO: cuAEV needs to be force-loaded due to an internal limitation of Torch extensions
 # I'm not sure why, when linking to libtorch instead of PyTorch, --no-as-needed is also
 # required
-target_link_options(torchani PRIVATE LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cuaev>)
+target_link_options(torchani PRIVATE LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cuaev> LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cell_list>)
 if(PREFER_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev cell_list)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
-# For both libcuaev and libtorchani, the install RPATH is set by default to be
+# For libcuaev, libcell_list and libtorchani, the install RPATH is set by default to be
 # the same as the link path to avoid issues if the correct CUDA is not
 # installed system-wide. If this is not done then CMake tries to re-link the
 # binaries at install-time, and prefers the system CUDA, which may be bad. In addition,
@@ -327,6 +345,12 @@ if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
     )
     set_target_properties(
         cuaev
+        PROPERTIES
+            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
+            INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+    set_target_properties(
+        cell_list
         PROPERTIES
             INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
             INSTALL_RPATH_USE_LINK_PATH TRUE
@@ -416,6 +440,7 @@ install(
     TARGETS
         torchani
         cuaev
+        cell_list
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
         DESTINATION "${LIBRARY_INSTALL_DIR}"

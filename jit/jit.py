@@ -19,7 +19,7 @@ class ModelSpec:
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        return {"neighborlist": "adaptive", "strategy": "cuaev"}
+        return {"neighborlist": "fast_adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
         if self.infer:
@@ -46,6 +46,8 @@ def _check_which_models_need_compilation(
     if infer_model:
         model_names = (infer_model.replace("ani", "ANI"),)
         infer = True
+    else:
+        infer = False
 
     specs = []
     for name in model_names:
@@ -55,7 +57,6 @@ def _check_which_models_need_compilation(
         ):
             continue
         spec = ModelSpec(cls=name, infer=infer)
-        print(spec)
         if spec.file_path().exists() and not force_recompilation:
             continue
         specs.append(spec)
