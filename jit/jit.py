@@ -29,9 +29,9 @@ class ModelSpec:
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
-    infer: bool,
+    infer_model: str = "",
 ) -> tp.List[ModelSpec]:
-    model_names = (
+    model_names: tuple[str, ...] = (
         "ANI1x",
         "ANI1ccx",
         "ANI2x",
@@ -43,6 +43,9 @@ def _check_which_models_need_compilation(
         # "ANIr2s_ch3cn",
         # "ANIr2s_chcl3",
     )
+    if infer_model:
+        model_names = (infer_model.replace("ani", "ANI"),)
+        infer = True
 
     specs = []
     for name in model_names:
@@ -112,9 +115,9 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--infer",
-        action="store_true",
-        default=False,
+        "--infer-model",
+        type=str,
+        default="",
     )
     parser.add_argument(
         "--force",
@@ -135,7 +138,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
-            infer=args.infer,
+            infer_model=args.infer_model,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
