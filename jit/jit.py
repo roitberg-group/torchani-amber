@@ -19,7 +19,7 @@ class ModelSpec:
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        return {"neighborlist": "adaptive", "strategy": "cuaev"}
+        return {"neighborlist": "fast_adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
         if self.infer:
@@ -29,20 +29,25 @@ class ModelSpec:
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
-    infer: bool,
+    infer_model: str = "",
 ) -> tp.List[ModelSpec]:
-    model_names = (
-        # "ANI1x",
-        # "ANI1ccx",
-        # "ANI2x",
-        # "ANImbis",
-        # "ANI2dr",
+    model_names: tuple[str, ...] = (
+        "ANI1x",
+        "ANI1ccx",
+        "ANI2x",
+        "ANImbis",
+        "ANI2dr",
         "ANI2xr",
         # "ANIr2s",
         # "ANIr2s_water",
         # "ANIr2s_ch3cn",
         # "ANIr2s_chcl3",
     )
+    if infer_model:
+        model_names = (infer_model.replace("ani", "ANI"),)
+        infer = True
+    else:
+        infer = False
 
     specs = []
     for name in model_names:
@@ -52,7 +57,6 @@ def _check_which_models_need_compilation(
         ):
             continue
         spec = ModelSpec(cls=name, infer=infer)
-        print(spec)
         if spec.file_path().exists() and not force_recompilation:
             continue
         specs.append(spec)
@@ -112,9 +116,9 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--infer",
-        action="store_true",
-        default=False,
+        "--infer-model",
+        type=str,
+        default="",
     )
     parser.add_argument(
         "--force",
@@ -135,7 +139,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
-            infer=args.infer,
+            infer_model=args.infer_model,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
