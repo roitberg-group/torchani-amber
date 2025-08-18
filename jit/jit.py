@@ -32,11 +32,11 @@ def _check_which_models_need_compilation(
     infer: bool,
 ) -> tp.List[ModelSpec]:
     model_names = (
-        # "ANI1x",
-        # "ANI1ccx",
-        # "ANI2x",
-        # "ANImbis",
-        # "ANI2dr",
+        "ANI1x",
+        "ANI1ccx",
+        "ANI2x",
+        "ANImbis",
+        "ANI2dr",
         "ANI2xr",
         # "ANIr2s",
         # "ANIr2s_water",
