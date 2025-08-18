@@ -18,7 +18,6 @@ use_conda_libs=ON
 use_libtorch=OFF
 use_pytorch_libs=ON
 run_tests=1
-use_pub_sandbox=ON
 cmake_build=1
 cmake_install=1
 torch_cuda_archs=""
@@ -48,9 +47,6 @@ while getopts "TIBPCasgh" o; do
             ;;
         a)
             torch_cuda_archs="6.0;6.1;7.0;7.5;8.0;8.9"
-            ;;
-        s)
-            use_pub_sandbox=OFF
             ;;
         h)
             usage
@@ -89,7 +85,6 @@ cmake \
     -DDOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
     -DCOMPILE_WITH_CXX11ABI=$use_libtorch \
     -DTORCH_CUDA_ARCH_LIST=$torch_cuda_archs \
-    -DUSE_PUBLIC_SANDBOX=$use_pub_sandbox \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
 
