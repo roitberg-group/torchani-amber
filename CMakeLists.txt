@@ -45,10 +45,10 @@ option(USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<versi
 option(ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
 
 # Exact major.minor versions must match for these
-set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(REQUIRED_TORCH_VERSION "2.8" CACHE STRING "Require this version of PyTorch/LibTorch")
 set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
-set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Require this version of the CUDA Toolkit")
-set(REQUIRED_CUDNN_VERSION "9.1" CACHE STRING "Require this version of the cuDNN library")
+set(REQUIRED_CUDATK_VERSION "12.9" CACHE STRING "Require this version of the CUDA Toolkit")
+set(REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
 
 # Validate options
 if(LINK_TO_PYTORCH_LIBS AND DOWNLOAD_AND_INSTALL_LIBTORCH)
@@ -98,6 +98,8 @@ if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
         msg_info("Libs will be searched first under this prefix")
         msg_info("If you don't want this, reconfigure with -DPREFER_CONDA_LIBS=OFF")
         list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+        # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
+        set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
         set(USE_CONDA_CUDNN ON)
         set(USE_CONDA_CUDATK ON)
     else()
