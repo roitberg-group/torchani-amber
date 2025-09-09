@@ -98,7 +98,7 @@ def _disable_jit_optimizations() -> None:
     torch._C._jit_set_profiling_mode(False)
     torch._C._jit_override_can_fuse_on_cpu(False)
     torch._C._jit_set_texpr_fuser_enabled(False)
-    if tuple(map(int, torch.__version__.split("."))) < (2, 3):
+    if tuple(map(int, torch.__version__.split(".")[:-1])) < (2, 3):
         # Avoid nvfuser bugs for old pytorch versions
         # https://github.com/pytorch/pytorch/issues/84510)
         torch._C._jit_set_nvfuser_enabled(False)
