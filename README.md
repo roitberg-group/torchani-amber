@@ -1,8 +1,8 @@
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/aniamber-logo-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/aniamber-logo-light.png">
-  <img alt="TorchANI + Amber logo" src="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/aniamber-logo-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-light.png">
+  <img alt="TorchANI + Amber logo" src="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-light.png">
 </picture>
 </div>
 
