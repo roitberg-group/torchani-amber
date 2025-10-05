@@ -1,4 +1,4 @@
-<div style="text-align: center;">
+<div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-light.png">
