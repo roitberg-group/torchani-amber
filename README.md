@@ -5,6 +5,9 @@
   <img alt="TorchANI + Amber logo" src="https://raw.githubusercontent.com/roitberg-group/torchani-amber/main/ani-amber-logo-light.png">
 </picture>
 </div>
+<br>
+
+ [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Interface enabling molecular dynamics or minimizations with ANI-style NN-IPs (neural
 network interatomic potentials) *and other general NN-IPs*, in the Amber software suite.
