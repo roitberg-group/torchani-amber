@@ -7,7 +7,8 @@
 </div>
 <br>
 
- [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![DOI](https://zenodo.org/badge/605232014.svg)](https://doi.org/10.5281/zenodo.17273338)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Interface enabling molecular dynamics or minimizations with ANI-style NN-IPs (neural
 network interatomic potentials) *and other general NN-IPs*, in the Amber software suite.
