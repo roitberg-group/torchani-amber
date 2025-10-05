@@ -15,24 +15,26 @@ where intermolecular non-bonded interactions are calculated by the force field. 
 simulations are also possible. Both `sander` and `pmemd` are supported.
 
 Built-in models are:
-- [ANI-1x ($\omega$B97X)](https://aip.scitation.org/doi/10.1063/1.5023802)
-    Supports H, C, N, O elements. No charged systems
-- [ANI-2x ($\omega$B97X)](https://pubs.acs.org/doi/10.1021/acs.jctc.0c00121)
-    Supports H, C, N, O, S, F, Cl elements. No charged systems
-- [ANI-1ccx ($\omega$B97X)](https://www.nature.com/articles/s41467-019-10827-4)
-    Supports H, C, N, O, S, F, Cl elements. No charged systems
+- [ANI-1x](https://aip.scitation.org/doi/10.1063/1.5023802)
+    ($\omega$B97X) Supports H, C, N, O elements. No charged systems
+- [ANI-2x](https://pubs.acs.org/doi/10.1021/acs.jctc.0c00121)
+    ($\omega$B97X) Supports H, C, N, O, S, F, Cl elements. No charged systems
+- [ANI-1ccx](https://www.nature.com/articles/s41467-019-10827-4)
+    ($\omega$B97X) Supports H, C, N, O, S, F, Cl elements. No charged systems
 
 The modified TorchANI 2.0 models:
-- [ANI-2xr ($\omega$B97X)](https://chemrxiv.org/engage/chemrxiv/article-details/6890d92523be8e43d6b9bbba)
-    Supports H, C, N, O, S, F, Cl elements. No charged systems. Includes repulsive
-    interactions and smooth PES
-- [ANI-2dr (B973c)](https://chemrxiv.org/engage/chemrxiv/article-details/6890d92523be8e43d6b9bbba)
-    Supports H, C, N, O, S, F, Cl elements. No charged systems. Includes repulsive
-    interactions, D3, and smooth PES
+- [ANI-2xr](https://chemrxiv.org/engage/chemrxiv/article-details/6890d92523be8e43d6b9bbba)
+  ($\omega$B97X) Supports H, C, N, O, S, F, Cl elements. No charged systems. Includes
+  repulsive interactions and smooth PES
+- [ANI-2dr](https://chemrxiv.org/engage/chemrxiv/article-details/6890d92523be8e43d6b9bbba)
+    (B973c) Supports H, C, N, O, S, F, Cl elements. No charged systems. Includes
+    repulsive interactions, D3, and smooth PES
 
 Other NN-IPs supported out of the box:
-- [AimNet 2 (both $\omega$B97M-D3BJ and B973c)](https://pubs.rsc.org/en/content/articlelanding/2025/sc/d4sc08572h)
-- [Nutmeg small, medium, and large ($\omega$B97M-D3BJ)](https://pubs.rsc.org/en/content/articlelanding/2025/sc/d4sc08572h)
+- [AimNet 2](https://pubs.rsc.org/en/content/articlelanding/2025/sc/d4sc08572h)
+    Both $\omega$B97M-D3BJ and B973c are supported, with and without DSF.
+- [Nutmeg](https://pubs.rsc.org/en/content/articlelanding/2025/sc/d4sc08572h)
+    Small, medium and large are supported ($\omega$B97M-D3BJ)
 
 Including your custom NN-IP is simple if you follow the TorchANI 2.0 API
 
