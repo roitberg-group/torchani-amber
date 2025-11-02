@@ -19,7 +19,7 @@ class ModelSpec:
 
     @property
     def kwargs(self) -> tp.Dict[str, tp.Any]:
-        return {"neighborlist": "fast_adaptive", "strategy": "cuaev"}
+        return {"neighborlist": "adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
         if self.infer:

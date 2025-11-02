@@ -158,7 +158,7 @@ class AimNet2Wrapper(torch.nn.Module):
         data: tp.Dict[str, Tensor] = {
             "mol_idx": coords.new_zeros(atoms_num + 1),
             "numbers": self.pad_dim0(species.squeeze(0)).long(),
-            "charge": coords.new_zeros(1),
+            "charge": torch.tensor([charge], dtype=coords.dtype, device=coords.device),
             "cutoff_lr": coords.new_full((1,), fill_value=self._cutoff_lr),
         }
         if pbc is None:
@@ -326,11 +326,12 @@ class AimNet2Mbis(AimNet2Wrapper):
             nop=False,
         )
         # Run charge model only
+        # TODO currently charge model only supports 0 charge
         atomic_charges = self._charge_model.compute_from_neighbors(
             elem_idxs,
             coords,
             neighbors_lr,
-            charge,
+            0,
             atomic,
             ensemble_values,
         ).scalars
