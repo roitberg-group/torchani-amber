@@ -754,11 +754,9 @@ void torchani_energy_force_with_coupling(
         torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
     // Unfortunately currently we pass zeros if we predict charges
     int total_charge = 0;
-    if (not predict_charges) {
-        atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
-        total_charge =
-            torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
-    }
+    atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
+    total_charge =
+        torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
     std::vector<torch::jit::IValue> inputs =
         setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ total_charge);
     torch::jit::IValue output = model.forward(inputs);
