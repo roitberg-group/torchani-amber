@@ -52,6 +52,10 @@ Other NN-IPs supported out of the box:
 
 Including your custom NN-IP is simple if you follow the TorchANI 2.0 API
 
+Important: For running ML/MM charged systems with `AimNet2` and `Nutmeg`, you will need
+to patch sander from your `AmberTools` version, unless using `AmberTools26`. To
+do this, copy the file `AmberTools25-patch`/
+
 ## Installing from source
 
 Useful links:
@@ -248,6 +252,7 @@ A template for the first setting (simple polarizable with variable charges) is:
     model_type = 'animbis'  ! Charge-predicting model. Currently available: 'animbis'
     use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
     mlmm_coupling = 1  ! Simple polarizable coupling
+    use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
@@ -270,6 +275,7 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
     model_type = 'ani2x'  ! Select any model
     use_torchani_charges = .false.  ! Use fixed topology charges
     mlmm_coupling = 0  ! Coulombic coupling
+    use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
