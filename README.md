@@ -53,8 +53,10 @@ Other NN-IPs supported out of the box:
 Including your custom NN-IP is simple if you follow the TorchANI 2.0 API
 
 Important: For running ML/MM charged systems with `AimNet2` and `Nutmeg`, you will need
-to patch sander from your `AmberTools` version, unless using `AmberTools26`. To
-do this, copy the file `AmberTools25-patch`/
+to patch `sander` from your `AmberTools` version, *before compilation* unless using
+`AmberTools26`. To do this, replace the file in
+`amber_src/AmberTools/sander/qm2_extern_torchani_module.F90` with
+`AmberTools25-patch/qm2_extern_torchani_module.F90`.
 
 ## Installing from source
 
