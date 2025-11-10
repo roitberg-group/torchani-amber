@@ -11,7 +11,7 @@
 !
 ! Based on qm2_extern_orc_module.F90 and qm2_extern_lio_module.F90
 ! Uses torchani-amber interface (Author: Ignacio Pickering)
-! Date: March 2023
+! Date: December 2024
 ! ----------------------------------------------------------------
 module qm2_extern_torchani_module
 #ifdef TORCHANI
