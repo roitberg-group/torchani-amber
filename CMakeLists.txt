@@ -46,9 +46,9 @@ option(ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not s
 option(CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
 
 # Exact major.minor versions must match for these
-set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(REQUIRED_TORCH_VERSION "2.8" CACHE STRING "Require this version of PyTorch/LibTorch")
 set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
-set(REQUIRED_CUDATK_VERSION "12.4" CACHE STRING "Require this version of the CUDA Toolkit")
+set(REQUIRED_CUDATK_VERSION "12.9" CACHE STRING "Require this version of the CUDA Toolkit")
 set(REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
 
 # Validate options
