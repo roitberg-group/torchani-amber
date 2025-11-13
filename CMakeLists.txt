@@ -43,11 +43,10 @@ option(PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda
 option(USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
 option(USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
 option(ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
-option(USE_INTERNAL_SOURCE "Use internal aev and cell list sources only" OFF)
 option(CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
 
 # Exact major.minor versions must match for these
-set(REQUIRED_TORCH_VERSION "2.8" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
 set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
 set(REQUIRED_CUDATK_VERSION "12.9" CACHE STRING "Require this version of the CUDA Toolkit")
 set(REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
@@ -238,11 +237,7 @@ find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
 # Build both libcuaev, libcell_list, and libtorchani
-if(USE_INTERNAL_SOURCE)
-    set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/torchani-csrc/")
-else()
-    set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
-endif()
+set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
     cell_list
     SHARED
@@ -260,11 +255,7 @@ endif()
 target_link_libraries(cell_list PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
 target_include_directories(cell_list PRIVATE ${CELL_ROOT} ${Python_INCLUDE_DIRS})
 
-if(USE_INTERNAL_SOURCE)
-    set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/torchani-csrc/")
-else()
-    set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
-endif()
+set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
 add_library(
     cuaev
     SHARED
