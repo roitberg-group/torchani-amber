@@ -87,9 +87,17 @@ described next. Other procedures may work, but are untested. GCC >= 12.2 is requ
     conda activate ani-amber
     ```
 3. Install TorchANI (python), together with its compiled extensions
+    If you have access to a GPU and you want to install only for that GPU:
     ```bash
-    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox
+    TORCHANI_BUILD_EXT=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani_sandbox
     ```
+    If you don't have access to a GPU currently (e.g. you are compiling in a node
+    without a GPU and you want to afterwards run in a node with a GPU) you can do:
+    ```bash
+    TORCHANI_BUILD_ALL_SMS=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani_sandbox
+    ```
+    to build for all possible GPUs (it will take significantly longer)
+
 4. Build and install TorchANI-Amber using the `run-cmake` script
     *ADVANCED:* If you want to perform your custom modifications to the build, this is
     the moment to do it. Check `run-cmake` and the `CMakeLists.txt` for more info.
@@ -97,12 +105,6 @@ described next. Other procedures may work, but are untested. GCC >= 12.2 is requ
     this by using the `-T` flag. For more options do `run-cmake -h`.
     ```bash
     ./run-cmake
-    ```
-    After this is done, you can safely deactivate the environment, it is no longer
-    needed. However, *don't remove it*. The compiled binaries will depend on the cuda
-    and torch dynamic libraries in the env to run correctly.
-    ```bash
-    conda deactivate ani-amber
     ```
 5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
    to both `pmemd` and `sander`. You can refer to [the amber
@@ -114,6 +116,12 @@ described next. Other procedures may work, but are untested. GCC >= 12.2 is requ
         -DCMAKE_PREFIX_PATH=$HOME/.local/
         -DCOMPILER=GNU
         ...
+    ```
+    After this is done, you can safely deactivate the environment, it is no longer
+    needed. However, *don't remove it*. The compiled binaries will depend on the cuda
+    and torch dynamic libraries in the env to run correctly.
+    ```bash
+    conda deactivate ani-amber
     ```
 <!-- Is it a problem to use amber's miniconda / python? maybe not? -->
 
