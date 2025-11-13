@@ -61,4 +61,5 @@ dependencies:
   # Use torch 2.8 since 2.7 has a bug with nvtx that has to be manually patched
   - pip:
     - --index-url https://download.pytorch.org/whl/cu129
+    - --extra-index-url https://pypi.python.org/simple
     - torch==2.8.*
