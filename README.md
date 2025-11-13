@@ -88,7 +88,7 @@ described next. Other procedures may work, but are untested. GCC >= 12.2 is requ
     ```
 3. Install TorchANI (python), together with its compiled extensions
     ```bash
-    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox_pub
+    pip install --no-deps --no-build-isolation --config-settings=--global-option=ext -v -e ./submodules/torchani_sandbox
     ```
 4. Build and install TorchANI-Amber using the `run-cmake` script
     *ADVANCED:* If you want to perform your custom modifications to the build, this is
