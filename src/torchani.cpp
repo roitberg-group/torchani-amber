@@ -4,6 +4,7 @@
 #include "electro.h"
 #include "build_tensors.h"
 
+#include <limits>
 #include <cmath>
 #include <chrono>
 #include <stdint.h>
@@ -342,7 +343,7 @@ void validate_model_output(
     try {
         output.toTuple();
     } catch (const c10::Error& e) {
-        std::cerr << "Error in libtorchani\n"
+        std::cerr << "ERROR (libtorchani)\n"
                   << "Expected model to return a tuple of tensors" << std::endl;
 #ifdef DEBUG
         throw;
@@ -350,7 +351,7 @@ void validate_model_output(
         std::exit(2);
     }
     if (output.toTuple()->elements().size() < expect_len) {
-        std::cerr << "Error in libtorchani\n";
+        std::cerr << "ERROR (libtorchani)\n";
         std::cerr << "Expected model to return ";
         if (expect_len == 2) {
             if (external) {
@@ -381,10 +382,12 @@ void torchani_initialize(
     bool use_cuaev
 ) {
     if (use_cuaev and not use_cuda_device) {
-        std::cerr << "Error in libtorchani\n"
-                  << "A CUDA capable device must be selected to use the cuAEV extension"
+        std::cerr << "WARNING (libtorchani)\n"
+                  << "A CUDA capable device must be selected to use the cuAEV\n"
+                  << "but CPU was selected.\n"
+                  << "The cuAEV extension will be disabled"
                   << std::endl;
-        std::exit(2);
+        use_cuaev = false;
     }
     std::string jit_models_dir = __FILE__;
     // The following is roughtly equivalent to dir.parent.parent
@@ -486,16 +489,13 @@ void torchani_initialize(
         model = torch::jit::load(jit_model_path, config.device());
     } catch (const c10::Error& e) {
         std::cerr
-            << "Error in libtorchani\n"
+            << "ERROR (libtorchani)\n"
             << "Could not load model correctly from path: " << jit_model_path
             << "Make sure the path absolute, and correctly specified,\n"
             << "or that you are correctly specifying one of the built-in models.\n"
             << "Also make sure your the model has been correctly jit-compiled\n"
             << std::endl;
-        // #ifdef DEBUG
         throw;
-        // #endif
-        // std::exit(2);
     }
 
     // This is only necessary for double precision, since
@@ -512,7 +512,7 @@ void torchani_initialize(
                 {torch::List<std::int64_t>{network_index}}
             );
         } else {
-            std::cerr << "Error in libtorchani\n"
+            std::cerr << "ERROR (libtorchani)\n"
                       << "You set 'network_index' to a value != -1"
                       << " but the selected model doesn't export"
                       << " a method 'set_active_members(str) -> None'" << std::endl;
@@ -523,12 +523,13 @@ void torchani_initialize(
         if (model.find_method("set_strategy").has_value()) {
             model.get_method("set_strategy")({"cuaev"});
         } else {
-            std::cerr << "Error in libtorchani\n"
+            std::cerr << "WARNING (libtorchani)\n"
                       << "You set 'use_cuaev=true'"
                       << " but the selected model doesn't export"
                       << " a method 'set_strategy(str) -> None'"
-                      << " that accepts the string 'cuaev'." << std::endl;
-            std::exit(2);
+                      << " that accepts the string 'cuaev'.\n"
+                      << "The cuAEV extension will be disabled"
+                      << std::endl;
         }
     } else {
         // It is not required that models support this
@@ -626,7 +627,7 @@ void torchani_calc_energy_force_from_external_neighbors(
         calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
         populate_potential_energy(energy, potential_energy_buf);
     } else {
-        std::cerr << "Error in libtorchani\n"
+        std::cerr << "ERROR (libtorchani)\n"
                   << "To use an external neighborlist"
                   << " the model must export 'compute_from_external_neighbors(...)'."
                   << " Consult the TorchANI-Amber readmi for more info" << std::endl;
@@ -727,7 +728,7 @@ void torchani_energy_force_atomic_charges(
  *
  * Currently this is the only code path that supports charged molecules
  */
-void torchani_energy_force_with_coupling(
+void torchani_calc_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
     double inv_pol_dielectric,
@@ -738,6 +739,7 @@ void torchani_energy_force_with_coupling(
     bool predict_charges,
     bool simple_polarization_correction,
     bool use_charge_derivatives,
+    int ml_system_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
@@ -752,13 +754,9 @@ void torchani_energy_force_with_coupling(
 
     torch::Tensor atomic_charges =
         torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
-    // Unfortunately currently we pass zeros if we predict charges
-    int total_charge = 0;
-    atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
-    total_charge =
-        torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
+
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ total_charge);
+        setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, predict_charges ? 3 : 2);
     torch::Tensor ene_pot_invacuo = output.toTuple()->elements()[1].toTensor();
@@ -829,6 +827,52 @@ void torchani_energy_force_with_coupling(
         populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
     }
 }
+
+// For bw compat only
+void torchani_energy_force_with_coupling(
+    int num_atoms,
+    int num_env_charges,
+    double inv_pol_dielectric,
+    double coords_buf[][3],
+    double atomic_alphas_buf[],  // shape (num-atoms,)
+    double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
+    double env_charges_buf[],  // shape (num-charges,)
+    bool predict_charges,
+    bool simple_polarization_correction,
+    bool use_charge_derivatives,
+    /* outputs */
+    double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
+    double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
+    double atomic_charges_buf[],  // shape (num-atoms, 3) (actually in-out)
+    double* ene_pot_invacuo_buf,
+    double* ene_pot_embed_pol_buf,
+    double* ene_pot_embed_dist_buf,
+    double* ene_pot_embed_coulomb_buf,
+    double* ene_pot_total_buf
+) {
+    return torchani_calc_energy_force_with_coupling(
+        num_atoms,
+        num_env_charges,
+        inv_pol_dielectric,
+        coords_buf,
+        atomic_alphas_buf,
+        env_charge_coords_buf,
+        env_charges_buf,
+        predict_charges,
+        simple_polarization_correction,
+        use_charge_derivatives,
+        0,
+        forces_on_atoms_buf,
+        forces_on_env_charges_buf,
+        atomic_charges_buf,
+        ene_pot_invacuo_buf,
+        ene_pot_embed_pol_buf,
+        ene_pot_embed_dist_buf,
+        ene_pot_embed_coulomb_buf,
+        ene_pot_total_buf
+    );
+}
+
 
 void torchani_energy_force_atomic_charges_with_derivatives(
     int num_atoms,

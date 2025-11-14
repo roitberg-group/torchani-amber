@@ -105,4 +105,27 @@ void torchani_energy_force_with_coupling(
     double* ene_pot_embed_coulomb_buf,
     double* ene_pot_total_buf
 );
+
+void torchani_calc_energy_force_with_coupling(
+    int num_atoms,
+    int num_env_charges,
+    double distortion_k,
+    double coords_buf[][3],
+    double atomic_alphas_buf[],  // shape (num-atoms,)
+    double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
+    double env_charges_buf[],  // shape (num-charges,)
+    bool predict_charges,
+    bool use_simple_polarization_correction,
+    bool use_charge_derivatives,
+    int ml_system_charge,
+    /* outputs */
+    double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
+    double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
+    double atomic_charges_buf[],  // shape (num-atoms, 3)
+    double* ene_pot_invacuo_buf,
+    double* ene_pot_embed_pol_buf,
+    double* ene_pot_embed_dist_buf,
+    double* ene_pot_embed_coulomb_buf,
+    double* ene_pot_total_buf
+);
 }
