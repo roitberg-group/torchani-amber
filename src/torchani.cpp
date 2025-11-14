@@ -524,11 +524,12 @@ void torchani_initialize(
             model.get_method("set_strategy")({"cuaev"});
         } else {
             std::cerr << "WARNING (libtorchani)\n"
-                      << "You set 'use_cuaev=true'"
-                      << " but the selected model doesn't export"
+                      << " The selected model doesn't export"
                       << " a method 'set_strategy(str) -> None'"
                       << " that accepts the string 'cuaev'.\n"
-                      << "The cuAEV extension will be disabled"
+                      << "The cuAEV extension will be disabled.\n"
+                      << " If you are not using a traditional ANI model with AEVs,"
+                      << " you can safely disregard this warning."
                       << std::endl;
         }
     } else {
