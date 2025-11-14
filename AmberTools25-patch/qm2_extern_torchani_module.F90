@@ -849,7 +849,7 @@ subroutine internal_error()
     call mexit(6,1)  ! TODO: Explicitly import routine
 endsubroutine
 
-subroutine get_vacuum_and_coupling_and_forces_through_torchani( &
+subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     write_to_mdout_this_step, &
     qmcoords, &
     alpha, &
