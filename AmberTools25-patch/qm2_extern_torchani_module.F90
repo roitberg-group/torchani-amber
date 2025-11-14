@@ -543,7 +543,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     cuda_device_index = 0
     ! ML/MM specific
     inv_pol_dielectric = 0.5d0
-    use_torch_coupling = .false.
+    use_torch_coupling = .true.
     mlmm_coupling = 0
     use_torchani_charges = .false.
     allow_untested_protocols = .false.
@@ -650,6 +650,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%extcoupling_program = extcoupling_program
     ani_nml%switching_program = switching_program
     ani_nml%use_switching_function = use_switching_function
+    ani_nml%use_cuaev = use_cuaev
     ani_nml%qlow = qlow
     ani_nml%qhigh = qhigh
     ani_nml%use_numerical_qmmm_forces = use_numerical_qmmm_forces
