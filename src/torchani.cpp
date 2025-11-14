@@ -755,6 +755,13 @@ void torchani_calc_energy_force_with_coupling(
     torch::Tensor atomic_charges =
         torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
 
+    // backwards compatibility
+    if (ml_system_charge == -9'999'999) {
+         atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
+         ml_system_charge =
+             torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
+    }
+
     std::vector<torch::jit::IValue> inputs =
         setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
     torch::jit::IValue output = model.forward(inputs);
@@ -861,7 +868,7 @@ void torchani_energy_force_with_coupling(
         predict_charges,
         simple_polarization_correction,
         use_charge_derivatives,
-        0,
+        -9'999'999,  // backwards compatibility (infer)
         forces_on_atoms_buf,
         forces_on_env_charges_buf,
         atomic_charges_buf,
