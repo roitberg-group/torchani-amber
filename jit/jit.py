@@ -106,9 +106,6 @@ def _disable_jit_optimizations() -> None:
 
 if __name__ == "__main__":
 
-    from aimnet2_wrapper import generate_aimnet2_wrapper
-    from nutmeg_wrapper import generate_nutmeg_wrapper
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--disable-optimizations",
@@ -135,8 +132,13 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
+    args = parser.parse_args()
+    if args.aimnet2:
+        from aimnet2_wrapper import generate_aimnet2_wrapper
+    if args.nutmeg:
+        from nutmeg_wrapper import generate_nutmeg_wrapper
+
     try:
-        args = parser.parse_args()
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
             infer_model=args.infer_model,
