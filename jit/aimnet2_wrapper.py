@@ -30,9 +30,9 @@ try:
     from aimnet2calc.aimnet2ase import AIMNet2ASE
 
     AIMNET2CALC_AVAIL = True
-except ImportError:
+except (ImportError, OSError):
     AIMNET2CALC_AVAIL = False
-    warnings.warn("Disabling tests. Install aimnet2calc for testing")
+    warnings.warn("Disabling AimNet2 tests. Install aimnet2calc for testing AimNet2")
 
 
 @dataclasses.dataclass

@@ -11,7 +11,7 @@
 !
 ! Based on qm2_extern_orc_module.F90 and qm2_extern_lio_module.F90
 ! Uses torchani-amber interface (Author: Ignacio Pickering)
-! Date: December 2024
+! Date: March 2023
 ! ----------------------------------------------------------------
 module qm2_extern_torchani_module
 #ifdef TORCHANI
@@ -22,6 +22,7 @@ use torchani, only : &
     torchani_calc_energy_force, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_with_coupling, &
+    torchani_calc_energy_force_with_coupling, &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_data_for_monitored_mlmm
 implicit none
@@ -33,6 +34,8 @@ public :: get_torchani_forces
 double precision :: au_to_ang3 = 0.1481847d0
 double precision :: amber_charge_units_to_au = 18.2223d0
 double precision :: dummy_ucell(3,3) = 0.0d0
+
+integer, parameter :: INFER_ML_SYSTEM_CHARGE = -9999999
 
 ! Dummy variables, allocated on first call to get_torchani_forces
 integer, allocatable :: no_eval_atoms(:)
@@ -138,7 +141,7 @@ subroutine get_torchani_forces(&
         ! elem_alphas array and ani_nml struct
         call ani_nml_init(qmmm_nml%qmmm_int, ani_nml, elem_alphas, use_internal_opts)
         call ani_nml_print(ani_nml, qmmm_nml%qmmm_int, use_internal_opts)
-        call ani_nml_validate(ani_nml, qmmm_nml%qmmm_int)
+        call ani_nml_validate(ani_nml, qmmm_nml%qmmm_int, qmmm_nml%qmcharge)
         ! Extra DFTB setup if 'use_extcoupling'
         if (ani_nml%use_extcoupling .and. trim(ani_nml%extcoupling_program) == 'amber-dftb') then
             call torchani_amber_dftb_setup(qmmm_nml)
@@ -179,15 +182,13 @@ subroutine get_torchani_forces(&
     dxyzqm_qmmm = 0.0d0
     ! Charge grad is init to 0, if the qs are geom-dependent it is modified in-place
     dqmcharges = 0.0d0
-    ! QM charges are modified either by the torchani or the FF charges
-    qmcharges = 0.0d0
+    ! QM charges are initialied as the FF charges, but may be modified by torchani
+    qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
     ! TODO: Unclear what exactly switching supports. Charges? Charge derivatives?
     if (ani_nml%use_torch_coupling) then
         ! In this case torch handles both the in-vacuo energy calculation and the ML/MM coupling,
         ! No need to retrieve the in-vacuo energies separately
-        if (ani_nml%mlmm_coupling == 0) then
-            qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
-        endif
+        continue
     elseif (ani_nml%use_switching_function) then
         ! This branch is experimental and untested
         call get_energy_forces_switching(&
@@ -201,6 +202,7 @@ subroutine get_torchani_forces(&
             write(6,'(1x,"QM: IN VACUO ENERGY = ",f14.4)') ext_escf
         end if
     else
+        ! Garanteed to have net charge == 0. This branch is only for debugging
         if (ani_nml%use_torchani_charges) then
             if (ani_nml%use_charges_derivatives) then
                 call torchani_energy_force_atomic_charges_with_derivatives( &
@@ -208,8 +210,8 @@ subroutine get_torchani_forces(&
                     qmcoords, &
                     ! Outputs:
                     dxyzqm, &
-                    qmcharges, &
-                    dqmcharges, &
+                    qmcharges, &  ! Override the QM charges
+                    dqmcharges, &  ! Override the QM charge-derivatives
                     escf &
                 )
             else
@@ -218,7 +220,7 @@ subroutine get_torchani_forces(&
                     qmcoords, &
                     ! Outputs:
                     dxyzqm, &
-                    qmcharges, &
+                    qmcharges, &  ! Override the QM charges
                     escf &
                 )
             endif
@@ -230,11 +232,10 @@ subroutine get_torchani_forces(&
                 .false., &  ! Use pbc
                 pme_external_molecule_idx, &
                 .false., &  ! Use all_amber_nonbond
-                0, &  ! Net charge
+                0, & ! Net charge, force 0
                 dxyzqm, &
                 escf &
             )
-            qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
         end if
         ! Invert dxyzqm because torchani returns forces, and dxyzqm expects grad
         dxyzqm = -dxyzqm
@@ -257,7 +258,7 @@ subroutine get_torchani_forces(&
             )
         end if
         if (ani_nml%use_torch_coupling) then
-            call get_qmmm_energy_and_forces_through_torchani( &
+            call get_vacuum_and_coupling_energies_and_forces_through_torchani( &
                 write_to_mdout_this_step, &
                 qmcoords, &
                 alpha, &
@@ -266,13 +267,15 @@ subroutine get_torchani_forces(&
                 ani_nml%use_torchani_charges, &
                 ani_nml%mlmm_coupling, &
                 ani_nml%use_charges_derivatives, &
-                qmcharges, &
+                qmmm_nml%qmcharge, &
+                qmcharges, &  ! Override QM charges, grad is calc and used internally
                 dxyzqm, &
                 dxyzcl, &
                 escf &
             )
         else
-            call get_qmmm_energy_and_forces( &
+            ! This branch is only for debugging
+            call get_coupling_energies_and_forces_fortran( &
                 nstep, &
                 ntpr_internal, &
                 nqmatoms, &
@@ -283,8 +286,8 @@ subroutine get_torchani_forces(&
                 dxyzcl, &
                 dxyzqm_qmmm, &
                 ani_nml%use_torchani_charges, &
-                qmcharges, &
-                dqmcharges, &
+                qmcharges, &  ! Read qmcharges
+                dqmcharges, &  ! Read qm charge derivatives
                 ani_nml%mlmm_coupling, &
                 ani_nml%inv_pol_dielectric, &
                 alpha, &
@@ -647,6 +650,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%extcoupling_program = extcoupling_program
     ani_nml%switching_program = switching_program
     ani_nml%use_switching_function = use_switching_function
+    ani_nml%use_cuaev = use_cuaev
     ani_nml%qlow = qlow
     ani_nml%qhigh = qhigh
     ani_nml%use_numerical_qmmm_forces = use_numerical_qmmm_forces
@@ -686,12 +690,14 @@ endsubroutine
 ! Check that all the options passed to the ani_nml are sound.
 ! If strange combinations with deprecated or experimental options are passed
 ! Then emit the corresponding warnings
-subroutine ani_nml_validate(ani_nml, qmmm_int)
+subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
     type(ani_nml_type), intent(in) :: ani_nml
     integer, intent(in) :: qmmm_int
+    integer, intent(in) :: ml_system_charge
     if (ani_nml%use_amber_neighborlist) then
         call ani_nml_error('Amber neighborlist is not supported for ML/MM simulations')
     endif
+
     ! Check that polarization_dielectric was not modified
     if (ani_nml%inv_pol_dielectric /= 0.5d0) then
         write(6,*) "TORCHANI: *THE RECOMMENDED VALUE IS FOR THE INVERSE POLARIZATION DIELECTRIC IS 1/2*"
@@ -700,10 +706,6 @@ subroutine ani_nml_validate(ani_nml, qmmm_int)
             write(6, *) "*ERROR! THE POLARIZATION DIELECTRIC ONLY HAS AN EFFECT WHEN mlmm_coupling=1*"
             call mexit(6, 1)
         endif
-    endif
-
-    if (ani_nml%use_torch_coupling) then
-        write(6, fmt=*) "Torch coupling is experimental. Please report issues to devs"
     endif
 
     ! External ML/MM coupling config, experimental
@@ -848,7 +850,7 @@ subroutine internal_error()
     call mexit(6,1)  ! TODO: Explicitly import routine
 endsubroutine
 
-subroutine get_qmmm_energy_and_forces_through_torchani( &
+subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     write_to_mdout_this_step, &
     qmcoords, &
     alpha, &
@@ -857,6 +859,7 @@ subroutine get_qmmm_energy_and_forces_through_torchani( &
     use_torchani_charges, &
     mlmm_coupling, &
     use_charges_derivatives, &
+    ml_system_charge, &
     qmcharges, &
     dxyzqm, &
     dxyzcl, &
@@ -866,6 +869,7 @@ subroutine get_qmmm_energy_and_forces_through_torchani( &
     logical, intent(in) :: use_torchani_charges
     logical, intent(in) :: use_charges_derivatives
     integer, intent(in) :: mlmm_coupling
+    integer, intent(in) :: ml_system_charge
     double precision, intent(in) :: qmcoords(:, :)
     double precision, intent(in) :: alpha(:)
     double precision, intent(in) :: clcoords(:, :)
@@ -890,7 +894,7 @@ subroutine get_qmmm_energy_and_forces_through_torchani( &
         call mexit(6,1)  ! TODO: Explicitly import routine
     endif
 
-    call torchani_energy_force_with_coupling( &
+    call torchani_calc_energy_force_with_coupling( &
         size(qmcoords, 2), &
         size(clcoords, 2), &
         inv_pol_dielectric, &
@@ -901,6 +905,7 @@ subroutine get_qmmm_energy_and_forces_through_torchani( &
         use_torchani_charges, &
         mlmm_coupling == 1, &
         use_charges_derivatives, &
+        ml_system_charge, &
         ! Outputs
         dxyzqm, &
         dxyzcl, &
@@ -911,6 +916,7 @@ subroutine get_qmmm_energy_and_forces_through_torchani( &
         ene_pot_embed_coulomb, &
         escf &
     )
+
     ene_pot_embed_total = ene_pot_embed_dist + ene_pot_embed_pol + ene_pot_embed_coulomb
     if (write_to_mdout_this_step) then
         write(6,'(1x,"TORCHANI: IN VACUO ENERGY = ",f14.4)') ene_pot_invacuo
@@ -927,7 +933,7 @@ endsubroutine
 ! Calculate the QMMM forces in the QM and the MM regions
 ! Dispatches to either a numerical or analytical branch depending on the value of
 ! ani_nml%use_numerical_forces
-subroutine get_qmmm_energy_and_forces( &
+subroutine get_coupling_energies_and_forces_fortran( &
     nstep, &
     ntpr_internal, &
     nqmatoms, &
