@@ -535,7 +535,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ! Defaults
     ! ANI general
     model_type = 'ani1x'
-    use_cuaev = .false.
+    use_cuaev = .true.
     use_cuda_device = .true.
     use_double_precision = .true.
     use_amber_neighborlist = .false.
@@ -650,7 +650,6 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%extcoupling_program = extcoupling_program
     ani_nml%switching_program = switching_program
     ani_nml%use_switching_function = use_switching_function
-    ani_nml%use_cuaev = use_cuaev
     ani_nml%qlow = qlow
     ani_nml%qhigh = qhigh
     ani_nml%use_numerical_qmmm_forces = use_numerical_qmmm_forces
@@ -659,6 +658,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%write_charges_grad = write_charges_grad
     ani_nml%write_forces = write_forces
     ani_nml%use_charges_derivatives = use_charges_derivatives
+    ani_nml%use_cuaev = use_cuaev
 
     elem_alphas(1) = pol_H
     elem_alphas(2) = pol_He
@@ -696,6 +696,10 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
     integer, intent(in) :: ml_system_charge
     if (ani_nml%use_amber_neighborlist) then
         call ani_nml_error('Amber neighborlist is not supported for ML/MM simulations')
+    endif
+
+    if ((ml_system_charge /= 0) .and. (.not. ani_nml%use_torch_coupling)) then
+        call ani_nml_error('Charged systems only supported with use_torch_coupling=True')
     endif
 
     ! Check that polarization_dielectric was not modified
@@ -1576,9 +1580,9 @@ subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,esc
         dxyzqm, &
         qmcharges, &
         dqmcharges, &
-        escf, &
         qbc, &
-        dqbc &
+        dqbc, &
+        escf &
     )
 
     ! Invert dxyzqm because torchani returns forces, and dxyzqm expects grad
