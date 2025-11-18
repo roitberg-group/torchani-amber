@@ -360,7 +360,7 @@ void validate_model_output(
                 std::cerr << "a tuple (species, energies, ...)";
             }
         } else if (expect_len == 3) {
-            std::cerr << "a tuple (species, energies, atomic_charges, ...)";
+            std::cerr << "a tuple (species, energies, atomic_charges) or (species, energies, scalars)";
         } else {
             std::cerr << "a tuple of len at least " << expect_len;
         }
@@ -623,8 +623,14 @@ void torchani_calc_energy_force_from_external_neighbors(
     if (model.find_method("compute_from_external_neighbors").has_value()) {
         torch::jit::IValue output =
             model.get_method("compute_from_external_neighbors")(inputs);
-        validate_model_output(output, 2, true);
-        torch::Tensor energy = output.toTuple()->elements()[0].toTensor();
+
+        torch::Tensor energy;
+        if (output.isTuple()) {
+            energy = output.toTuple()->elements()[0].toTensor();
+        } else {
+            // Assume generic dict output, for new models
+            energy = output.toGenericDict().at("energies").toTensor();
+        }
         calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
         populate_potential_energy(energy, potential_energy_buf);
     } else {
@@ -716,7 +722,13 @@ void torchani_energy_force_atomic_charges(
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
-    torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor();
+
+    torch::Tensor atomic_charges;
+    if (output.toTuple()->elements()[2].isGenericDict()) {
+        atomic_charges = output.toTuple()->elements()[2].toGenericDict().at("atomic_charges").toTensor();
+    } else {
+        atomic_charges = output.toTuple()->elements()[2].toTensor();
+    }
 
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
@@ -770,7 +782,11 @@ void torchani_calc_energy_force_with_coupling(
     torch::Tensor ene_pot_invacuo = output.toTuple()->elements()[1].toTensor();
 
     if (predict_charges) {
-        atomic_charges = output.toTuple()->elements()[2].toTensor();
+        if (output.toTuple()->elements()[2].isGenericDict()) {
+            atomic_charges = output.toTuple()->elements()[2].toGenericDict().at("atomic_charges").toTensor();
+        } else {
+            atomic_charges = output.toTuple()->elements()[2].toTensor();
+        }
         if (not use_charge_derivatives) {
             // Disregard dependence of predicted charges on coordinates
             atomic_charges.detach_();
@@ -798,7 +814,17 @@ void torchani_calc_energy_force_with_coupling(
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     torch::Tensor ene_pot_dist =
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+
     if (simple_polarization_correction) {
+        // Simple polarization correction
+        // Overwrite the atomic alphas with those predicted by the model, if they are
+        // actually predicted
+        if (output.toTuple()->elements()[2].toGenericDict().contains("atomic_alphas")) {
+            atomic_alphas = output.toTuple()->elements()[2].toGenericDict().at("atomic_alphas").toTensor();
+            #ifdef DEBUG
+                std::cout << "Using predicted atomic alphas" << atomic_alphas << '\n';
+            #endif
+        }
         ene_pot_pol = electro::polarizable_embedding_energy(
             coords,
             atomic_alphas,
@@ -896,7 +922,12 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = output.toTuple()->elements()[1].toTensor();
-    torch::Tensor atomic_charges = output.toTuple()->elements()[2].toTensor();
+    torch::Tensor atomic_charges;
+    if (output.toTuple()->elements()[2].isGenericDict()) {
+        atomic_charges = output.toTuple()->elements()[2].toGenericDict().at("atomic_charges").toTensor();
+    } else {
+        atomic_charges = output.toTuple()->elements()[2].toTensor();
+    }
 
     calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
     calculate_and_populate_charge_derivatives(
@@ -948,8 +979,12 @@ void torchani_data_for_monitored_mlmm(
     validate_model_output(output, 3);
     torch::Tensor ensemble_energy = output.toTuple()->elements()[1].toTensor();
     // Squeeze ensemble dimension from atomic charges
-    torch::Tensor atomic_charges =
-        output.toTuple()->elements()[2].toTensor().squeeze(0);
+    torch::Tensor atomic_charges;
+    if (output.toTuple()->elements()[2].isGenericDict()) {
+        atomic_charges = output.toTuple()->elements()[2].toGenericDict().at("atomic_charges").toTensor().squeeze(0);
+    } else {
+        atomic_charges = output.toTuple()->elements()[2].toTensor().squeeze(0);
+    }
     torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
     torch::Tensor energy = ensemble_energy.mean(0);
 
