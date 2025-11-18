@@ -152,9 +152,10 @@ TEST_CASE("C bindings") {
             double* atomic_charge_derivatives;
             atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
             for (long j = 0; j != 10; ++j){
-                torchani_data_for_monitored_mlmm(
+                torchani_calc_data_for_monitored_mlmm(
                     size,
                     coords,
+                    0,
                     /* outputs */
                     forces,
                     atomic_charges,

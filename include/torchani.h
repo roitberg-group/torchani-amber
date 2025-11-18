@@ -63,9 +63,35 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     double* potential_energy  // Scalar
 );
 
+// Backwards compat, dummy fn, remove when AmberTools26 is released
 void torchani_energy_force_qbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double* potential_energy,  // Scalar
+    double* qbc, // Scalar
+    double qbc_grad[][3]  // Shape (num_atoms, 3)
+){};
+
+// Backwards compat, dummy fn, remove when AmberTools26 is released
+void torchani_data_for_monitored_mlmm(
+    int num_atoms,
+    double coords[][3],  // Shape (num_atoms, 3)
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double atomic_charges[],  // Shape (num_atoms,)
+    double* atomic_charges_grad,  // Shape (num_atoms, num_atoms, 3) TODO: Type properly
+    double* qbc,  // Scalar
+    double qbc_grad[][3],  // Shape (num_atoms, 3)
+    double* potential_energy  // Scalar
+) {};
+
+
+void torchani_calc_energy_force_qbc(
+    int num_atoms,
+    double coords[][3],  // Shape (num_atoms, 3)
+    int net_charge,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* qbc, // Scalar
@@ -73,9 +99,10 @@ void torchani_energy_force_qbc(
     double* potential_energy  // Scalar
 );
 
-void torchani_data_for_monitored_mlmm(
+void torchani_calc_data_for_monitored_mlmm(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
+    int net_charge,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double atomic_charges[],  // Shape (num_atoms,)

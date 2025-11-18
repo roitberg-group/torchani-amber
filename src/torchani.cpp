@@ -912,9 +912,10 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
 }
 
-void torchani_energy_force_qbc(
+void torchani_calc_energy_force_qbc(
     int num_atoms,
     double coords_buf[][3],
+    int net_charge, 
     double forces_buf[][3],
     double* qbc_buf,
     double qbc_derivatives[][3],
@@ -922,7 +923,7 @@ void torchani_energy_force_qbc(
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true);
+        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
@@ -938,9 +939,10 @@ void torchani_energy_force_qbc(
     populate_qbc(qbc, qbc_buf);
 }
 
-void torchani_data_for_monitored_mlmm(
+void torchani_calc_data_for_monitored_mlmm(
     int num_atoms,
     double coords_buf[][3],
+    int net_charge,
     /* outputs */
     double forces_buf[][3],
     double atomic_charges_buf[],
@@ -952,7 +954,7 @@ void torchani_data_for_monitored_mlmm(
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true);
+        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
