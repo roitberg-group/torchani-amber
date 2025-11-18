@@ -137,6 +137,7 @@ subroutine torchani_energy_force_qbc( &
     coords, &
     forces, &
     qbc, &
+    qbc_grad, &
     potential_energy &
 ) bind(c, name="torchani_energy_force_qbc")
     use, intrinsic :: iso_c_binding
@@ -145,6 +146,7 @@ subroutine torchani_energy_force_qbc( &
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: qbc
+    real(c_double), intent(out) :: qbc_grad(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 

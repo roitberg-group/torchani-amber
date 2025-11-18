@@ -69,6 +69,7 @@ void torchani_energy_force_qbc(
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* qbc, // Scalar
+    double qbc_grad[][3],  // Shape (num_atoms, 3)
     double* potential_energy  // Scalar
 );
 

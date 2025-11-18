@@ -917,6 +917,7 @@ void torchani_energy_force_qbc(
     double coords_buf[][3],
     double forces_buf[][3],
     double* qbc_buf,
+    double qbc_derivatives[][3],
     double* potential_energy
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
@@ -929,6 +930,9 @@ void torchani_energy_force_qbc(
 
     torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
     torch::Tensor energy = ensemble_energy.mean(0);
+    calculate_and_populate_qbc_derivatives(
+        coords, qbc, qbc_derivatives, true, num_atoms
+    );
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
     populate_qbc(qbc, qbc_buf);
