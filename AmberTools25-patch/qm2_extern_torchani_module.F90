@@ -280,13 +280,26 @@ subroutine get_torchani_forces(&
                 escf &
             )
         else if (ani_nml%use_extcoupling) then
-            ! TODO Unclear what exactly extcoupling supports or does
-            ! Forwards call to get_*_forces, which in turn calls a helper QM program
-            call get_coupling_energies_and_forces_external(&
-                nstep, ntpr_internal, nqmatoms, nclatoms, escf, dxyzqm, dxyzcl,&
-                qmcoords,clcoords, qm_atomic_nums,&
-                qmmm_nml%qmcharge, qmmm_nml%spin,id,&
-                ani_nml%extcoupling_program, write_to_mdout_this_step&
+            ! External coupling. forwards call to get_*_forces
+            ! which in turn calls a helper QM program for the ML/MM coupling energies
+            ! This requires two calls to the external program (vacuum and in charge field)
+            ! So it is quite inefficient
+            call get_coupling_energies_and_forces_through_qm_helper( &
+                nstep, &
+                ntpr_internal, &
+                nqmatoms, &
+                nclatoms, &
+                escf, &
+                dxyzqm, &
+                dxyzcl, &
+                qmcoords, &
+                clcoords, &
+                qm_atomic_nums, &
+                qmmm_nml%qmcharge, &
+                qmmm_nml%spin, &
+                id, &
+                ani_nml%extcoupling_program, &
+                write_to_mdout_this_step &
             )
         else
             ! This branch is only for debugging and for the switching branch
@@ -1483,9 +1496,22 @@ subroutine get_qmmm_forces_numerical(nqmatoms,nclatoms,dxyzqm,qmcoords,clcoords,
 endsubroutine
 
 ! Use a helper QM program to calculate the QM/MM interaction
-subroutine get_coupling_energies_and_forces_external(nstep,ntpr_internal,nqmatoms,nclatoms,escf,dxyzqm,dxyzcl,&
-    qmcoords,clcoords,qmtypes,charge,spinmult,id,extcoupling_program,&
-    write_to_mdout_this_step&
+subroutine get_coupling_energies_and_forces_through_qm_helper( &
+    nstep, &
+    ntpr_internal, &
+    nqmatoms, &
+    nclatoms, &
+    escf, &
+    dxyzqm, &
+    dxyzcl, &
+    qmcoords, &
+    clcoords, &
+    qmtypes, &
+    charge, &
+    spinmult, &
+    id, &
+    extcoupling_program, &
+    write_to_mdout_this_step &
 )
     use qm2_extern_gau_module, only: get_gau_forces
     use qm2_extern_orc_module, only: get_orc_forces
@@ -1671,15 +1697,37 @@ subroutine get_vacuum_energies_and_forces_switching( &
             call internal_error()
         end if
     endif
-    call switching_function(&
-        nqmatoms,nclatoms,qbc,dqbc,qlow,qhigh,dxyzqm,dxyzcl,escf,&
-        ext_dxyzqm,ext_dxyzcl,ext_escf&
-    )
+    call switching_function( &
+        nqmatoms, &
+        nclatoms, &
+        qbc, &
+        dqbc, &
+        qlow, &
+        qhigh, &
+        dxyzqm, &
+        dxyzcl, &
+        escf, &
+        ext_dxyzqm, &
+        ext_dxyzcl, &
+        ext_escf &
+)
 endsubroutine
 
 ! Modifies escf by mixing in a portion of the externally calculated QM energy
-subroutine switching_function(nqmatoms,nclatoms,qbc,dqbc,qlow,qhigh,dxyzqm,dxyzcl,escf,&
-           ext_dxyzqm,ext_dxyzcl,ext_escf)
+subroutine switching_function( &
+    nqmatoms, &
+    nclatoms, &
+    qbc, &
+    dqbc, &
+    qlow, &
+    qhigh, &
+    dxyzqm, &
+    dxyzcl, &
+    escf, &
+    ext_dxyzqm, &
+    ext_dxyzcl, &
+    ext_escf &
+)
     integer, intent(in)             :: nqmatoms                  ! Number of QM atoms
     integer, intent(in)             :: nclatoms                  ! Number of MM atoms
     double precision, intent(in)    :: qbc                       ! QBC estimator
