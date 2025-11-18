@@ -21,6 +21,7 @@ use torchani, only : &
     torchani_initialize, &
     torchani_calc_energy_force, &
     torchani_energy_force_atomic_charges, &
+    torchani_energy_force_qbc, &
     torchani_energy_force_with_coupling, &
     torchani_calc_energy_force_with_coupling, &
     torchani_energy_force_atomic_charges_with_derivatives, &
@@ -192,11 +193,24 @@ subroutine get_torchani_forces(&
     elseif (ani_nml%use_switching_function) then
         ! This branch is experimental and untested
         call get_energy_forces_switching(&
-            nstep,ntpr_internal,nqmatoms,nclatoms,escf,ext_escf,dxyzqm,dxyzcl,&
-            qmcoords,clcoords,qm_atomic_nums,&
-            qmmm_nml%qmcharge, qmmm_nml%spin,id,&
+            nstep, &
+            ntpr_internal, &
+            nqmatoms, &
+            nclatoms, &
+            escf, &
+            ext_escf, &
+            dxyzqm, &
+            dxyzcl,&
+            qmcoords, &
+            clcoords, &
+            qm_atomic_nums,&
+            qmmm_nml%qmcharge, &
+            qmmm_nml%spin,id, &
             ani_nml%switching_program,&
-            ani_nml%qlow,ani_nml%qhigh,qbc&
+            ani_nml%qlow, &
+            ani_nml%qhigh, &
+            qbc, &
+            ani_nml%use_torchani_charges &
         )
         if (write_to_mdout_this_step) then
             write(6,'(1x,"QM: IN VACUO ENERGY = ",f14.4)') ext_escf
@@ -1542,7 +1556,7 @@ endsubroutine
 ! If the QBC is large, use a helper QM program (different than TORCHANI) to calculate the QM energy
 subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,escf,ext_escf,dxyzqm,dxyzcl,&
            qmcoords,clcoords,qmtypes,charge,spinmult,id,switching_program,&
-           qlow,qhigh,qbc)
+           qlow,qhigh,qbc,use_torchani_charges)
     use qm2_extern_gau_module, only: get_gau_forces
     use qm2_extern_orc_module, only: get_orc_forces
 #ifdef LIO
@@ -1572,18 +1586,31 @@ subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,esc
     double precision              :: qmcharges(nqmatoms)  
     double precision              :: dqmcharges(3,nqmatoms,nqmatoms) ! QM atom charges forces
     double precision              :: dqbc(3,nqmatoms)        ! QBC derivatives 
-    
-    call torchani_data_for_monitored_mlmm( &
-        size(qmcoords, 2), &
-        qmcoords, &
-        ! Outputs:
-        dxyzqm, &
-        qmcharges, &
-        dqmcharges, &
-        qbc, &
-        dqbc, &
-        escf &
-    )
+    logical :: use_torchani_charges
+
+    if (use_torchani_charges) then
+        call torchani_data_for_monitored_mlmm( &
+            size(qmcoords, 2), &
+            qmcoords, &
+            ! Outputs:
+            dxyzqm, &
+            qmcharges, &
+            dqmcharges, &
+            qbc, &
+            dqbc, &
+            escf &
+        )
+    else
+        call torchani_energy_force_qbc( &
+            size(qmcoords, 2), &
+            qmcoords, &
+            ! Outputs:
+            dxyzqm, &
+            qbc, &
+            dqbc, &
+            escf &
+        )
+    endif
 
     ! Invert dxyzqm because torchani returns forces, and dxyzqm expects grad
     dxyzqm = -dxyzqm
