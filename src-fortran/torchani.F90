@@ -154,9 +154,9 @@ subroutine torchani_data_for_monitored_mlmm( &
     forces, &
     atomic_charges, &
     atomic_charges_grad, &
-    potential_energy, &
     qbc, &
-    qbc_grad &
+    qbc_grad, &
+    potential_energy &
 ) bind(c, name="torchani_data_for_monitored_mlmm")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms

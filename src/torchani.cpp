@@ -623,15 +623,21 @@ void torchani_calc_energy_force_from_external_neighbors(
     if (model.find_method("compute_from_external_neighbors").has_value()) {
         torch::jit::IValue output =
             model.get_method("compute_from_external_neighbors")(inputs);
-        validate_model_output(output, 2, true);
-        torch::Tensor energy = output.toTuple()->elements()[0].toTensor();
+
+        torch::Tensor energy;
+        if (output.isTuple()) {
+            energy = output.toTuple()->elements()[0].toTensor();
+        } else {
+            // Assume generic dict output, for new models
+            energy = output.toGenericDict().at("energies").toTensor();
+        }
         calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
         populate_potential_energy(energy, potential_energy_buf);
     } else {
         std::cerr << "ERROR (libtorchani)\n"
                   << "To use an external neighborlist"
                   << " the model must export 'compute_from_external_neighbors(...)'."
-                  << " Consult the TorchANI-Amber readmi for more info" << std::endl;
+                  << " Consult the TorchANI-Amber readme for more info" << std::endl;
         std::exit(2);
     }
 #ifdef TIMING
