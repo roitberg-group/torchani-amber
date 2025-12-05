@@ -412,7 +412,8 @@ def generate_aimnet2_wrapper():
         path = (Path(__file__).parent / fname).resolve()
         for kwargs in (
             AimNetArgs("simple"),
-            AimNetArgs("ewald", cut),  # Amber cutoff must be 10.0
+            # AimNet2 ewald has a bug for newer torch
+            # AimNetArgs("ewald", cut),  # Amber cutoff must be 10.0
             AimNetArgs("dsf", cut, dsf),  # Amber cutoff must be 10.0
         ):
             model = AimNet2Wrapper.from_jit_file(path, device=device, **asdict(kwargs))
