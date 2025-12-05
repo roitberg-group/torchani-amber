@@ -175,6 +175,7 @@ if __name__ == "__main__":
             console.print("-- JIT - Generating AimNet2 Wrappers")
             # jit one model to cache the NNPotential class
             import torchani
+
             model = torch.jit.script(torchani.models.ANI1x())
             generate_aimnet2_wrapper()
         if args.nutmeg:
