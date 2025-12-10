@@ -759,12 +759,10 @@ void torchani_calc_energy_force_with_coupling(
 ) {
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
 
-    torch::Tensor atomic_charges =
-        torch::zeros(num_atoms, torch::dtype(config.dtype()).device(config.device()));
+    torch::Tensor atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
 
     // backwards compatibility
     if (ml_system_charge == -9'999'999) {
-         atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
          ml_system_charge =
              torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
     }
