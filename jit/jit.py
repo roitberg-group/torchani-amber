@@ -176,7 +176,6 @@ if __name__ == "__main__":
             import torchani  # noqa
             import torch  # noqa
 
-            model = torch.jit.script(torchani.models.ANI1x())
             generate_aimnet2_wrapper()
         if args.nutmeg:
             console.print("-- JIT - Generating Nutmeg Wrappers")
