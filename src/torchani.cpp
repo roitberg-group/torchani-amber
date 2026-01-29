@@ -346,8 +346,7 @@ torch::Tensor fetch_atomic_alphas_from_output(torch::jit::IValue output) {
     // Standard signature, tuple form (not supported) or tuple-dict form
     auto scalars = output.toTuple()->elements()[2];
     if (scalars.isTensor()) {
-        throw c10::Error("Bad output for atomic alphas, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]")
-        return scalars.toTensor();
+        throw c10::Error("Bad output for atomic alphas, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]");
     }
     return scalars.toGenericDict().at("atomic_alphas").toTensor();
 }
