@@ -20,11 +20,11 @@ use qmmm_nml_module, only: qmmm_nml_type
 use torchani, only : &
     torchani_initialize, &
     torchani_calc_energy_force, &
-    torchani_energy_force_atomic_charges, &
-    torchani_energy_force_with_coupling, &
+    torchani_calc_energy_force_qbc, &
+    torchani_calc_data_for_monitored_mlmm, &
     torchani_calc_energy_force_with_coupling, &
-    torchani_energy_force_atomic_charges_with_derivatives, &
-    torchani_data_for_monitored_mlmm
+    torchani_energy_force_atomic_charges, &
+    torchani_energy_force_atomic_charges_with_derivatives
 implicit none
 
 private
@@ -34,8 +34,6 @@ public :: get_torchani_forces
 double precision :: au_to_ang3 = 0.1481847d0
 double precision :: amber_charge_units_to_au = 18.2223d0
 double precision :: dummy_ucell(3,3) = 0.0d0
-
-integer, parameter :: INFER_ML_SYSTEM_CHARGE = -9999999
 
 ! Dummy variables, allocated on first call to get_torchani_forces
 integer, allocatable :: no_eval_atoms(:)
@@ -184,23 +182,36 @@ subroutine get_torchani_forces(&
     dqmcharges = 0.0d0
     ! QM charges are initialied as the FF charges, but may be modified by torchani
     qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
-    ! TODO: Unclear what exactly switching supports. Charges? Charge derivatives?
     if (ani_nml%use_torch_coupling) then
         ! In this case torch handles both the in-vacuo energy calculation and the ML/MM coupling,
         ! No need to retrieve the in-vacuo energies separately
         continue
     elseif (ani_nml%use_switching_function) then
-        ! This branch is experimental and untested
-        call get_energy_forces_switching(&
-            nstep,ntpr_internal,nqmatoms,nclatoms,escf,ext_escf,dxyzqm,dxyzcl,&
-            qmcoords,clcoords,qm_atomic_nums,&
-            qmmm_nml%qmcharge, qmmm_nml%spin,id,&
-            ani_nml%switching_program,&
-            ani_nml%qlow,ani_nml%qhigh,qbc&
+        ! This branch is experimental and untested, it does not support torch coupling,
+        ! but it supports both mlmm_coupling = 1 and mlmm_coupling = 2
+        call get_vacuum_energies_and_forces_switching(&
+            nstep, &
+            ntpr_internal, &
+            nqmatoms, &
+            nclatoms, &
+            escf, &
+            ext_escf, &
+            dxyzqm, &
+            dxyzcl, &
+            qmcoords, &
+            clcoords, &
+            qm_atomic_nums, &
+            qmmm_nml%qmcharge, &
+            qmmm_nml%spin, &
+            id, &
+            ani_nml%switching_program, &
+            ani_nml%qlow, &
+            ani_nml%qhigh, &
+            qbc, &
+            ani_nml%use_torchani_charges, &
+            qmcharges, &
+            dqmcharges &
         )
-        if (write_to_mdout_this_step) then
-            write(6,'(1x,"QM: IN VACUO ENERGY = ",f14.4)') ext_escf
-        end if
     else
         ! Garanteed to have net charge == 0. This branch is only for debugging
         if (ani_nml%use_torchani_charges) then
@@ -241,22 +252,15 @@ subroutine get_torchani_forces(&
         dxyzqm = -dxyzqm
     end if
 
-    ! If torch_coupling we didn't calculate escf yet
+    ! Intermediate outputs if not using torch_coupling
+    if (write_to_mdout_this_step .and. (ani_nml%use_switching_function)) then
+        write(6,'(1x,"QM: IN VACUO ENERGY = ",f14.4)') ext_escf
+    end if
     if (write_to_mdout_this_step .and. (.not. ani_nml%use_torch_coupling)) then
         write(6,'(1x,"TORCHANI: IN VACUO ENERGY = ",f14.4)') escf
     end if
 
     if (qmmm_nml%qmmm_int == 1) then
-        ! TODO Unclear what exactly extcoupling supports or does
-        if (ani_nml%use_extcoupling) then
-            ! Forwards call to get_*_forces, which in turn calls a helper QM program
-            call get_extcoupling(&
-                nstep, ntpr_internal, nqmatoms, nclatoms, escf, dxyzqm, dxyzcl,&
-                qmcoords,clcoords, qm_atomic_nums,&
-                qmmm_nml%qmcharge, qmmm_nml%spin,id,&
-                ani_nml%extcoupling_program, write_to_mdout_this_step&
-            )
-        end if
         if (ani_nml%use_torch_coupling) then
             call get_vacuum_and_coupling_energies_and_forces_through_torchani( &
                 write_to_mdout_this_step, &
@@ -273,8 +277,30 @@ subroutine get_torchani_forces(&
                 dxyzcl, &
                 escf &
             )
+        else if (ani_nml%use_extcoupling) then
+            ! External coupling. forwards call to get_*_forces
+            ! which in turn calls a helper QM program for the ML/MM coupling energies
+            ! This requires two calls to the external program (vacuum and in charge field)
+            ! So it is quite inefficient
+            call get_coupling_energies_and_forces_through_qm_helper( &
+                nstep, &
+                ntpr_internal, &
+                nqmatoms, &
+                nclatoms, &
+                escf, &
+                dxyzqm, &
+                dxyzcl, &
+                qmcoords, &
+                clcoords, &
+                qm_atomic_nums, &
+                qmmm_nml%qmcharge, &
+                qmmm_nml%spin, &
+                id, &
+                ani_nml%extcoupling_program, &
+                write_to_mdout_this_step &
+            )
         else
-            ! This branch is only for debugging
+            ! This branch is only for debugging and for the switching branch
             call get_coupling_energies_and_forces_fortran( &
                 nstep, &
                 ntpr_internal, &
@@ -535,7 +561,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ! Defaults
     ! ANI general
     model_type = 'ani1x'
-    use_cuaev = .false.
+    use_cuaev = .true.
     use_cuda_device = .true.
     use_double_precision = .true.
     use_amber_neighborlist = .false.
@@ -650,7 +676,6 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%extcoupling_program = extcoupling_program
     ani_nml%switching_program = switching_program
     ani_nml%use_switching_function = use_switching_function
-    ani_nml%use_cuaev = use_cuaev
     ani_nml%qlow = qlow
     ani_nml%qhigh = qhigh
     ani_nml%use_numerical_qmmm_forces = use_numerical_qmmm_forces
@@ -659,6 +684,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%write_charges_grad = write_charges_grad
     ani_nml%write_forces = write_forces
     ani_nml%use_charges_derivatives = use_charges_derivatives
+    ani_nml%use_cuaev = use_cuaev
 
     elem_alphas(1) = pol_H
     elem_alphas(2) = pol_He
@@ -696,6 +722,14 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
     integer, intent(in) :: ml_system_charge
     if (ani_nml%use_amber_neighborlist) then
         call ani_nml_error('Amber neighborlist is not supported for ML/MM simulations')
+    endif
+
+    if ((ml_system_charge /= 0) .and. (.not. ani_nml%use_torch_coupling)) then
+        call ani_nml_error('Charged systems only supported with use_torch_coupling=True')
+    endif
+
+    if ((ani_nml%use_switching_function) .and. ani_nml%use_torch_coupling) then
+        call ani_nml_error('Switching is not supported with torch coupling')
     endif
 
     ! Check that polarization_dielectric was not modified
@@ -1460,9 +1494,22 @@ subroutine get_qmmm_forces_numerical(nqmatoms,nclatoms,dxyzqm,qmcoords,clcoords,
 endsubroutine
 
 ! Use a helper QM program to calculate the QM/MM interaction
-subroutine get_extcoupling(nstep,ntpr_internal,nqmatoms,nclatoms,escf,dxyzqm,dxyzcl,&
-    qmcoords,clcoords,qmtypes,charge,spinmult,id,extcoupling_program,&
-    write_to_mdout_this_step&
+subroutine get_coupling_energies_and_forces_through_qm_helper( &
+    nstep, &
+    ntpr_internal, &
+    nqmatoms, &
+    nclatoms, &
+    escf, &
+    dxyzqm, &
+    dxyzcl, &
+    qmcoords, &
+    clcoords, &
+    qmtypes, &
+    charge, &
+    spinmult, &
+    id, &
+    extcoupling_program, &
+    write_to_mdout_this_step &
 )
     use qm2_extern_gau_module, only: get_gau_forces
     use qm2_extern_orc_module, only: get_orc_forces
@@ -1536,9 +1583,29 @@ subroutine get_extcoupling(nstep,ntpr_internal,nqmatoms,nclatoms,escf,dxyzqm,dxy
 endsubroutine
 
 ! If the QBC is large, use a helper QM program (different than TORCHANI) to calculate the QM energy
-subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,escf,ext_escf,dxyzqm,dxyzcl,&
-           qmcoords,clcoords,qmtypes,charge,spinmult,id,switching_program,&
-           qlow,qhigh,qbc)
+subroutine get_vacuum_energies_and_forces_switching( &
+    nstep, &
+    ntpr_internal, &
+    nqmatoms, &
+    nclatoms, &
+    escf, &
+    ext_escf, &
+    dxyzqm, &
+    dxyzcl, &
+    qmcoords, &
+    clcoords, &
+    qmtypes, &
+    charge, &
+    spinmult, &
+    id, &
+    switching_program, &
+    qlow, &
+    qhigh, &
+    qbc, &
+    use_torchani_charges, &
+    qmcharges, &
+    dqmcharges &
+)
     use qm2_extern_gau_module, only: get_gau_forces
     use qm2_extern_orc_module, only: get_orc_forces
 #ifdef LIO
@@ -1565,21 +1632,36 @@ subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,esc
     character(len=256), intent(in) :: switching_program      ! External program
     double precision :: ext_dxyzqm(3,nqmatoms)              ! External QM atom eqmmm forces in vacuo
     double precision :: ext_dxyzcl(3,nclatoms)              ! External MM atom qmmm forces in vacuo
-    double precision              :: qmcharges(nqmatoms)  
-    double precision              :: dqmcharges(3,nqmatoms,nqmatoms) ! QM atom charges forces
+    double precision, intent(inout)              :: qmcharges(nqmatoms)  
+    double precision, intent(inout)              :: dqmcharges(3,nqmatoms,nqmatoms) ! QM atom charges forces
     double precision              :: dqbc(3,nqmatoms)        ! QBC derivatives 
-    
-    call torchani_data_for_monitored_mlmm( &
-        size(qmcoords, 2), &
-        qmcoords, &
-        ! Outputs:
-        dxyzqm, &
-        qmcharges, &
-        dqmcharges, &
-        escf, &
-        qbc, &
-        dqbc &
-    )
+    logical :: use_torchani_charges
+
+    if (use_torchani_charges) then
+        call torchani_calc_data_for_monitored_mlmm( &
+            size(qmcoords, 2), &
+            qmcoords, &
+            charge, &
+            ! Outputs:
+            dxyzqm, &
+            qmcharges, &
+            dqmcharges, &
+            qbc, &
+            dqbc, &
+            escf &
+        )
+    else
+        call torchani_calc_energy_force_qbc( &
+            size(qmcoords, 2), &
+            qmcoords, &
+            charge, &
+            ! Outputs:
+            dxyzqm, &
+            qbc, &
+            dqbc, &
+            escf &
+        )
+    endif
 
     ! Invert dxyzqm because torchani returns forces, and dxyzqm expects grad
     dxyzqm = -dxyzqm
@@ -1613,15 +1695,37 @@ subroutine get_energy_forces_switching(nstep,ntpr_internal,nqmatoms,nclatoms,esc
             call internal_error()
         end if
     endif
-    call switching_function(&
-        nqmatoms,nclatoms,qbc,dqbc,qlow,qhigh,dxyzqm,dxyzcl,escf,&
-        ext_dxyzqm,ext_dxyzcl,ext_escf&
-    )
+    call switching_function( &
+        nqmatoms, &
+        nclatoms, &
+        qbc, &
+        dqbc, &
+        qlow, &
+        qhigh, &
+        dxyzqm, &
+        dxyzcl, &
+        escf, &
+        ext_dxyzqm, &
+        ext_dxyzcl, &
+        ext_escf &
+)
 endsubroutine
 
 ! Modifies escf by mixing in a portion of the externally calculated QM energy
-subroutine switching_function(nqmatoms,nclatoms,qbc,dqbc,qlow,qhigh,dxyzqm,dxyzcl,escf,&
-           ext_dxyzqm,ext_dxyzcl,ext_escf)
+subroutine switching_function( &
+    nqmatoms, &
+    nclatoms, &
+    qbc, &
+    dqbc, &
+    qlow, &
+    qhigh, &
+    dxyzqm, &
+    dxyzcl, &
+    escf, &
+    ext_dxyzqm, &
+    ext_dxyzcl, &
+    ext_escf &
+)
     integer, intent(in)             :: nqmatoms                  ! Number of QM atoms
     integer, intent(in)             :: nclatoms                  ! Number of MM atoms
     double precision, intent(in)    :: qbc                       ! QBC estimator
