@@ -971,7 +971,7 @@ void torchani_calc_energy_force_qbc(
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
-    torch::Tensor ensemble_energy = fetch_energies_from_output(output)
+    torch::Tensor ensemble_energy = fetch_energies_from_output(output);
 
     torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
     torch::Tensor energy = ensemble_energy.mean(0);
