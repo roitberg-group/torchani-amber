@@ -21,6 +21,7 @@ public :: &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_calc_energy_force_with_coupling, &
+    torchani_calc_energy_force_with_variable_alpha_coupling, &
     torchani_calc_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
     torchani_dump_walltime, &
@@ -230,8 +231,10 @@ subroutine internal_calc_energy_force_with_coupling( &
     env_charge_coords, &
     env_charges, &
     predict_charges, &
+    predict_atomic_alphas, &
     use_simple_polarization_correction, &
     use_charge_derivatives, &
+    use_atomic_alpha_derivatives, &
     ml_system_charge, &
     ! Outputs
     forces_on_atoms, &
@@ -252,8 +255,10 @@ subroutine internal_calc_energy_force_with_coupling( &
     real(c_double), intent(in) :: env_charge_coords(*)
     real(c_double), intent(in) :: env_charges(*)
     logical(c_bool), value, intent(in) :: predict_charges
+    logical(c_bool), value, intent(in) :: predict_atomic_alphas
     logical(c_bool), value, intent(in) :: use_simple_polarization_correction
     logical(c_bool), value, intent(in) :: use_charge_derivatives
+    logical(c_bool), value, intent(in) :: use_atomic_alpha_derivatives
     integer(c_int), value, intent(in) :: ml_system_charge
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
@@ -314,6 +319,81 @@ contains
 
 ! Wrapper over these routines is needed in case fbool don't have the same binary
 ! representation as c_bools.
+subroutine torchani_calc_energy_force_with_variable_alpha_coupling( &
+    num_atoms, &
+    num_env_charges, &
+    inv_pol_dielectric, &
+    coords, &
+    atomic_alphas, &
+    env_charge_coords, &
+    env_charges, &
+    predict_charges, &
+    predict_atomic_alphas, &
+    use_simple_polarization_correction, &
+    use_charge_derivatives, &
+    use_atomic_alpha_derivatives, &
+    ml_system_charge, &
+    ! Outputs
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    atomic_charges, &
+    ene_pot_invacuo, &
+    ene_pot_embed_pol, &
+    ene_pot_embed_dist, &
+    ene_pot_embed_coulomb, &
+    ene_pot_total &
+)
+    integer, value, intent(in) :: num_atoms
+    integer, value, intent(in) :: num_env_charges
+    double precision, value, intent(in) :: inv_pol_dielectric
+    double precision, contiguous, intent(in) :: coords(:, :)
+    double precision, contiguous, intent(in) :: atomic_alphas(:)
+    double precision, contiguous, intent(in) :: env_charge_coords(:, :)
+    double precision, contiguous, intent(in) :: env_charges(:)
+    logical, intent(in) :: predict_charges
+    logical, intent(in) :: predict_atomic_alphas
+    logical, intent(in) :: use_simple_polarization_correction
+    logical, intent(in) :: use_charge_derivatives
+    logical, intent(in) :: use_atomic_alpha_derivatives
+    integer, value, intent(in) :: ml_system_charge
+    ! Outputs
+    double precision, contiguous, intent(out) :: forces_on_atoms(:, :)
+    double precision, contiguous, intent(out) :: forces_on_env_charges(:, :)
+    double precision, contiguous, intent(inout) :: atomic_charges(:)
+    double precision, intent(out) :: ene_pot_invacuo
+    double precision, intent(out) :: ene_pot_embed_pol
+    double precision, intent(out) :: ene_pot_embed_dist
+    double precision, intent(out) :: ene_pot_embed_coulomb
+    double precision, intent(out) :: ene_pot_total
+    call internal_calc_energy_force_with_coupling( &
+        num_atoms, &
+        num_env_charges, &
+        inv_pol_dielectric, &
+        coords, &
+        atomic_alphas, &
+        env_charge_coords, &
+        env_charges, &
+        fbool_to_cbool(predict_charges), &
+        fbool_to_cbool(predict_atomic_alphas), &
+        fbool_to_cbool(use_simple_polarization_correction), &
+        fbool_to_cbool(use_charge_derivatives), &
+        fbool_to_cbool(use_atomic_alpha_derivatives), &
+        ml_system_charge, &
+        ! Outputs
+        forces_on_atoms, &
+        forces_on_env_charges, &
+        atomic_charges, &
+        ene_pot_invacuo, &
+        ene_pot_embed_pol, &
+        ene_pot_embed_dist, &
+        ene_pot_embed_coulomb, &
+        ene_pot_total &
+    )
+endsubroutine
+
+! BW compat
+! Wrapper over these routines is needed in case fbool don't have the same binary
+! representation as c_bools.
 subroutine torchani_calc_energy_force_with_coupling( &
     num_atoms, &
     num_env_charges, &
@@ -365,8 +445,10 @@ subroutine torchani_calc_energy_force_with_coupling( &
         env_charge_coords, &
         env_charges, &
         fbool_to_cbool(predict_charges), &
+        fbool_to_cbool(.false.), &
         fbool_to_cbool(use_simple_polarization_correction), &
         fbool_to_cbool(use_charge_derivatives), &
+        fbool_to_cbool(.false.), &
         ml_system_charge, &
         ! Outputs
         forces_on_atoms, &

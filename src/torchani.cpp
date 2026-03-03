@@ -787,8 +787,10 @@ void torchani_calc_energy_force_with_coupling(
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
     bool predict_charges,
+    bool predict_atomic_alphas,
     bool simple_polarization_correction,
     bool use_charge_derivatives,
+    bool use_atomic_alpha_derivatives,
     int ml_system_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
@@ -804,6 +806,8 @@ void torchani_calc_energy_force_with_coupling(
 
     torch::Tensor atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
 
+    torch::Tensor atomic_alphas = dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
+
     // backwards compatibility
     if (ml_system_charge == -9'999'999) {
          ml_system_charge =
@@ -818,6 +822,13 @@ void torchani_calc_energy_force_with_coupling(
 
     // TODO: Add this or similar
     // atomic_alphas = fetch_atomic_alphas_from_output(output);
+    if (predict_atomic_alphas) {
+        atomic_alphas = fetch_atomic_alphas_from_output(output);
+        if (not use_atomic_alpha_derivatives) {
+            // Disregard dependence of predicted charges on coordinates
+            atomic_alphas.detach_();
+        }
+    }
 
     if (predict_charges) {
         atomic_charges = fetch_atomic_charges_from_output(output);
@@ -828,8 +839,6 @@ void torchani_calc_energy_force_with_coupling(
     }
 
     // Embedding part
-    torch::Tensor atomic_alphas =
-        dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
     torch::Tensor env_charge_coords =
         dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
     torch::Tensor env_charges =
@@ -927,8 +936,10 @@ void torchani_energy_force_with_coupling(
         env_charge_coords_buf,
         env_charges_buf,
         predict_charges,
+        false,
         simple_polarization_correction,
         use_charge_derivatives,
+        false,
         -9'999'999,  // backwards compatibility (infer)
         forces_on_atoms_buf,
         forces_on_env_charges_buf,
