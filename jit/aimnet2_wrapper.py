@@ -254,6 +254,15 @@ class AimNet2Wrapper(torch.nn.Module):
         return neigh_lr
 
 
+class ANIqAllowNonzeroCharge(ANIq):
+    pass
+
+    @staticmethod
+    def _check_inputs(elem_idxs: Tensor, coords: Tensor, charge: int = 0) -> None:
+        assert elem_idxs.dim() == 2
+        assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
+
+
 class AimNet2Mbis(AimNet2Wrapper):
     def __init__(
         self,
@@ -265,7 +274,7 @@ class AimNet2Mbis(AimNet2Wrapper):
         strategy: str = "pyaev",
     ) -> None:
         super().__init__(model, method_lr, cutoff_lr, dsf_alpha, output_hartree)
-        asm = Assembler(cls=ANIq, periodic_table_index=True)
+        asm = Assembler(cls=ANIqAllowNonzeroCharge, periodic_table_index=True)
         asm.set_symbols(SYMBOLS_2X)
         asm.set_global_cutoff_fn("cosine")
         asm.set_aev_computer(radial="ani2x", angular="ani2x", strategy=strategy)
@@ -331,7 +340,7 @@ class AimNet2Mbis(AimNet2Wrapper):
             elem_idxs,
             coords,
             neighbors_lr,
-            0,
+            charge,
             atomic,
             ensemble_values,
         ).scalars
@@ -412,7 +421,8 @@ def generate_aimnet2_wrapper():
         path = (Path(__file__).parent / fname).resolve()
         for kwargs in (
             AimNetArgs("simple"),
-            AimNetArgs("ewald", cut),  # Amber cutoff must be 10.0
+            # AimNet2 ewald has a bug for newer torch
+            # AimNetArgs("ewald", cut),  # Amber cutoff must be 10.0
             AimNetArgs("dsf", cut, dsf),  # Amber cutoff must be 10.0
         ):
             model = AimNet2Wrapper.from_jit_file(path, device=device, **asdict(kwargs))

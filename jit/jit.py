@@ -172,6 +172,10 @@ if __name__ == "__main__":
             console.print("-- JIT - Done, but failed for some models", style="yellow")
         if args.aimnet2:
             console.print("-- JIT - Generating AimNet2 Wrappers")
+            # jit one model to cache the NNPotential class
+            import torchani  # noqa
+            import torch  # noqa
+
             generate_aimnet2_wrapper()
         if args.nutmeg:
             console.print("-- JIT - Generating Nutmeg Wrappers")

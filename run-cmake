@@ -8,9 +8,9 @@ usage() { echo "Usage: [OPTION]...
     -I Don't install, only configure, generate and build
     -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch
-    -s Use private sandbox
     -C Don't use Conda libraries
-    -a Builds for archs 6.0, 6.1, 7.0, 7.5, 8.0, 8.9 (auto detect by default)
+    -a Builds for archs 7.0, 7.5, 8.0, 8.9, 10.0 (auto detect by default)
+    -b Build for the B200 and L4 archs (8.9;10.0)
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
@@ -23,7 +23,7 @@ cmake_install=1
 torch_cuda_archs=""
 cmake_build_type="Release"
 prefix="$HOME/.local/"
-while getopts "TIBPCasghxy" o; do
+while getopts "TIBPCabghxy" o; do
     case "${o}" in
         x)
             use_conda_libs=ON
@@ -36,7 +36,7 @@ while getopts "TIBPCasghxy" o; do
             use_libtorch=ON
             use_pytorch_libs=OFF
             module purge
-            module load cuda/12.4 gcc/12.2 openmpi/4.1.6 conda/24.7 cmake
+            module load cuda/12.4 gcc/12.2 openmpi/4.1.6 conda cmake
             export CFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
             export CXXFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
             export FFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
@@ -64,7 +64,10 @@ while getopts "TIBPCasghxy" o; do
             cmake_build_type="Debug"
             ;;
         a)
-            torch_cuda_archs="6.0;6.1;7.0;7.5;8.0;8.9"
+            torch_cuda_archs="7.0;7.5;8.0;8.9;10.0"
+            ;;
+        b)
+            torch_cuda_archs="8.9;10.0"
             ;;
         h)
             usage
