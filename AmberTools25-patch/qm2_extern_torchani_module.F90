@@ -35,8 +35,6 @@ double precision :: au_to_ang3 = 0.1481847d0
 double precision :: amber_charge_units_to_au = 18.2223d0
 double precision :: dummy_ucell(3,3) = 0.0d0
 
-integer, parameter :: INFER_ML_SYSTEM_CHARGE = -9999999
-
 ! Dummy variables, allocated on first call to get_torchani_forces
 integer, allocatable :: no_eval_atoms(:)
 integer, allocatable :: pme_external_molecule_idx(:)  ! Read-only

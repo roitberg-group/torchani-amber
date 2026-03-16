@@ -143,8 +143,10 @@ void torchani_calc_energy_force_with_coupling(
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
     bool predict_charges,
+    bool predict_atomic_alphas,
     bool use_simple_polarization_correction,
     bool use_charge_derivatives,
+    bool use_atomic_alpha_derivatives,
     int ml_system_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
