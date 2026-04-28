@@ -23,6 +23,7 @@ use torchani, only : &
     torchani_calc_energy_force_qbc, &
     torchani_calc_data_for_monitored_mlmm, &
     torchani_calc_energy_force_with_coupling, &
+    torchani_calc_energy_force_custom_mlmm, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives
 implicit none
@@ -184,7 +185,7 @@ subroutine get_torchani_forces(&
     dqmcharges = 0.0d0
     ! QM charges are initialied as the FF charges, but may be modified by torchani
     qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
-    if (ani_nml%use_torch_coupling) then
+    if (ani_nml%use_torch_coupling .or. ani_nml%mlmm_coupling == 2) then
         ! In this case torch handles both the in-vacuo energy calculation and the ML/MM coupling,
         ! No need to retrieve the in-vacuo energies separately
         continue
@@ -258,12 +259,22 @@ subroutine get_torchani_forces(&
     if (write_to_mdout_this_step .and. (ani_nml%use_switching_function)) then
         write(6,'(1x,"QM: IN VACUO ENERGY = ",f14.4)') ext_escf
     end if
-    if (write_to_mdout_this_step .and. (.not. ani_nml%use_torch_coupling)) then
+    if (write_to_mdout_this_step .and. (.not. ani_nml%use_torch_coupling) .and. (ani_nml%mlmm_coupling /= 2)) then
         write(6,'(1x,"TORCHANI: IN VACUO ENERGY = ",f14.4)') escf
     end if
 
     if (qmmm_nml%qmmm_int == 1) then
-        if (ani_nml%use_torch_coupling) then
+        if (ani_nml%mlmm_coupling == 2) then
+            call get_energies_and_forces_through_custom_mlmm_model( &
+                write_to_mdout_this_step, &
+                qmcoords, &
+                clcoords, &
+                qmmm_nml%qmcharge, &
+                dxyzqm, &
+                dxyzcl, &
+                escf &
+            )
+        else if (ani_nml%use_torch_coupling) then
             call get_vacuum_and_coupling_energies_and_forces_through_torchani( &
                 write_to_mdout_this_step, &
                 qmcoords, &
@@ -806,7 +817,7 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
             write(6,*) "     The electrostatic coupling approximation will be used"
             write(6,*) "     The QM energies and forces will be also corrected"
         else
-            ! Check coupling kind. Options are: 0 (coulombic), or 1 (simple polarizable)
+            ! Check coupling kind. Options are: 0 (coulombic), 1 (simple polarizable), 2 (custom model)
             if (ani_nml%mlmm_coupling == 0) then
                 write(6,*) "TORCHANI: Will use a coulombic-only QM/MM interaction energy, with no polarization corrections"
             elseif (ani_nml%mlmm_coupling == 1) then
@@ -814,25 +825,43 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
                 write(6,*) "     Thole-inspired correction terms will be added to the coulombic interaction"
                 write(6,*) "     This partially accounts for QM-region electrostatic polarization and distortion"
                 write(6,*) "     If you use this setting please cite 'https://doi.org/10.1021/acs.jcim.4c00478'"
+            elseif (ani_nml%mlmm_coupling == 2) then
+                write(6,*) "TORCHANI: Will use a fully custom ML/MM model (mlmm_coupling=2)"
+                write(6,*) "     The model must export 'compute_mlmm'; it receives ML species+coords and MM coords+charges"
+                write(6,*) "     and returns the total energy (Hartree). Forces via autograd."
+                if (ani_nml%use_extcoupling) then
+                    call ani_nml_error('mlmm_coupling=2 is incompatible with use_extcoupling')
+                endif
+                if (ani_nml%use_torchani_charges) then
+                    call ani_nml_error('mlmm_coupling=2: the custom model handles charges internally; set use_torchani_charges=.false.')
+                endif
+                if (ani_nml%write_charges) then
+                    call ani_nml_error('mlmm_coupling=2: custom model returns no charges; set write_charges=.false.')
+                endif
+                if (ani_nml%write_charges_grad) then
+                    call ani_nml_error('mlmm_coupling=2: custom model returns no charges; set write_charges_grad=.false.')
+                endif
             else
-                call ani_nml_error('Valid mlmm_coupling values are mlmm_coupling = 0 (coulombic), 1|2 (simple polarizable)')
+                call ani_nml_error('Valid mlmm_coupling values are 0 (coulombic), 1 (simple polarizable), 2 (custom model)')
             endif
-            ! Check charges kind. Options are: torchani-charges topology-charges
-            if (ani_nml%use_torchani_charges) then
-                write(6,*) "TORCHANI: Will use position-dependent NN-predicted charges for the QM-region, taking into account dq/dr"
-                if (.not. ani_nml%use_charges_derivatives) then
-                    write(6,*) "TORCHANI: *THE FOLLOWING IS MOST LIKELY AN ERROR, PLEASE CHECK YOUR INPUT!*"
-                    write(6,*) "     Disregarding charge derivatives w.r.t coords"
-                endif
-                if (ani_nml%mlmm_coupling == 0) then
-                    write(6,*) "TORCHANI WARNING: *YOU ARE USING AN UNTESTED PROTOCOL. MAKE SURE THIS IS WHAT YOU INTEND*"
-                    write(6,*) "     The selected 'coulombic-only coupling' is only tested with fixed topology charges"
-                endif
-            else
-                write(6,*) "TORCHANI: Will use fixed charges read from the topology file for the QM-region"
-                if (ani_nml%mlmm_coupling == 1) then
-                    write(6,*) "TORCHANI WARNING: *YOU ARE USING AN UNTESTED PROTOCOL. MAKE SURE THIS IS WHAT YOU INTEND*"
-                    write(6,*) "     The selected 'simple polarizable coupling' approx is only tested with NN-predicted charges"
+            ! Check charges kind for mlmm_coupling 0 and 1 only
+            if (ani_nml%mlmm_coupling /= 2) then
+                if (ani_nml%use_torchani_charges) then
+                    write(6,*) "TORCHANI: Will use position-dependent NN-predicted charges for the QM-region, taking into account dq/dr"
+                    if (.not. ani_nml%use_charges_derivatives) then
+                        write(6,*) "TORCHANI: *THE FOLLOWING IS MOST LIKELY AN ERROR, PLEASE CHECK YOUR INPUT!*"
+                        write(6,*) "     Disregarding charge derivatives w.r.t coords"
+                    endif
+                    if (ani_nml%mlmm_coupling == 0) then
+                        write(6,*) "TORCHANI WARNING: *YOU ARE USING AN UNTESTED PROTOCOL. MAKE SURE THIS IS WHAT YOU INTEND*"
+                        write(6,*) "     The selected 'coulombic-only coupling' is only tested with fixed topology charges"
+                    endif
+                else
+                    write(6,*) "TORCHANI: Will use fixed charges read from the topology file for the QM-region"
+                    if (ani_nml%mlmm_coupling == 1) then
+                        write(6,*) "TORCHANI WARNING: *YOU ARE USING AN UNTESTED PROTOCOL. MAKE SURE THIS IS WHAT YOU INTEND*"
+                        write(6,*) "     The selected 'simple polarizable coupling' approx is only tested with NN-predicted charges"
+                    endif
                 endif
             endif
         end if
@@ -862,6 +891,8 @@ subroutine ani_nml_print(ani_nml, qmmm_int, use_internal_opts)
             write(6,*) 'TORCHANI:  mlmm_coupling                ', 0, "(coulombic)"
         elseif (ani_nml%mlmm_coupling == 1) then
             write(6,*) 'TORCHANI:  mlmm_coupling                ', 1, "(simple polarizable)"
+        elseif (ani_nml%mlmm_coupling == 2) then
+            write(6,*) 'TORCHANI:  mlmm_coupling                ', 2, "(custom model)"
         else
             call internal_error()
         endif
@@ -962,6 +993,50 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
         write(6,'(1x,"TORCHANI: QM/MM ENERGY (TOTAL) =",f14.4)') ene_pot_embed_total
     endif
     ! Invert dxyzqm and cl because torchani returns forces, and sander expects grad
+    dxyzqm = -dxyzqm
+    dxyzcl = -dxyzcl
+endsubroutine
+
+! Fully custom ML/MM model path (mlmm_coupling=2).
+! The TorchScript model receives ML species+coords and the sander-provided
+! cutoff-filtered MM coords+charges, and returns the total energy.
+! Forces on both regions are computed by C++ via autograd.
+! Note: MM coordinates are already in correct periodic images (handled by sander
+! before this call), so use_pbc is always .false. here.
+subroutine get_energies_and_forces_through_custom_mlmm_model( &
+    write_to_mdout_this_step, &
+    qmcoords, &
+    clcoords, &
+    ml_system_charge, &
+    dxyzqm, &
+    dxyzcl, &
+    escf &
+)
+    logical, intent(in)             :: write_to_mdout_this_step
+    integer, intent(in)             :: ml_system_charge
+    double precision, intent(in)    :: qmcoords(:, :)   ! (3, n_ml)
+    double precision, intent(in)    :: clcoords(:, :)   ! (4, n_mm): rows 1-3 = coords, row 4 = charge
+    double precision, intent(inout) :: dxyzqm(:, :)
+    double precision, intent(inout) :: dxyzcl(:, :)
+    double precision, intent(inout) :: escf
+
+    call torchani_calc_energy_force_custom_mlmm( &
+        size(qmcoords, 2), &
+        size(clcoords, 2), &
+        qmcoords, &
+        clcoords(:3, :), &
+        clcoords(4, :), &
+        dummy_ucell, &
+        .false., &
+        ml_system_charge, &
+        dxyzqm, &
+        dxyzcl, &
+        escf &
+    )
+    if (write_to_mdout_this_step) then
+        write(6,'(1x,"TORCHANI: CUSTOM MLMM TOTAL ENERGY = ",f14.4)') escf
+    endif
+    ! sander expects gradients; torchani returns forces
     dxyzqm = -dxyzqm
     dxyzcl = -dxyzcl
 endsubroutine
