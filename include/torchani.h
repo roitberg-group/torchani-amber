@@ -156,4 +156,22 @@ void torchani_calc_energy_force_with_coupling(
     double* ene_pot_embed_coulomb_buf,
     double* ene_pot_total_buf
 );
+
+// Custom ML/MM model: the TorchScript model receives ML species+coords and MM
+// coords+charges and computes the total energy internally. The model must export
+// a 'compute_mlmm' method (see README). Forces on both regions via autograd.
+void torchani_calc_energy_force_custom_mlmm(
+    int num_atoms,
+    int num_env_charges,
+    double coords_buf[][3],              // shape (num_atoms, 3)
+    double env_charge_coords_buf[][3],   // shape (num_env_charges, 3)
+    double env_charges_buf[],            // shape (num_env_charges,)
+    double cell_buf[3][3],               // shape (3, 3); ignored when use_pbc==false
+    bool use_pbc,
+    int ml_system_charge,
+    /* outputs */
+    double forces_on_atoms_buf[][3],        // shape (num_atoms, 3)
+    double forces_on_env_charges_buf[][3],  // shape (num_env_charges, 3)
+    double* ene_pot_total_buf
+);
 }

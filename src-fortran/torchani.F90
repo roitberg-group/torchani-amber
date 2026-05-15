@@ -22,6 +22,7 @@ public :: &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_calc_energy_force_with_coupling, &
     torchani_calc_data_for_monitored_mlmm, &
+    torchani_calc_energy_force_custom_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
     torchani_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
@@ -307,6 +308,35 @@ subroutine internal_energy_force_with_coupling( &
     real(c_double), intent(out) :: ene_pot_embed_dist
     real(c_double), intent(out) :: ene_pot_embed_coulomb
     real(c_double), intent(out) :: ene_pot_total
+endsubroutine
+
+subroutine internal_calc_energy_force_custom_mlmm( &
+    num_atoms, &
+    num_env_charges, &
+    coords, &
+    env_charge_coords, &
+    env_charges, &
+    cell, &
+    use_pbc, &
+    ml_system_charge, &
+    ! Outputs
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    ene_pot_total &
+) bind(c, name="torchani_calc_energy_force_custom_mlmm")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in)  :: num_atoms
+    integer(c_int), value, intent(in)  :: num_env_charges
+    real(c_double), intent(in)         :: coords(*)
+    real(c_double), intent(in)         :: env_charge_coords(*)
+    real(c_double), intent(in)         :: env_charges(*)
+    real(c_double), intent(in)         :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), value, intent(in)  :: ml_system_charge
+    ! Outputs
+    real(c_double), intent(out)        :: forces_on_atoms(*)
+    real(c_double), intent(out)        :: forces_on_env_charges(*)
+    real(c_double), intent(out)        :: ene_pot_total
 endsubroutine
 endinterface
 
@@ -903,6 +933,48 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
         ret = .false._c_bool
     endif
 endfunction
+
+subroutine torchani_calc_energy_force_custom_mlmm( &
+    num_atoms, &
+    num_env_charges, &
+    coords, &
+    env_charge_coords, &
+    env_charges, &
+    cell, &
+    use_pbc, &
+    ml_system_charge, &
+    ! Outputs
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    ene_pot_total &
+)
+    integer, value, intent(in)                      :: num_atoms
+    integer, value, intent(in)                      :: num_env_charges
+    integer, value, intent(in)                      :: ml_system_charge
+    double precision, contiguous, intent(in)        :: coords(:, :)
+    double precision, contiguous, intent(in)        :: env_charge_coords(:, :)
+    double precision, contiguous, intent(in)        :: env_charges(:)
+    double precision, contiguous, intent(in)        :: cell(:, :)
+    logical, intent(in)                             :: use_pbc
+    ! Outputs
+    double precision, contiguous, intent(out)       :: forces_on_atoms(:, :)
+    double precision, contiguous, intent(out)       :: forces_on_env_charges(:, :)
+    double precision, intent(out)                   :: ene_pot_total
+
+    call internal_calc_energy_force_custom_mlmm( &
+        num_atoms, &
+        num_env_charges, &
+        coords, &
+        env_charge_coords, &
+        env_charges, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        ml_system_charge, &
+        forces_on_atoms, &
+        forces_on_env_charges, &
+        ene_pot_total &
+    )
+endsubroutine
 
 subroutine torchani_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls

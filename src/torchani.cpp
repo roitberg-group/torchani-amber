@@ -153,6 +153,26 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(
     };
 }
 
+std::vector<torch::jit::IValue> setup_inputs_custom_mlmm(
+    torch::Tensor& ml_coords,
+    torch::Tensor& mm_coords,
+    torch::Tensor& mm_charges,
+    torch::Tensor& cell,
+    bool use_pbc,
+    int ml_system_charge
+) {
+    torch::jit::IValue cell_ival = use_pbc ? torch::jit::IValue(cell) : torch::jit::IValue();
+    torch::jit::IValue pbc_ival = use_pbc ? torch::jit::IValue(config.enabled_pbc()) : torch::jit::IValue();
+    return {
+        std::tuple{torchani_atomic_numbers, ml_coords},
+        /* mm_coords= */ mm_coords,
+        /* mm_charges= */ mm_charges,
+        /* cell= */ cell_ival,
+        /* pbc= */ pbc_ival,
+        /* charge= */ ml_system_charge
+    };
+}
+
 void calculate_and_populate_charge_derivatives(
     torch::Tensor& coords,
     torch::Tensor& atomic_charges_tensor,
@@ -548,11 +568,17 @@ void torchani_initialize(
     }
 
     // This is only necessary for double precision, since
-    // the buffers / parameters are kFloat by default
-    model.to(config.dtype());
+    // the buffers / parameters are kFloat by default.
+    // Skip for custom MLMM models (those exporting compute_mlmm): they are
+    // pre-compiled at the intended dtype, and C++ module.to() converts ALL
+    // tensor attributes unconditionally — including integer index buffers
+    // (triu_index, conv_tensor, _n_ref, _species_map, …) which must stay int64.
+    if (!model.find_method("compute_mlmm").has_value()) {
+        model.to(config.dtype());
 #ifdef DEBUG
-    std::cout << "Cast model to the specified precision" << '\n';
+        std::cout << "Cast model to the specified precision" << '\n';
 #endif
+    }
 
     // Set the correct model configuration
     if (network_index != -1) {
@@ -931,6 +957,42 @@ void torchani_energy_force_with_coupling(
     );
 }
 
+
+void torchani_calc_energy_force_custom_mlmm(
+    int num_atoms,
+    int num_env_charges,
+    double coords_buf[][3],
+    double env_charge_coords_buf[][3],
+    double env_charges_buf[],
+    double cell_buf[3][3],
+    bool use_pbc,
+    int ml_system_charge,
+    /* outputs */
+    double forces_on_atoms_buf[][3],
+    double forces_on_env_charges_buf[][3],
+    double* ene_pot_total_buf
+) {
+    if (!model.find_method("compute_mlmm").has_value()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
+                  << "See the torchani-amber README for the required signature." << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor ml_coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
+    torch::Tensor mm_coords = dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
+    torch::Tensor mm_charges = dbl_buf_to_tensor(config, env_charges_buf, {1, num_env_charges});
+    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
+
+    auto inputs = setup_inputs_custom_mlmm(ml_coords, mm_coords, mm_charges, cell, use_pbc, ml_system_charge);
+    torch::jit::IValue output = model.get_method("compute_mlmm")(inputs);
+    torch::Tensor energy = output.toTensor();
+
+    calculate_and_populate_embedding_forces(
+        energy, ml_coords, mm_coords, num_atoms, num_env_charges,
+        forces_on_atoms_buf, forces_on_env_charges_buf
+    );
+    populate_potential_energy(energy, ene_pot_total_buf);
+}
 
 void torchani_energy_force_atomic_charges_with_derivatives(
     int num_atoms,
