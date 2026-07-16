@@ -36,6 +36,7 @@ def _check_which_models_need_compilation(
         "ANI1ccx",
         "ANI2x",
         "ANImbis",
+        "ANImbisv",
         "ANI2dr",
         "ANI2xr",
         # "ANIr2s",

@@ -42,13 +42,8 @@ auto calc_efield(
  * Given efield and alphas, calculate the associated QM/MM energy
  */
 auto polarizable_embedding_energy_from_field(
-    torch::Tensor atomic_alphas, torch::Tensor efield, double inv_pol_dielectric
+    torch::Tensor atomic_alphas_bohr, torch::Tensor efield, double inv_pol_dielectric
 ) -> torch::Tensor {
-    // Input atomic alphas are in Ang and Efield in AU
-    // Output in AU, so perform the conversion:
-    // Alphas_AU = Alphas_Angstrom * A2B**3
-    torch::Tensor atomic_alphas_bohr =
-        atomic_alphas * std::pow(CODATA08_ANGSTROM_TO_BOHR, 3);
     return -inv_pol_dielectric *
         torch::sum(atomic_alphas_bohr * torch::sum(efield.pow(2), 1));
 }
@@ -69,10 +64,27 @@ auto polarizable_embedding_energy(
     torch::Tensor efield = calc_efield(
         coords, env_charge_coords, env_charges, env_charges_to_atoms_distances
     );
-    // Output in AU (Hartree), no conversion needed, since inputs are fw to a
-    // fn that outputs AU
+    // Input atomic alphas are in Angstrom**3. Convert to Bohr**3 so the
+    // product with the AU electric field returns Hartree.
+    torch::Tensor atomic_alphas_bohr =
+        atomic_alphas * std::pow(CODATA08_ANGSTROM_TO_BOHR, 3);
     return polarizable_embedding_energy_from_field(
-        atomic_alphas, efield, inv_pol_dielectric
+        atomic_alphas_bohr, efield, inv_pol_dielectric
+    );
+}
+auto polarizable_embedding_energy_with_bohr_alphas(
+    torch::Tensor coords,
+    torch::Tensor atomic_alphas_bohr,
+    torch::Tensor env_charge_coords,
+    torch::Tensor env_charges,
+    torch::Tensor env_charges_to_atoms_distances,
+    double inv_pol_dielectric
+) -> torch::Tensor {
+    torch::Tensor efield = calc_efield(
+        coords, env_charge_coords, env_charges, env_charges_to_atoms_distances
+    );
+    return polarizable_embedding_energy_from_field(
+        atomic_alphas_bohr, efield, inv_pol_dielectric
     );
 }
 auto coulombic_embedding_energy(

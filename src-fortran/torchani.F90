@@ -16,6 +16,7 @@ public :: &
     ! Actuall interface
     torchani_initialize, &
     torchani_calc_energy_force, &
+    torchani_calc_energy_force_atomic_scalars, &
     torchani_calc_energy_force_qbc, &
     torchani_calc_energy_force_from_external_neighbors, &
     torchani_energy_force_atomic_charges, &
@@ -72,6 +73,46 @@ subroutine internal_energy_force( &
     integer(c_int), value, intent(in) :: net_charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: potential_energy
+endsubroutine
+
+subroutine internal_energy_force_atomic_scalars( &
+    num_atoms, &
+    coords, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad, &
+    forces, &
+    atomic_charges, &
+    atomic_charges_grad, &
+    atomic_volumes, &
+    atomic_volumes_grad, &
+    potential_energy &
+) bind(c, name="torchani_calc_energy_force_atomic_scalars")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: net_charge
+    logical(c_bool), value, intent(in) :: write_charges
+    logical(c_bool), value, intent(in) :: write_charges_grad
+    logical(c_bool), value, intent(in) :: write_volumes
+    logical(c_bool), value, intent(in) :: write_volumes_grad
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: atomic_charges(*)
+    real(c_double), intent(out) :: atomic_charges_grad(*)
+    real(c_double), intent(out) :: atomic_volumes(*)
+    real(c_double), intent(out) :: atomic_volumes_grad(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
@@ -232,11 +273,19 @@ subroutine internal_calc_energy_force_with_coupling( &
     predict_charges, &
     use_simple_polarization_correction, &
     use_charge_derivatives, &
+    predict_volumes, &
     ml_system_charge, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad, &
     ! Outputs
     forces_on_atoms, &
     forces_on_env_charges, &
     atomic_charges, &
+    atomic_charges_grad, &
+    atomic_volumes, &
+    atomic_volumes_grad, &
     ene_pot_invacuo, &
     ene_pot_embed_pol, &
     ene_pot_embed_dist, &
@@ -254,11 +303,19 @@ subroutine internal_calc_energy_force_with_coupling( &
     logical(c_bool), value, intent(in) :: predict_charges
     logical(c_bool), value, intent(in) :: use_simple_polarization_correction
     logical(c_bool), value, intent(in) :: use_charge_derivatives
+    logical(c_bool), value, intent(in) :: predict_volumes
     integer(c_int), value, intent(in) :: ml_system_charge
+    logical(c_bool), value, intent(in) :: write_charges
+    logical(c_bool), value, intent(in) :: write_charges_grad
+    logical(c_bool), value, intent(in) :: write_volumes
+    logical(c_bool), value, intent(in) :: write_volumes_grad
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
     real(c_double), intent(out) :: forces_on_env_charges(*)
     real(c_double), intent(inout) :: atomic_charges(*)
+    real(c_double), intent(out) :: atomic_charges_grad(*)
+    real(c_double), intent(out) :: atomic_volumes(*)
+    real(c_double), intent(out) :: atomic_volumes_grad(*)
     real(c_double), intent(out) :: ene_pot_invacuo
     real(c_double), intent(out) :: ene_pot_embed_pol
     real(c_double), intent(out) :: ene_pot_embed_dist
@@ -325,11 +382,19 @@ subroutine torchani_calc_energy_force_with_coupling( &
     predict_charges, &
     use_simple_polarization_correction, &
     use_charge_derivatives, &
+    predict_volumes, &
     ml_system_charge, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad, &
     ! Outputs
     forces_on_atoms, &
     forces_on_env_charges, &
     atomic_charges, &
+    atomic_charges_grad, &
+    atomic_volumes, &
+    atomic_volumes_grad, &
     ene_pot_invacuo, &
     ene_pot_embed_pol, &
     ene_pot_embed_dist, &
@@ -346,11 +411,19 @@ subroutine torchani_calc_energy_force_with_coupling( &
     logical, intent(in) :: predict_charges
     logical, intent(in) :: use_simple_polarization_correction
     logical, intent(in) :: use_charge_derivatives
+    logical, intent(in) :: predict_volumes
     integer, value, intent(in) :: ml_system_charge
+    logical, intent(in) :: write_charges
+    logical, intent(in) :: write_charges_grad
+    logical, intent(in) :: write_volumes
+    logical, intent(in) :: write_volumes_grad
     ! Outputs
     double precision, contiguous, intent(out) :: forces_on_atoms(:, :)
     double precision, contiguous, intent(out) :: forces_on_env_charges(:, :)
     double precision, contiguous, intent(inout) :: atomic_charges(:)
+    double precision, contiguous, intent(out) :: atomic_charges_grad(:, :, :)
+    double precision, contiguous, intent(out) :: atomic_volumes(:)
+    double precision, contiguous, intent(out) :: atomic_volumes_grad(:, :, :)
     double precision, intent(out) :: ene_pot_invacuo
     double precision, intent(out) :: ene_pot_embed_pol
     double precision, intent(out) :: ene_pot_embed_dist
@@ -367,11 +440,19 @@ subroutine torchani_calc_energy_force_with_coupling( &
         fbool_to_cbool(predict_charges), &
         fbool_to_cbool(use_simple_polarization_correction), &
         fbool_to_cbool(use_charge_derivatives), &
+        fbool_to_cbool(predict_volumes), &
         ml_system_charge, &
+        fbool_to_cbool(write_charges), &
+        fbool_to_cbool(write_charges_grad), &
+        fbool_to_cbool(write_volumes), &
+        fbool_to_cbool(write_volumes_grad), &
         ! Outputs
         forces_on_atoms, &
         forces_on_env_charges, &
         atomic_charges, &
+        atomic_charges_grad, &
+        atomic_volumes, &
+        atomic_volumes_grad, &
         ene_pot_invacuo, &
         ene_pot_embed_pol, &
         ene_pot_embed_dist, &
@@ -512,6 +593,65 @@ subroutine torchani_calc_energy_force( &
         fbool_to_cbool(calc_only_bonded), &
         net_charge, &
         forces, &
+        potential_energy &
+    )
+endsubroutine
+
+subroutine torchani_calc_energy_force_atomic_scalars( &
+    num_atoms, &
+    coords, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    net_charge, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad, &
+    forces, &
+    atomic_charges, &
+    atomic_charges_grad, &
+    atomic_volumes, &
+    atomic_volumes_grad, &
+    potential_energy &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    integer(c_int), value, intent(in) :: net_charge
+    logical, intent(in) :: use_pbc
+    logical, intent(in) :: calc_only_bonded
+    logical, intent(in) :: write_charges
+    logical, intent(in) :: write_charges_grad
+    logical, intent(in) :: write_volumes
+    logical, intent(in) :: write_volumes_grad
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: atomic_charges(*)
+    real(c_double), intent(out) :: atomic_charges_grad(*)
+    real(c_double), intent(out) :: atomic_volumes(*)
+    real(c_double), intent(out) :: atomic_volumes_grad(*)
+    real(c_double), intent(out) :: potential_energy
+
+    call internal_energy_force_atomic_scalars( &
+        num_atoms, &
+        coords, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        net_charge, &
+        fbool_to_cbool(write_charges), &
+        fbool_to_cbool(write_charges_grad), &
+        fbool_to_cbool(write_volumes), &
+        fbool_to_cbool(write_volumes_grad), &
+        forces, &
+        atomic_charges, &
+        atomic_charges_grad, &
+        atomic_volumes, &
+        atomic_volumes_grad, &
         potential_energy &
     )
 endsubroutine

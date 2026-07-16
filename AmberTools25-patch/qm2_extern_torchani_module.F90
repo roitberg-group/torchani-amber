@@ -55,6 +55,7 @@ type ani_nml_type
     ! Coupling and charges config
     integer :: mlmm_coupling
     logical :: use_torchani_charges
+    logical :: use_torchani_volumes
     double precision :: inv_pol_dielectric
     logical :: use_torch_coupling
     logical :: use_charges_derivatives  ! Dev only, not user facing
@@ -65,6 +66,8 @@ type ani_nml_type
     logical :: write_forces
     logical :: write_charges
     logical :: write_charges_grad
+    logical :: write_volumes
+    logical :: write_volumes_grad
 
     ! All the following options are either experimental or deprecated
     ! Mixed QM+ANI forces config, 'Switching', experimental
@@ -121,6 +124,8 @@ subroutine get_torchani_forces(&
     ! Experimental, Switching
     double precision :: qmcharges(nqmatoms)                  ! QM atom charges
     double precision dqmcharges(3, nqmatoms, nqmatoms)      ! QM atom charges forces
+    double precision :: qmvolumes(nqmatoms)                  ! QM atom volumes
+    double precision dqmvolumes(3, nqmatoms, nqmatoms)      ! QM atom volume derivatives
     ! Note that atomic_charge_derivatives is an array of shape [3, num_atoms, num_atoms]
     ! where the element [i, j, k] is the derivative of the **charge on
     ! k-th atom** with respect to the **i-th position of the j-th atom**
@@ -165,7 +170,7 @@ subroutine get_torchani_forces(&
 
     if (ani_nml%mlmm_coupling == 1) then
         call qm_alphas_fill(elem_alphas, qm_atomic_nums, alpha)
-        if (first_call) then
+        if (first_call .and. (.not. ani_nml%use_torchani_volumes)) then
             call qm_alphas_print_in_use(elem_alphas, qm_atomic_nums, alpha)
         endif
     endif
@@ -182,6 +187,8 @@ subroutine get_torchani_forces(&
     dxyzqm_qmmm = 0.0d0
     ! Charge grad is init to 0, if the qs are geom-dependent it is modified in-place
     dqmcharges = 0.0d0
+    dqmvolumes = 0.0d0
+    qmvolumes = 0.0d0
     ! QM charges are initialied as the FF charges, but may be modified by torchani
     qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
     if (ani_nml%use_torch_coupling) then
@@ -271,10 +278,18 @@ subroutine get_torchani_forces(&
                 clcoords, &
                 ani_nml%inv_pol_dielectric, &
                 ani_nml%use_torchani_charges, &
+                ani_nml%use_torchani_volumes, &
                 ani_nml%mlmm_coupling, &
                 ani_nml%use_charges_derivatives, &
                 qmmm_nml%qmcharge, &
+                ani_nml%write_charges, &
+                ani_nml%write_charges_grad, &
+                ani_nml%write_volumes, &
+                ani_nml%write_volumes_grad, &
                 qmcharges, &  ! Override QM charges, grad is calc and used internally
+                dqmcharges, &
+                qmvolumes, &
+                dqmvolumes, &
                 dxyzqm, &
                 dxyzcl, &
                 escf &
@@ -331,21 +346,27 @@ subroutine get_torchani_forces(&
             ani_nml%write_xyz,&
             ani_nml%write_forces,&
             ani_nml%write_charges,&
-            ani_nml%write_charges_grad&
+            ani_nml%write_charges_grad,&
+            ani_nml%write_volumes,&
+            ani_nml%write_volumes_grad&
         )
     endif
     call write_output_files(&
         qm_atomic_nums,&
         qmcoords,&
         qmcharges,&
+        qmvolumes,&
         dxyzqm,&
         dqmcharges,&
+        dqmvolumes,&
         dxyzqm_qmmm,&
         dxyzcl,&
         ani_nml%write_xyz,&
         ani_nml%write_forces,&
         ani_nml%write_charges,&
-        ani_nml%write_charges_grad&
+        ani_nml%write_charges_grad,&
+        ani_nml%write_volumes,&
+        ani_nml%write_volumes_grad&
     )
     if (write_to_mdout_this_step) then
         write(6,*) "------------------------------------------------------------------------------"
@@ -367,12 +388,22 @@ subroutine torchani_amber_dftb_setup(qmmm_nml)
     ! qmmm_nml%qmmm_int=2 TODO: The default used to be 2, maybe this is not needed anymore?
 endsubroutine
 
-subroutine create_output_files(has_mm_region, write_xyz, write_forces, write_charges, write_charges_grad)
+subroutine create_output_files(&
+    has_mm_region, &
+    write_xyz, &
+    write_forces, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad &
+)
     logical, intent(in) :: has_mm_region
     logical, intent(in) :: write_xyz
     logical, intent(in) :: write_forces
     logical, intent(in) :: write_charges
     logical, intent(in) :: write_charges_grad
+    logical, intent(in) :: write_volumes
+    logical, intent(in) :: write_volumes_grad
     if (write_forces) then
         open(unit=271920, file='forces_qm_region.dat', status='REPLACE')
         close(271920)
@@ -391,6 +422,14 @@ subroutine create_output_files(has_mm_region, write_xyz, write_forces, write_cha
         open(unit=271921, file='charges_qm_region.dat', status='REPLACE')
         close(271921)
     endif
+    if (write_volumes_grad) then
+        open(unit=271931, file='volumes_grad_qm_region.dat', status='REPLACE')
+        close(271931)
+    endif
+    if (write_volumes) then
+        open(unit=271930, file='volumes_qm_region.dat', status='REPLACE')
+        close(271930)
+    endif
     if (write_xyz) then
         open(unit=271922, file='qm_region.xyz', status='REPLACE')
         close(271922)
@@ -402,26 +441,34 @@ subroutine write_output_files(&
     qm_atomic_nums,&
     qm_coords,&
     qm_charges,&
+    qm_volumes,&
     qm_grads,&
     qm_charges_grad,&
+    qm_volumes_grad,&
     qm_qmmm_grads,&
     mm_qmmm_grads,&
     write_xyz,&
     write_forces,&
     write_charges,&
-    write_charges_grad&
+    write_charges_grad,&
+    write_volumes,&
+    write_volumes_grad&
 )
     integer, intent(in) :: qm_atomic_nums(:)
     double precision, intent(in) :: qm_coords(:, :)
     double precision, intent(in) :: qm_charges(:)
+    double precision, intent(in) :: qm_volumes(:)
     double precision, intent(in) :: qm_grads(:, :)
     double precision, intent(in) :: qm_charges_grad(:, :, :)
+    double precision, intent(in) :: qm_volumes_grad(:, :, :)
     double precision, intent(in) :: qm_qmmm_grads(:, :)
     double precision, intent(in) :: mm_qmmm_grads(:, :)
     logical, intent(in) :: write_xyz
     logical, intent(in) :: write_forces
     logical, intent(in) :: write_charges
     logical, intent(in) :: write_charges_grad
+    logical, intent(in) :: write_volumes
+    logical, intent(in) :: write_volumes_grad
     integer :: i, j
     integer :: num_qm_atoms
     integer :: num_mm_atoms
@@ -446,6 +493,26 @@ subroutine write_output_files(&
         end do
         write(271929, *)
         close(271929)
+    endif
+
+    if (write_volumes) then
+        open(unit=271930, file='volumes_qm_region.dat', status='OLD', position='APPEND')
+        do i = 1, num_qm_atoms
+            write(271930, '(F15.7)') qm_volumes(i)
+        end do
+        write(271930, *)
+        close(271930)
+    endif
+
+    if (write_volumes_grad) then
+        open(unit=271931, file='volumes_grad_qm_region.dat', status='OLD', position='APPEND')
+        do i = 1, num_qm_atoms
+            do j = 1, num_qm_atoms
+                write(271931, '(3F15.7)') qm_volumes_grad(1, j, i), qm_volumes_grad(2, j, i), qm_volumes_grad(3, j, i)
+            end do
+        end do
+        write(271931, *)
+        close(271931)
     endif
 
     if (write_forces) then
@@ -504,9 +571,12 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     logical :: write_forces
     logical :: write_charges
     logical :: write_charges_grad
+    logical :: write_volumes
+    logical :: write_volumes_grad
     ! mlmm_coupling is only used if qmmm_int = 1, frontend option for users
     integer :: mlmm_coupling
     logical :: use_torchani_charges
+    logical :: use_torchani_volumes
     logical :: allow_untested_protocols
     logical :: use_torch_coupling
     double precision :: inv_pol_dielectric
@@ -538,6 +608,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
         use_amber_neighborlist,&
         cuda_device_index,&
         use_torchani_charges,&
+        use_torchani_volumes,&
         use_torch_coupling,&
         inv_pol_dielectric,&
         use_extcoupling,&
@@ -551,6 +622,8 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
         write_forces,&
         write_charges,&
         write_charges_grad,&
+        write_volumes,&
+        write_volumes_grad,&
         use_charges_derivatives,&
         pol_H, pol_He, pol_Li, pol_Be,&
         pol_B, pol_C, pol_N, pol_O,&
@@ -574,11 +647,14 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     use_torch_coupling = .true.
     mlmm_coupling = 0
     use_torchani_charges = .false.
+    use_torchani_volumes = .false.
     allow_untested_protocols = .false.
     write_xyz = .false.
     write_forces = .false.
     write_charges = .false.
     write_charges_grad = .false.
+    write_volumes = .false.
+    write_volumes_grad = .false.
     ! Mixed QM-ANI forces config, 'Switching', experimental
     use_switching_function = .false.
     switching_program = 'none'
@@ -630,7 +706,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
             write(6, fmt=*) "If you really mean to run this simulation set allow_untested_protocols = .true."
             call mexit(6,1)  ! TODO: Explicitly import routine
         endif
-        if (mlmm_coupling == 1 .and. (.not. use_torchani_charges)) then
+        if (mlmm_coupling == 1 .and. (.not. use_torchani_charges) .and. (.not. use_torchani_volumes)) then
             write(6, fmt=*) "Simple polarizable coupling is *UNTESTED* with fixed topology charges"
             write(6, fmt=*) "If you really mean to run this simulation set allow_untested_protocols = .true."
             call mexit(6,1)  ! TODO: Explicitly import routine
@@ -672,6 +748,7 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%use_cuda_device = use_cuda_device
     ani_nml%cuda_device_index = cuda_device_index
     ani_nml%use_torchani_charges = use_torchani_charges
+    ani_nml%use_torchani_volumes = use_torchani_volumes
     ani_nml%use_torch_coupling = use_torch_coupling
     ani_nml%inv_pol_dielectric = inv_pol_dielectric
     ani_nml%use_extcoupling = use_extcoupling
@@ -684,6 +761,8 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%write_xyz = write_xyz
     ani_nml%write_charges = write_charges
     ani_nml%write_charges_grad = write_charges_grad
+    ani_nml%write_volumes = write_volumes
+    ani_nml%write_volumes_grad = write_volumes_grad
     ani_nml%write_forces = write_forces
     ani_nml%use_charges_derivatives = use_charges_derivatives
     ani_nml%use_cuaev = use_cuaev
@@ -732,6 +811,24 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
 
     if ((ani_nml%use_switching_function) .and. ani_nml%use_torch_coupling) then
         call ani_nml_error('Switching is not supported with torch coupling')
+    endif
+
+    if (ani_nml%use_torchani_volumes) then
+        if (qmmm_int /= 1) then
+            call ani_nml_error('use_torchani_volumes requires qmmm_int = 1')
+        endif
+        if (ani_nml%mlmm_coupling /= 1) then
+            call ani_nml_error('use_torchani_volumes requires mlmm_coupling = 1')
+        endif
+        if (.not. ani_nml%use_torch_coupling) then
+            call ani_nml_error('use_torchani_volumes requires use_torch_coupling = .true.')
+        endif
+        if (trim(ani_nml%model_type) /= 'animbisv') then
+            call ani_nml_error('use_torchani_volumes requires model_type = "animbisv"')
+        endif
+    endif
+    if ((ani_nml%write_volumes .or. ani_nml%write_volumes_grad) .and. (.not. ani_nml%use_torchani_volumes)) then
+        call ani_nml_error('write_volumes and write_volumes_grad require use_torchani_volumes = .true.')
     endif
 
     ! Check that polarization_dielectric was not modified
@@ -830,9 +927,21 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
                 endif
             else
                 write(6,*) "TORCHANI: Will use fixed charges read from the topology file for the QM-region"
-                if (ani_nml%mlmm_coupling == 1) then
+                if (ani_nml%mlmm_coupling == 1 .and. (.not. ani_nml%use_torchani_volumes)) then
                     write(6,*) "TORCHANI WARNING: *YOU ARE USING AN UNTESTED PROTOCOL. MAKE SURE THIS IS WHAT YOU INTEND*"
                     write(6,*) "     The selected 'simple polarizable coupling' approx is only tested with NN-predicted charges"
+                endif
+            endif
+            if (ani_nml%mlmm_coupling == 1) then
+                if (ani_nml%use_torchani_volumes) then
+                    write(6,*) "TORCHANI: Will use ANImbisv-predicted atomic volumes for QM-region polarizabilities"
+                    if (ani_nml%use_torchani_charges) then
+                        write(6,*) "     Using kz constants fitted for NN-predicted charges"
+                    else
+                        write(6,*) "     Using kz constants fitted for fixed force-field charges"
+                    endif
+                else
+                    write(6,*) "TORCHANI: Will use fixed element polarizabilities for the QM-region"
                 endif
             endif
         end if
@@ -856,7 +965,10 @@ subroutine ani_nml_print(ani_nml, qmmm_int, use_internal_opts)
     write(6,*) 'TORCHANI:  write_forces                 ', ani_nml%write_forces
     write(6,*) 'TORCHANI:  write_charges                ', ani_nml%write_charges
     write(6,*) 'TORCHANI:  write_charges_grad           ', ani_nml%write_charges_grad
+    write(6,*) 'TORCHANI:  write_volumes                ', ani_nml%write_volumes
+    write(6,*) 'TORCHANI:  write_volumes_grad           ', ani_nml%write_volumes_grad
     write(6,*) 'TORCHANI:  use_torchani_charges         ', ani_nml%use_torchani_charges
+    write(6,*) 'TORCHANI:  use_torchani_volumes         ', ani_nml%use_torchani_volumes
     if (qmmm_int == 1) then
         if (ani_nml%mlmm_coupling == 0) then
             write(6,*) 'TORCHANI:  mlmm_coupling                ', 0, "(coulombic)"
@@ -893,17 +1005,30 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     clcoords, &
     inv_pol_dielectric, &
     use_torchani_charges, &
+    use_torchani_volumes, &
     mlmm_coupling, &
     use_charges_derivatives, &
     ml_system_charge, &
+    write_charges, &
+    write_charges_grad, &
+    write_volumes, &
+    write_volumes_grad, &
     qmcharges, &
+    dqmcharges, &
+    qmvolumes, &
+    dqmvolumes, &
     dxyzqm, &
     dxyzcl, &
     escf &
 )
     logical, intent(in) :: write_to_mdout_this_step
     logical, intent(in) :: use_torchani_charges
+    logical, intent(in) :: use_torchani_volumes
     logical, intent(in) :: use_charges_derivatives
+    logical, intent(in) :: write_charges
+    logical, intent(in) :: write_charges_grad
+    logical, intent(in) :: write_volumes
+    logical, intent(in) :: write_volumes_grad
     integer, intent(in) :: mlmm_coupling
     integer, intent(in) :: ml_system_charge
     double precision, intent(in) :: qmcoords(:, :)
@@ -911,6 +1036,9 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     double precision, intent(in) :: clcoords(:, :)
     double precision, intent(in) :: inv_pol_dielectric
     double precision, intent(inout) :: qmcharges(:)
+    double precision, intent(inout) :: dqmcharges(:, :, :)
+    double precision, intent(inout) :: qmvolumes(:)
+    double precision, intent(inout) :: dqmvolumes(:, :, :)
     double precision, intent(inout) :: dxyzqm(:, :)
     double precision, intent(inout) :: dxyzcl(:, :)
     double precision, intent(inout) :: escf
@@ -941,11 +1069,19 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
         use_torchani_charges, &
         mlmm_coupling == 1, &
         use_charges_derivatives, &
+        use_torchani_volumes, &
         ml_system_charge, &
+        write_charges, &
+        write_charges_grad, &
+        write_volumes, &
+        write_volumes_grad, &
         ! Outputs
         dxyzqm, &
         dxyzcl, &
         qmcharges, &
+        dqmcharges, &
+        qmvolumes, &
+        dqmvolumes, &
         ene_pot_invacuo, &
         ene_pot_embed_pol, &
         ene_pot_embed_dist, &

@@ -225,6 +225,10 @@ Output related options:
    Dump charges of the QM atoms as a `.dat` file
 - `write_charges_grad` (bool)
    Dump charge derivatives w.r.t. coords of the QM atoms as a `.dat` file
+- `write_volumes` (bool)
+   Dump atomic volumes of the QM atoms as a `.dat` file
+- `write_volumes_grad` (bool)
+   Dump volume derivatives w.r.t. coords of the QM atoms as a `.dat` file
 
 ML/MM and electrostatic related options:
 - `use_torchani_charges` (bool)
@@ -234,6 +238,9 @@ ML/MM and electrostatic related options:
    `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. This
    charges are geometry-dependent, and the derivativse w.r.t. coordinates are used to
    calculate their contribution to the forces.
+- `use_torchani_volumes` (bool)
+   Use model-predicted atomic volumes for the QM-region polarizabilities. This currently
+   requires `model_type = 'animbisv'`, `mlmm_coupling = 1`, and `use_torch_coupling = .true.`.
 - `mlmm_coupling` (int = `0` or `1`)
    Currently available are: `0` (*coulombic coupling*) and `1` (*simple polarizable*
    coupling).
