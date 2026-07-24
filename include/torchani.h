@@ -26,6 +26,36 @@ void torchani_calc_energy_force(
     double* potential_energy  // Scalar
 );
 
+// General full-ML scalar-output entry point for new callers. This covers the
+// charge-only use cases handled by torchani_energy_force_atomic_charges* while
+// also supporting volumes, PBC/cell inputs, molecule indices, and net charge.
+// The older charge-specific functions remain available for compatibility.
+//
+// atomic_*_grad arrays are [num_atoms x num_atoms x 3].
+// In Fortran, pass arrays of shape [3, num_atoms, num_atoms], where element
+// [i, j, k] is the derivative of the scalar on atom k with respect to
+// coordinate i of atom j.
+void torchani_calc_energy_force_atomic_scalars(
+    int num_atoms,
+    double coords[][3],  // Shape (num_atoms, 3)
+    double cell[][3],  // Shape (3, 3)
+    bool use_pbc,
+    int* molecule_idxs_buf, // Shape (num_atoms,)
+    bool calc_only_bonded,
+    int net_charge,
+    bool write_charges,
+    bool write_charges_grad,
+    bool write_volumes,
+    bool write_volumes_grad,
+    /* outputs */
+    double forces[][3],  // Shape (num_atoms, 3)
+    double atomic_charges[],  // Shape (num_atoms,)
+    double* atomic_charges_grad,
+    double atomic_volumes[],  // Shape (num_atoms,)
+    double* atomic_volumes_grad,
+    double* potential_energy  // Scalar
+);
+
 void torchani_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
@@ -142,14 +172,24 @@ void torchani_calc_energy_force_with_coupling(
     double atomic_alphas_buf[],  // shape (num-atoms,)
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
+    bool compute_coulomb,
+    bool polarizable_atom_mask_buf[],  // shape (num-atoms,)
     bool predict_charges,
     bool use_simple_polarization_correction,
     bool use_charge_derivatives,
+    bool predict_volumes,
     int ml_system_charge,
+    bool write_charges,
+    bool write_charges_grad,
+    bool write_volumes,
+    bool write_volumes_grad,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
     double atomic_charges_buf[],  // shape (num-atoms, 3)
+    double* atomic_charges_grad_buf,
+    double atomic_volumes_buf[],  // shape (num-atoms,)
+    double* atomic_volumes_grad_buf,
     double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,

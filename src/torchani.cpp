@@ -15,6 +15,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <memory>
 
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/csrc/autograd/autograd.h>  // For forces
@@ -44,6 +45,7 @@ std::vector<std::string> torchani_builtin_models = {
     "ani2dr",
     "ani2dr-infer",
     "animbis",
+    "animbisv",
     "anir2s",
     "anir2s-infer",
     "anir2s_water",
@@ -67,6 +69,46 @@ std::vector<std::string> torchani_builtin_models = {
     "nutmeg-small",
     "nutmeg-medium",
     "nutmeg-large",
+};
+const std::vector<double> animbisv_volume_kzs_with_model_charges = {
+    0.0,  // unused
+    0.0,  // H
+    0.0,  // He
+    0.0,  // Li
+    0.0,  // Be
+    0.0,  // B
+    0.7190062581351027,  // C
+    0.9894465754783003,  // N
+    0.5712807132434742,  // O
+    0.0,  // F
+    0.0,  // Ne
+    0.0,  // Na
+    0.0,  // Mg
+    0.0,  // Al
+    0.0,  // Si
+    0.0,  // P
+    0.0,  // S
+    0.47491014980647467,  // Cl
+};
+const std::vector<double> animbisv_volume_kzs_with_forcefield_charges = {
+    0.0,  // unused
+    0.7659661617582175,  // H
+    0.0,  // He
+    0.0,  // Li
+    0.0,  // Be
+    0.0,  // B
+    0.36055843774225754,  // C
+    0.32324322791847215,  // N
+    0.26476340834055967,  // O
+    0.0,  // F
+    0.0,  // Ne
+    0.0,  // Na
+    0.0,  // Mg
+    0.0,  // Al
+    0.0,  // Si
+    0.0,  // P
+    0.030818228617190933,  // S
+    1.1044386233759735,  // Cl
 };
 }  // namespace
 
@@ -153,29 +195,41 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(
     };
 }
 
+void calculate_and_populate_atomic_scalar_derivatives(
+    torch::Tensor& coords,
+    torch::Tensor& atomic_scalars_tensor,
+    double* atomic_scalar_derivatives,
+    int num_atoms
+) {
+    atomic_scalars_tensor = atomic_scalars_tensor.view({1, -1});
+    for (int atom_idx = 0; atom_idx != num_atoms; ++atom_idx) {
+        torch::Tensor scalar_deriv = torch::autograd::grad(
+            {atomic_scalars_tensor.index({0, atom_idx})},
+            {coords},
+            /* grad_outputs= */ {},
+            /* retain_graph= */ true
+        )[0];
+        scalar_deriv = scalar_deriv.to(torch::kCPU, torch::kFloat64);
+        auto scalar_deriv_acc = scalar_deriv.accessor<double, 3>();
+        for (int atom_subidx = 0; atom_subidx != num_atoms; ++atom_subidx) {
+            for (int c = 0; c != 3; ++c) {
+                atomic_scalar_derivatives
+                    [c + atom_subidx * 3 + atom_idx * num_atoms * 3] =
+                        scalar_deriv_acc[0][atom_subidx][c];
+            }
+        }
+    }
+}
+
 void calculate_and_populate_charge_derivatives(
     torch::Tensor& coords,
     torch::Tensor& atomic_charges_tensor,
     double* atomic_charge_derivatives,
     int num_atoms
 ) {
-    for (int atom_idx = 0; atom_idx != num_atoms; ++atom_idx) {
-        torch::Tensor charge_deriv = torch::autograd::grad(
-            {atomic_charges_tensor.index({0, atom_idx})},
-            {coords},
-            /* grad_outputs= */ {},
-            /* retain_graph= */ true
-        )[0];
-        charge_deriv = charge_deriv.to(torch::kCPU, torch::kFloat64);
-        auto charge_deriv_acc = charge_deriv.accessor<double, 3>();
-        for (int atom_subidx = 0; atom_subidx != num_atoms; ++atom_subidx) {
-            for (int c = 0; c != 3; ++c) {
-                atomic_charge_derivatives
-                    [c + atom_subidx * 3 + atom_idx * num_atoms * 3] =
-                        charge_deriv_acc[0][atom_subidx][c];
-            }
-        }
-    }
+    calculate_and_populate_atomic_scalar_derivatives(
+        coords, atomic_charges_tensor, atomic_charge_derivatives, num_atoms
+    );
 }
 
 void calculate_and_populate_qbc_derivatives(
@@ -298,15 +352,28 @@ void calculate_and_populate_forces(
     }
 }
 
+void populate_atomic_scalars(
+    torch::Tensor& atomic_scalars_tensor, double* atomic_scalars, int num_atoms
+) {
+    atomic_scalars_tensor = atomic_scalars_tensor.view({1, -1});
+    atomic_scalars_tensor = atomic_scalars_tensor.to(torch::kCPU, torch::kDouble);
+    auto atomic_scalars_accessor = atomic_scalars_tensor.accessor<double, 2>();
+
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        atomic_scalars[atom] = atomic_scalars_accessor[0][atom];
+    }
+}
+
 void populate_atomic_charges(
     torch::Tensor& atomic_charges_tensor, double* atomic_charges, int num_atoms
 ) {
-    atomic_charges_tensor = atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
-    auto atomic_charges_accessor = atomic_charges_tensor.accessor<double, 2>();
+    populate_atomic_scalars(atomic_charges_tensor, atomic_charges, num_atoms);
+}
 
-    for (int atom = 0; atom != num_atoms; ++atom) {
-        atomic_charges[atom] = atomic_charges_accessor[0][atom];
-    }
+void populate_atomic_volumes(
+    torch::Tensor& atomic_volumes_tensor, double* atomic_volumes, int num_atoms
+) {
+    populate_atomic_scalars(atomic_volumes_tensor, atomic_volumes, num_atoms);
 }
 
 // This function is actually equivalent to the populate_potential_energy function
@@ -349,6 +416,29 @@ torch::Tensor fetch_atomic_alphas_from_output(torch::jit::IValue output) {
         throw c10::Error("Bad output for atomic alphas, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]");
     }
     return scalars.toGenericDict().at("atomic_alphas").toTensor();
+}
+
+torch::Tensor fetch_atomic_volumes_from_output(torch::jit::IValue output) {
+    // New signature for compute_from_neighbors
+    if (!output.isTuple()) {
+        return output.toGenericDict().at("atomic_volumes").toTensor();
+    }
+
+    // Standard signature, tuple-dict form
+    auto scalars = output.toTuple()->elements()[2];
+    if (scalars.isTensor()) {
+        throw c10::Error("Bad output for atomic volumes, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]");
+    }
+    return scalars.toGenericDict().at("atomic_volumes").toTensor();
+}
+
+torch::Tensor animbisv_kzs_for_atomic_numbers(bool predict_charges) {
+    const std::vector<double>& kzs = predict_charges
+        ? animbisv_volume_kzs_with_model_charges
+        : animbisv_volume_kzs_with_forcefield_charges;
+    auto options = torch::TensorOptions().dtype(config.dtype()).device(config.device());
+    torch::Tensor kz_table = torch::tensor(kzs, options);
+    return kz_table.index_select(0, torchani_atomic_numbers.view(-1));
 }
 
 torch::Tensor fetch_energies_from_output(torch::jit::IValue output) {
@@ -752,6 +842,102 @@ void torchani_calc_energy_force(
 #endif
 }
 
+void torchani_calc_energy_force_atomic_scalars(
+    int num_atoms,
+    double coords_buf[][3],
+    double cell_buf[][3],
+    bool use_pbc,
+    int* molecule_idxs_buf,
+    bool calc_only_bonded,
+    int net_charge,
+    bool write_charges,
+    bool write_charges_grad,
+    bool write_volumes,
+    bool write_volumes_grad,
+    /* outputs */
+    double forces_buf[][3],
+    double atomic_charges_buf[],
+    double* atomic_charge_derivatives,
+    double atomic_volumes_buf[],
+    double* atomic_volume_derivatives,
+    double* potential_energy
+) {
+#ifdef TIMING
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
+    bool write_scalars = (
+        write_charges || write_charges_grad || write_volumes || write_volumes_grad
+    );
+    if (write_scalars && config.use_no_eval_atoms()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Atomic scalar outputs are not supported together with "
+                  << "no_eval_atoms filtering" << std::endl;
+        std::exit(2);
+    }
+
+    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
+    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
+    torch::Tensor molecule_idxs =
+        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
+    if (config.use_no_eval_atoms()) {
+        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
+        coords = coords.index_select(1, {torchani_do_eval_idxs});
+    }
+    std::vector<torch::jit::IValue> inputs;
+    if (not use_pbc) {
+        if (calc_only_bonded or config.use_no_eval_atoms()) {
+            inputs = setup_inputs_only_bonded_nopbc(
+                coords, molecule_idxs, /*ensemble values=*/false, net_charge
+            );
+        } else {
+            inputs = setup_inputs_nopbc(coords, /*ensemble values=*/false, net_charge);
+        }
+    } else {
+        if (calc_only_bonded or config.use_no_eval_atoms()) {
+            inputs = setup_inputs_only_bonded_pbc(
+                coords, cell, molecule_idxs, /*ensemble values=*/false, net_charge
+            );
+        } else {
+            inputs =
+                setup_inputs_pbc(coords, cell, /*ensemble values=*/false, net_charge);
+        }
+    }
+
+    torch::jit::IValue output = model.forward(inputs);
+    validate_model_output(output, write_scalars ? 3 : 2);
+    torch::Tensor energy = fetch_energies_from_output(output);
+
+    if (write_charges || write_charges_grad) {
+        torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
+        if (write_charges_grad) {
+            calculate_and_populate_atomic_scalar_derivatives(
+                coords, atomic_charges, atomic_charge_derivatives, num_atoms
+            );
+        }
+        populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+    }
+    if (write_volumes || write_volumes_grad) {
+        torch::Tensor atomic_volumes = fetch_atomic_volumes_from_output(output);
+        if (write_volumes_grad) {
+            calculate_and_populate_atomic_scalar_derivatives(
+                coords, atomic_volumes, atomic_volume_derivatives, num_atoms
+            );
+        }
+        populate_atomic_volumes(atomic_volumes, atomic_volumes_buf, num_atoms);
+    }
+
+    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
+    populate_potential_energy(energy, potential_energy);
+#ifdef TIMING
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout
+        << "TORCHANI-AMBER: energy force atomic scalars PBC time"
+        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
+            1000
+        << "ms" << std::endl;
+#endif
+}
+
 void torchani_energy_force_atomic_charges(
     int num_atoms,
     double coords_buf[][3],
@@ -786,14 +972,24 @@ void torchani_calc_energy_force_with_coupling(
     double atomic_alphas_buf[],  // shape (num-atoms,)
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
+    bool compute_coulomb,
+    bool polarizable_atom_mask_buf[],
     bool predict_charges,
     bool simple_polarization_correction,
     bool use_charge_derivatives,
+    bool predict_volumes,
     int ml_system_charge,
+    bool write_charges,
+    bool write_charges_grad,
+    bool write_volumes,
+    bool write_volumes_grad,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
     double atomic_charges_buf[],  // shape (num-atoms, 3) (actually in-out)
+    double* atomic_charge_derivatives,
+    double atomic_volumes_buf[],
+    double* atomic_volume_derivatives,
     double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,
@@ -813,11 +1009,15 @@ void torchani_calc_energy_force_with_coupling(
     std::vector<torch::jit::IValue> inputs =
         setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
     torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, predict_charges ? 3 : 2);
+    validate_model_output(output, (predict_charges || predict_volumes) ? 3 : 2);
     torch::Tensor ene_pot_invacuo = fetch_energies_from_output(output);
 
-    // TODO: Add this or similar
-    // atomic_alphas = fetch_atomic_alphas_from_output(output);
+    if (predict_volumes && !simple_polarization_correction) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Predicted volumes can only be used with simple polarization coupling"
+                  << std::endl;
+        std::exit(2);
+    }
 
     if (predict_charges) {
         atomic_charges = fetch_atomic_charges_from_output(output);
@@ -830,6 +1030,22 @@ void torchani_calc_energy_force_with_coupling(
     // Embedding part
     torch::Tensor atomic_alphas =
         dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
+    torch::Tensor polarizable_atom_mask =
+        torch::from_blob(
+            polarizable_atom_mask_buf,
+            {num_atoms},
+            torch::TensorOptions().dtype(torch::kBool)
+        ).to(config.device());
+    torch::Tensor polarizable_atom_scale = polarizable_atom_mask.to(config.dtype());
+    atomic_alphas = atomic_alphas * polarizable_atom_scale;
+    torch::Tensor atomic_alphas_bohr =
+        torch::zeros({num_atoms}, torch::dtype(config.dtype()).device(config.device()));
+    torch::Tensor atomic_volumes;
+    if (predict_volumes) {
+        atomic_volumes = fetch_atomic_volumes_from_output(output).view({-1});
+        atomic_alphas_bohr = animbisv_kzs_for_atomic_numbers(predict_charges) *
+            atomic_volumes * polarizable_atom_scale;
+    }
     torch::Tensor env_charge_coords =
         dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
     torch::Tensor env_charges =
@@ -841,22 +1057,37 @@ void torchani_calc_energy_force_with_coupling(
         torch::linalg_norm(delta, std::nullopt, 2);
 
     // Embedding calculations are made in atomic units, so outputs are in Ha
-    auto ene_pot_coulomb = electro::coulombic_embedding_energy(
-        atomic_charges, env_charges, env_charges_to_atoms_distances
-    );
+    torch::Tensor ene_pot_coulomb =
+        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+    if (compute_coulomb) {
+        ene_pot_coulomb = electro::coulombic_embedding_energy(
+            atomic_charges, env_charges, env_charges_to_atoms_distances
+        );
+    }
     torch::Tensor ene_pot_pol =
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     torch::Tensor ene_pot_dist =
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     if (simple_polarization_correction) {
-        ene_pot_pol = electro::polarizable_embedding_energy(
-            coords,
-            atomic_alphas,
-            env_charge_coords,
-            env_charges,
-            env_charges_to_atoms_distances,
-            inv_pol_dielectric
-        );
+        if (predict_volumes) {
+            ene_pot_pol = electro::polarizable_embedding_energy_with_bohr_alphas(
+                coords,
+                atomic_alphas_bohr,
+                env_charge_coords,
+                env_charges,
+                env_charges_to_atoms_distances,
+                inv_pol_dielectric
+            );
+        } else {
+            ene_pot_pol = electro::polarizable_embedding_energy(
+                coords,
+                atomic_alphas,
+                env_charge_coords,
+                env_charges,
+                env_charges_to_atoms_distances,
+                inv_pol_dielectric
+            );
+        }
         ene_pot_dist = -0.5 * ene_pot_pol;
     }
 
@@ -864,9 +1095,23 @@ void torchani_calc_energy_force_with_coupling(
     // TODO It may be possible to return forces due to "different things"
     // by detaching the coords before the final calculation
 
-    // TODO: Retain grad in atomic_charges so that the derivatives
-    // can be returned. Use backward instead of autograd::grad for simplicity to do
-    // this maybe?
+    if (predict_charges) {
+        if (write_charges_grad && use_charge_derivatives) {
+            calculate_and_populate_atomic_scalar_derivatives(
+                coords, atomic_charges, atomic_charge_derivatives, num_atoms
+            );
+        }
+        populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+    }
+    if (predict_volumes && (write_volumes || write_volumes_grad)) {
+        if (write_volumes_grad) {
+            calculate_and_populate_atomic_scalar_derivatives(
+                coords, atomic_volumes, atomic_volume_derivatives, num_atoms
+            );
+        }
+        populate_atomic_volumes(atomic_volumes, atomic_volumes_buf, num_atoms);
+    }
+
     calculate_and_populate_embedding_forces(
         ene_pot_total,
         coords,
@@ -881,9 +1126,6 @@ void torchani_calc_energy_force_with_coupling(
     populate_potential_energy(ene_pot_pol, ene_pot_embed_pol_buf);
     populate_potential_energy(ene_pot_dist, ene_pot_embed_dist_buf);
     populate_potential_energy(ene_pot_coulomb, ene_pot_embed_coulomb_buf);
-    if (predict_charges) {
-        populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
-    }
 }
 
 // For bw compat only
@@ -908,6 +1150,13 @@ void torchani_energy_force_with_coupling(
     double* ene_pot_embed_coulomb_buf,
     double* ene_pot_total_buf
 ) {
+    std::unique_ptr<bool[]> polarizable_atom_mask(new bool[num_atoms]);
+    for (int i = 0; i < num_atoms; ++i) {
+        polarizable_atom_mask[i] = true;
+    }
+    std::vector<double> atomic_charge_derivatives(num_atoms * num_atoms * 3, 0.0);
+    std::vector<double> atomic_volumes(num_atoms, 0.0);
+    std::vector<double> atomic_volume_derivatives(num_atoms * num_atoms * 3, 0.0);
     return torchani_calc_energy_force_with_coupling(
         num_atoms,
         num_env_charges,
@@ -916,13 +1165,23 @@ void torchani_energy_force_with_coupling(
         atomic_alphas_buf,
         env_charge_coords_buf,
         env_charges_buf,
+        true,
+        polarizable_atom_mask.get(),
         predict_charges,
         simple_polarization_correction,
         use_charge_derivatives,
+        false,
         -9'999'999,  // backwards compatibility (infer)
+        false,
+        false,
+        false,
+        false,
         forces_on_atoms_buf,
         forces_on_env_charges_buf,
         atomic_charges_buf,
+        atomic_charge_derivatives.data(),
+        atomic_volumes.data(),
+        atomic_volume_derivatives.data(),
         ene_pot_invacuo_buf,
         ene_pot_embed_pol_buf,
         ene_pot_embed_dist_buf,
