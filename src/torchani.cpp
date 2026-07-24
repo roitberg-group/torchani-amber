@@ -15,6 +15,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <memory>
 
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/csrc/autograd/autograd.h>  // For forces
@@ -971,6 +972,8 @@ void torchani_calc_energy_force_with_coupling(
     double atomic_alphas_buf[],  // shape (num-atoms,)
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
+    bool compute_coulomb,
+    bool polarizable_atom_mask_buf[],
     bool predict_charges,
     bool simple_polarization_correction,
     bool use_charge_derivatives,
@@ -1027,12 +1030,21 @@ void torchani_calc_energy_force_with_coupling(
     // Embedding part
     torch::Tensor atomic_alphas =
         dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
+    torch::Tensor polarizable_atom_mask =
+        torch::from_blob(
+            polarizable_atom_mask_buf,
+            {num_atoms},
+            torch::TensorOptions().dtype(torch::kBool)
+        ).to(config.device());
+    torch::Tensor polarizable_atom_scale = polarizable_atom_mask.to(config.dtype());
+    atomic_alphas = atomic_alphas * polarizable_atom_scale;
     torch::Tensor atomic_alphas_bohr =
         torch::zeros({num_atoms}, torch::dtype(config.dtype()).device(config.device()));
     torch::Tensor atomic_volumes;
     if (predict_volumes) {
         atomic_volumes = fetch_atomic_volumes_from_output(output).view({-1});
-        atomic_alphas_bohr = animbisv_kzs_for_atomic_numbers(predict_charges) * atomic_volumes;
+        atomic_alphas_bohr = animbisv_kzs_for_atomic_numbers(predict_charges) *
+            atomic_volumes * polarizable_atom_scale;
     }
     torch::Tensor env_charge_coords =
         dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
@@ -1045,9 +1057,13 @@ void torchani_calc_energy_force_with_coupling(
         torch::linalg_norm(delta, std::nullopt, 2);
 
     // Embedding calculations are made in atomic units, so outputs are in Ha
-    auto ene_pot_coulomb = electro::coulombic_embedding_energy(
-        atomic_charges, env_charges, env_charges_to_atoms_distances
-    );
+    torch::Tensor ene_pot_coulomb =
+        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+    if (compute_coulomb) {
+        ene_pot_coulomb = electro::coulombic_embedding_energy(
+            atomic_charges, env_charges, env_charges_to_atoms_distances
+        );
+    }
     torch::Tensor ene_pot_pol =
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     torch::Tensor ene_pot_dist =
@@ -1134,6 +1150,10 @@ void torchani_energy_force_with_coupling(
     double* ene_pot_embed_coulomb_buf,
     double* ene_pot_total_buf
 ) {
+    std::unique_ptr<bool[]> polarizable_atom_mask(new bool[num_atoms]);
+    for (int i = 0; i < num_atoms; ++i) {
+        polarizable_atom_mask[i] = true;
+    }
     std::vector<double> atomic_charge_derivatives(num_atoms * num_atoms * 3, 0.0);
     std::vector<double> atomic_volumes(num_atoms, 0.0);
     std::vector<double> atomic_volume_derivatives(num_atoms * num_atoms * 3, 0.0);
@@ -1145,6 +1165,8 @@ void torchani_energy_force_with_coupling(
         atomic_alphas_buf,
         env_charge_coords_buf,
         env_charges_buf,
+        true,
+        polarizable_atom_mask.get(),
         predict_charges,
         simple_polarization_correction,
         use_charge_derivatives,

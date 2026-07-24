@@ -270,6 +270,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     atomic_alphas, &
     env_charge_coords, &
     env_charges, &
+    compute_coulomb, &
+    polarizable_atom_mask, &
     predict_charges, &
     use_simple_polarization_correction, &
     use_charge_derivatives, &
@@ -300,6 +302,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     real(c_double), intent(in) :: atomic_alphas(*)
     real(c_double), intent(in) :: env_charge_coords(*)
     real(c_double), intent(in) :: env_charges(*)
+    logical(c_bool), value, intent(in) :: compute_coulomb
+    logical(c_bool), intent(in) :: polarizable_atom_mask(*)
     logical(c_bool), value, intent(in) :: predict_charges
     logical(c_bool), value, intent(in) :: use_simple_polarization_correction
     logical(c_bool), value, intent(in) :: use_charge_derivatives
@@ -379,6 +383,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     atomic_alphas, &
     env_charge_coords, &
     env_charges, &
+    compute_coulomb, &
+    polarizable_atom_mask, &
     predict_charges, &
     use_simple_polarization_correction, &
     use_charge_derivatives, &
@@ -408,6 +414,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     double precision, contiguous, intent(in) :: atomic_alphas(:)
     double precision, contiguous, intent(in) :: env_charge_coords(:, :)
     double precision, contiguous, intent(in) :: env_charges(:)
+    logical, intent(in) :: compute_coulomb
+    logical, contiguous, intent(in) :: polarizable_atom_mask(:)
     logical, intent(in) :: predict_charges
     logical, intent(in) :: use_simple_polarization_correction
     logical, intent(in) :: use_charge_derivatives
@@ -429,6 +437,13 @@ subroutine torchani_calc_energy_force_with_coupling( &
     double precision, intent(out) :: ene_pot_embed_dist
     double precision, intent(out) :: ene_pot_embed_coulomb
     double precision, intent(out) :: ene_pot_total
+    logical(c_bool) :: c_polarizable_atom_mask(num_atoms)
+    integer :: i
+
+    do i = 1, num_atoms
+        c_polarizable_atom_mask(i) = fbool_to_cbool(polarizable_atom_mask(i))
+    end do
+
     call internal_calc_energy_force_with_coupling( &
         num_atoms, &
         num_env_charges, &
@@ -437,6 +452,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
         atomic_alphas, &
         env_charge_coords, &
         env_charges, &
+        fbool_to_cbool(compute_coulomb), &
+        c_polarizable_atom_mask, &
         fbool_to_cbool(predict_charges), &
         fbool_to_cbool(use_simple_polarization_correction), &
         fbool_to_cbool(use_charge_derivatives), &

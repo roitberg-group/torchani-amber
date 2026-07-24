@@ -172,6 +172,8 @@ void torchani_calc_energy_force_with_coupling(
     double atomic_alphas_buf[],  // shape (num-atoms,)
     double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
     double env_charges_buf[],  // shape (num-charges,)
+    bool compute_coulomb,
+    bool polarizable_atom_mask_buf[],  // shape (num-atoms,)
     bool predict_charges,
     bool use_simple_polarization_correction,
     bool use_charge_derivatives,
