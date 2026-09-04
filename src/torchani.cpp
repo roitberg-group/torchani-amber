@@ -220,6 +220,53 @@ void calculate_and_populate_atomic_scalar_derivatives(
     }
 }
 
+void populate_efield(
+    torch::Tensor& efield, double efield_buf[][3], int num_atoms
+) {
+    torch::Tensor efield_cpu = efield.to(torch::kCPU, torch::kDouble);
+    auto efield_acc = efield_cpu.accessor<double, 2>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            efield_buf[atom][c] = efield_acc[atom][c];
+        }
+    }
+}
+
+void calculate_and_populate_efield_derivatives_wrt_env_coords(
+    torch::Tensor& env_charge_coords,
+    torch::Tensor& efield,
+    double* efield_derivatives_wrt_env_coords,
+    int num_atoms,
+    int num_env_charges
+) {
+    if (num_env_charges == 0) {
+        return;
+    }
+    for (int atom_idx = 0; atom_idx != num_atoms; ++atom_idx) {
+        for (int field_component = 0; field_component != 3; ++field_component) {
+            torch::Tensor efield_deriv = torch::autograd::grad(
+                {efield.index({atom_idx, field_component})},
+                {env_charge_coords},
+                /* grad_outputs= */ {},
+                /* retain_graph= */ true
+            )[0];
+            efield_deriv = efield_deriv.reshape({num_env_charges, 3})
+                               .to(torch::kCPU, torch::kDouble);
+            auto efield_deriv_acc = efield_deriv.accessor<double, 2>();
+            for (int env_atom_idx = 0; env_atom_idx != num_env_charges; ++env_atom_idx) {
+                for (int coord_component = 0; coord_component != 3; ++coord_component) {
+                    efield_derivatives_wrt_env_coords[
+                        coord_component +
+                        env_atom_idx * 3 +
+                        field_component * num_env_charges * 3 +
+                        atom_idx * 3 * num_env_charges * 3
+                    ] = efield_deriv_acc[env_atom_idx][coord_component];
+                }
+            }
+        }
+    }
+}
+
 void calculate_and_populate_charge_derivatives(
     torch::Tensor& coords,
     torch::Tensor& atomic_charges_tensor,
@@ -980,6 +1027,8 @@ void torchani_calc_energy_force_with_coupling(
     bool write_charges_grad,
     bool write_volumes,
     bool write_volumes_grad,
+    bool write_efield,
+    bool write_efield_grad_mm,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
@@ -987,6 +1036,8 @@ void torchani_calc_energy_force_with_coupling(
     double* atomic_charge_derivatives,
     double atomic_volumes_buf[],
     double* atomic_volume_derivatives,
+    double efield_buf[][3],
+    double* efield_derivatives_wrt_env_coords,
     double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,
@@ -1043,6 +1094,17 @@ void torchani_calc_energy_force_with_coupling(
         torch::reshape(coords, {1, -1, 3});
     torch::Tensor env_charges_to_atoms_distances =
         torch::linalg_norm(delta, std::nullopt, 2);
+    const bool need_efield = simple_polarization_correction || write_efield ||
+        write_efield_grad_mm;
+    torch::Tensor efield;
+    if (need_efield) {
+        efield = electro::calc_efield(
+            coords,
+            env_charge_coords,
+            env_charges,
+            env_charges_to_atoms_distances
+        );
+    }
 
     // Embedding calculations are made in atomic units, so outputs are in Ha
     auto ene_pot_coulomb = electro::coulombic_embedding_energy(
@@ -1053,25 +1115,15 @@ void torchani_calc_energy_force_with_coupling(
     torch::Tensor ene_pot_dist =
         torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
     if (simple_polarization_correction) {
-        if (predict_volumes) {
-            ene_pot_pol = electro::polarizable_embedding_energy_with_bohr_alphas(
-                coords,
-                atomic_alphas_bohr,
-                env_charge_coords,
-                env_charges,
-                env_charges_to_atoms_distances,
-                inv_pol_dielectric
-            );
-        } else {
-            ene_pot_pol = electro::polarizable_embedding_energy(
-                coords,
-                atomic_alphas,
-                env_charge_coords,
-                env_charges,
-                env_charges_to_atoms_distances,
-                inv_pol_dielectric
+        torch::Tensor atomic_alphas_for_pol = atomic_alphas_bohr;
+        if (!predict_volumes) {
+            atomic_alphas_for_pol = electro::convert_alphas_angstrom3_to_bohr3(
+                atomic_alphas
             );
         }
+        ene_pot_pol = electro::polarizable_embedding_energy_from_field(
+            atomic_alphas_for_pol, efield, inv_pol_dielectric
+        );
         ene_pot_dist = -0.5 * ene_pot_pol;
     }
 
@@ -1094,6 +1146,19 @@ void torchani_calc_energy_force_with_coupling(
             );
         }
         populate_atomic_volumes(atomic_volumes, atomic_volumes_buf, num_atoms);
+    }
+
+    if (write_efield) {
+        populate_efield(efield, efield_buf, num_atoms);
+    }
+    if (write_efield_grad_mm) {
+        calculate_and_populate_efield_derivatives_wrt_env_coords(
+            env_charge_coords,
+            efield,
+            efield_derivatives_wrt_env_coords,
+            num_atoms,
+            num_env_charges
+        );
     }
 
     calculate_and_populate_embedding_forces(
@@ -1137,6 +1202,8 @@ void torchani_energy_force_with_coupling(
     std::vector<double> atomic_charge_derivatives(num_atoms * num_atoms * 3, 0.0);
     std::vector<double> atomic_volumes(num_atoms, 0.0);
     std::vector<double> atomic_volume_derivatives(num_atoms * num_atoms * 3, 0.0);
+    std::vector<double> efield(num_atoms * 3, 0.0);
+    std::vector<double> efield_derivatives(num_atoms * num_env_charges * 9, 0.0);
     return torchani_calc_energy_force_with_coupling(
         num_atoms,
         num_env_charges,
@@ -1154,12 +1221,16 @@ void torchani_energy_force_with_coupling(
         false,
         false,
         false,
+        false,
+        false,
         forces_on_atoms_buf,
         forces_on_env_charges_buf,
         atomic_charges_buf,
         atomic_charge_derivatives.data(),
         atomic_volumes.data(),
         atomic_volume_derivatives.data(),
+        reinterpret_cast<double (*)[3]>(efield.data()),
+        efield_derivatives.data(),
         ene_pot_invacuo_buf,
         ene_pot_embed_pol_buf,
         ene_pot_embed_dist_buf,

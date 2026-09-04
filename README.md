@@ -229,6 +229,12 @@ Output related options:
    Dump atomic volumes of the QM atoms as a `.dat` file
 - `write_volumes_grad` (bool)
    Dump volume derivatives w.r.t. coords of the QM atoms as a `.dat` file
+- `write_efield` (bool)
+   Dump the MM electric field at each QM atom as a `.dat` file, in atomic units
+- `write_efield_grad_mm` (bool)
+   Dump derivatives of each QM-atom electric-field component with respect to MM coordinates
+- `output_frequency` (int)
+   Dump enabled TorchANI-Amber output files every `output_frequency` MD steps. Default is `1`.
 
 ML/MM and electrostatic related options:
 - `use_torchani_charges` (bool)

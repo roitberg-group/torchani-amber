@@ -8,6 +8,12 @@
 namespace {
 // Factor used by Amber
 constexpr double CODATA08_ANGSTROM_TO_BOHR = 1.8897261328727875;
+}  // namespace
+
+/**
+ * API
+ */
+namespace electro {
 // TODO: dividing by ...distances probably needs an epsilon
 /**
  * Calculate the electric field that a sequence of charges in an 'environment' (env),
@@ -47,12 +53,13 @@ auto polarizable_embedding_energy_from_field(
     return -inv_pol_dielectric *
         torch::sum(atomic_alphas_bohr * torch::sum(efield.pow(2), 1));
 }
-}  // namespace
 
-/**
- * API
- */
-namespace electro {
+auto convert_alphas_angstrom3_to_bohr3(
+    torch::Tensor atomic_alphas
+) -> torch::Tensor {
+    return atomic_alphas * std::pow(CODATA08_ANGSTROM_TO_BOHR, 3);
+}
+
 auto polarizable_embedding_energy(
     torch::Tensor coords,
     torch::Tensor atomic_alphas,
@@ -66,8 +73,9 @@ auto polarizable_embedding_energy(
     );
     // Input atomic alphas are in Angstrom**3. Convert to Bohr**3 so the
     // product with the AU electric field returns Hartree.
-    torch::Tensor atomic_alphas_bohr =
-        atomic_alphas * std::pow(CODATA08_ANGSTROM_TO_BOHR, 3);
+    torch::Tensor atomic_alphas_bohr = convert_alphas_angstrom3_to_bohr3(
+        atomic_alphas
+    );
     return polarizable_embedding_energy_from_field(
         atomic_alphas_bohr, efield, inv_pol_dielectric
     );

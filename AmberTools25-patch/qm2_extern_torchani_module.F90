@@ -68,6 +68,9 @@ type ani_nml_type
     logical :: write_charges_grad
     logical :: write_volumes
     logical :: write_volumes_grad
+    logical :: write_efield
+    logical :: write_efield_grad_mm
+    integer :: output_frequency
 
     ! All the following options are either experimental or deprecated
     ! Mixed QM+ANI forces config, 'Switching', experimental
@@ -126,11 +129,22 @@ subroutine get_torchani_forces(&
     double precision dqmcharges(3, nqmatoms, nqmatoms)      ! QM atom charges forces
     double precision :: qmvolumes(nqmatoms)                  ! QM atom volumes
     double precision dqmvolumes(3, nqmatoms, nqmatoms)      ! QM atom volume derivatives
+    double precision :: efield(3, nqmatoms)                 ! MM electric field at QM atoms
+    double precision :: efield_grad_mm(3, nclatoms, 3, nqmatoms)
     ! Note that atomic_charge_derivatives is an array of shape [3, num_atoms, num_atoms]
     ! where the element [i, j, k] is the derivative of the **charge on
     ! k-th atom** with respect to the **i-th position of the j-th atom**
     logical :: use_internal_opts
     logical :: write_to_mdout_this_step
+    logical :: write_output_this_step
+    logical :: write_xyz_this_step
+    logical :: write_forces_this_step
+    logical :: write_charges_this_step
+    logical :: write_charges_grad_this_step
+    logical :: write_volumes_this_step
+    logical :: write_volumes_grad_this_step
+    logical :: write_efield_this_step
+    logical :: write_efield_grad_mm_this_step
 
     ! Subroutine state
     ! Atomic polarizabilities for elem H-Ar. Negative value signals uninit
@@ -176,6 +190,15 @@ subroutine get_torchani_forces(&
     endif
 
     write_to_mdout_this_step = (ntpr_internal > 0 .and. mod(nstep + 1, ntpr_internal) == 0)
+    write_output_this_step = (mod(nstep + 1, ani_nml%output_frequency) == 0)
+    write_xyz_this_step = ani_nml%write_xyz .and. write_output_this_step
+    write_forces_this_step = ani_nml%write_forces .and. write_output_this_step
+    write_charges_this_step = ani_nml%write_charges .and. write_output_this_step
+    write_charges_grad_this_step = ani_nml%write_charges_grad .and. write_output_this_step
+    write_volumes_this_step = ani_nml%write_volumes .and. write_output_this_step
+    write_volumes_grad_this_step = ani_nml%write_volumes_grad .and. write_output_this_step
+    write_efield_this_step = ani_nml%write_efield .and. write_output_this_step
+    write_efield_grad_mm_this_step = ani_nml%write_efield_grad_mm .and. write_output_this_step
 
     if (write_to_mdout_this_step) then
         write(6,*) ""
@@ -189,6 +212,8 @@ subroutine get_torchani_forces(&
     dqmcharges = 0.0d0
     dqmvolumes = 0.0d0
     qmvolumes = 0.0d0
+    efield = 0.0d0
+    efield_grad_mm = 0.0d0
     ! QM charges are initialied as the FF charges, but may be modified by torchani
     qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
     if (ani_nml%use_torch_coupling) then
@@ -282,14 +307,18 @@ subroutine get_torchani_forces(&
                 ani_nml%mlmm_coupling, &
                 ani_nml%use_charges_derivatives, &
                 qmmm_nml%qmcharge, &
-                ani_nml%write_charges, &
-                ani_nml%write_charges_grad, &
-                ani_nml%write_volumes, &
-                ani_nml%write_volumes_grad, &
+                write_charges_this_step, &
+                write_charges_grad_this_step, &
+                write_volumes_this_step, &
+                write_volumes_grad_this_step, &
+                write_efield_this_step, &
+                write_efield_grad_mm_this_step, &
                 qmcharges, &  ! Override QM charges, grad is calc and used internally
                 dqmcharges, &
                 qmvolumes, &
                 dqmvolumes, &
+                efield, &
+                efield_grad_mm, &
                 dxyzqm, &
                 dxyzcl, &
                 escf &
@@ -348,7 +377,9 @@ subroutine get_torchani_forces(&
             ani_nml%write_charges,&
             ani_nml%write_charges_grad,&
             ani_nml%write_volumes,&
-            ani_nml%write_volumes_grad&
+            ani_nml%write_volumes_grad,&
+            ani_nml%write_efield,&
+            ani_nml%write_efield_grad_mm&
         )
     endif
     call write_output_files(&
@@ -359,14 +390,18 @@ subroutine get_torchani_forces(&
         dxyzqm,&
         dqmcharges,&
         dqmvolumes,&
+        efield,&
+        efield_grad_mm,&
         dxyzqm_qmmm,&
         dxyzcl,&
-        ani_nml%write_xyz,&
-        ani_nml%write_forces,&
-        ani_nml%write_charges,&
-        ani_nml%write_charges_grad,&
-        ani_nml%write_volumes,&
-        ani_nml%write_volumes_grad&
+        write_xyz_this_step,&
+        write_forces_this_step,&
+        write_charges_this_step,&
+        write_charges_grad_this_step,&
+        write_volumes_this_step,&
+        write_volumes_grad_this_step,&
+        write_efield_this_step,&
+        write_efield_grad_mm_this_step&
     )
     if (write_to_mdout_this_step) then
         write(6,*) "------------------------------------------------------------------------------"
@@ -395,7 +430,9 @@ subroutine create_output_files(&
     write_charges, &
     write_charges_grad, &
     write_volumes, &
-    write_volumes_grad &
+    write_volumes_grad, &
+    write_efield, &
+    write_efield_grad_mm &
 )
     logical, intent(in) :: has_mm_region
     logical, intent(in) :: write_xyz
@@ -404,6 +441,8 @@ subroutine create_output_files(&
     logical, intent(in) :: write_charges_grad
     logical, intent(in) :: write_volumes
     logical, intent(in) :: write_volumes_grad
+    logical, intent(in) :: write_efield
+    logical, intent(in) :: write_efield_grad_mm
     if (write_forces) then
         open(unit=271920, file='forces_qm_region.dat', status='REPLACE')
         close(271920)
@@ -430,6 +469,14 @@ subroutine create_output_files(&
         open(unit=271930, file='volumes_qm_region.dat', status='REPLACE')
         close(271930)
     endif
+    if (write_efield) then
+        open(unit=271932, file='efield_qm_region.dat', status='REPLACE')
+        close(271932)
+    endif
+    if (write_efield_grad_mm) then
+        open(unit=271933, file='efield_grad_mm_region.dat', status='REPLACE')
+        close(271933)
+    endif
     if (write_xyz) then
         open(unit=271922, file='qm_region.xyz', status='REPLACE')
         close(271922)
@@ -445,6 +492,8 @@ subroutine write_output_files(&
     qm_grads,&
     qm_charges_grad,&
     qm_volumes_grad,&
+    qm_efield,&
+    qm_efield_grad_mm,&
     qm_qmmm_grads,&
     mm_qmmm_grads,&
     write_xyz,&
@@ -452,7 +501,9 @@ subroutine write_output_files(&
     write_charges,&
     write_charges_grad,&
     write_volumes,&
-    write_volumes_grad&
+    write_volumes_grad,&
+    write_efield,&
+    write_efield_grad_mm&
 )
     integer, intent(in) :: qm_atomic_nums(:)
     double precision, intent(in) :: qm_coords(:, :)
@@ -461,6 +512,8 @@ subroutine write_output_files(&
     double precision, intent(in) :: qm_grads(:, :)
     double precision, intent(in) :: qm_charges_grad(:, :, :)
     double precision, intent(in) :: qm_volumes_grad(:, :, :)
+    double precision, intent(in) :: qm_efield(:, :)
+    double precision, intent(in) :: qm_efield_grad_mm(:, :, :, :)
     double precision, intent(in) :: qm_qmmm_grads(:, :)
     double precision, intent(in) :: mm_qmmm_grads(:, :)
     logical, intent(in) :: write_xyz
@@ -469,7 +522,9 @@ subroutine write_output_files(&
     logical, intent(in) :: write_charges_grad
     logical, intent(in) :: write_volumes
     logical, intent(in) :: write_volumes_grad
-    integer :: i, j
+    logical, intent(in) :: write_efield
+    logical, intent(in) :: write_efield_grad_mm
+    integer :: i, j, k
     integer :: num_qm_atoms
     integer :: num_mm_atoms
     num_qm_atoms = size(qm_atomic_nums)
@@ -513,6 +568,31 @@ subroutine write_output_files(&
         end do
         write(271931, *)
         close(271931)
+    endif
+
+    if (write_efield) then
+        open(unit=271932, file='efield_qm_region.dat', status='OLD', position='APPEND')
+        do i = 1, num_qm_atoms
+            write(271932, '(3F15.7)') qm_efield(1, i), qm_efield(2, i), qm_efield(3, i)
+        end do
+        write(271932, *)
+        close(271932)
+    endif
+
+    if (write_efield_grad_mm) then
+        open(unit=271933, file='efield_grad_mm_region.dat', status='OLD', position='APPEND')
+        do i = 1, num_qm_atoms
+            do k = 1, 3
+                do j = 1, num_mm_atoms
+                    write(271933, '(3F15.7)') &
+                        qm_efield_grad_mm(1, j, k, i), &
+                        qm_efield_grad_mm(2, j, k, i), &
+                        qm_efield_grad_mm(3, j, k, i)
+                end do
+            end do
+        end do
+        write(271933, *)
+        close(271933)
     endif
 
     if (write_forces) then
@@ -573,6 +653,9 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     logical :: write_charges_grad
     logical :: write_volumes
     logical :: write_volumes_grad
+    logical :: write_efield
+    logical :: write_efield_grad_mm
+    integer :: output_frequency
     ! mlmm_coupling is only used if qmmm_int = 1, frontend option for users
     integer :: mlmm_coupling
     logical :: use_torchani_charges
@@ -624,6 +707,9 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
         write_charges_grad,&
         write_volumes,&
         write_volumes_grad,&
+        write_efield,&
+        write_efield_grad_mm,&
+        output_frequency,&
         use_charges_derivatives,&
         pol_H, pol_He, pol_Li, pol_Be,&
         pol_B, pol_C, pol_N, pol_O,&
@@ -655,6 +741,9 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     write_charges_grad = .false.
     write_volumes = .false.
     write_volumes_grad = .false.
+    write_efield = .false.
+    write_efield_grad_mm = .false.
+    output_frequency = 1
     ! Mixed QM-ANI forces config, 'Switching', experimental
     use_switching_function = .false.
     switching_program = 'none'
@@ -763,6 +852,9 @@ subroutine ani_nml_init(qmmm_int, ani_nml, elem_alphas, use_internal_opts)
     ani_nml%write_charges_grad = write_charges_grad
     ani_nml%write_volumes = write_volumes
     ani_nml%write_volumes_grad = write_volumes_grad
+    ani_nml%write_efield = write_efield
+    ani_nml%write_efield_grad_mm = write_efield_grad_mm
+    ani_nml%output_frequency = output_frequency
     ani_nml%write_forces = write_forces
     ani_nml%use_charges_derivatives = use_charges_derivatives
     ani_nml%use_cuaev = use_cuaev
@@ -829,6 +921,12 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
     endif
     if ((ani_nml%write_volumes .or. ani_nml%write_volumes_grad) .and. (.not. ani_nml%use_torchani_volumes)) then
         call ani_nml_error('write_volumes and write_volumes_grad require use_torchani_volumes = .true.')
+    endif
+    if ((ani_nml%write_efield .or. ani_nml%write_efield_grad_mm) .and. (.not. ani_nml%use_torch_coupling)) then
+        call ani_nml_error('write_efield and write_efield_grad_mm require use_torch_coupling = .true.')
+    endif
+    if (ani_nml%output_frequency < 1) then
+        call ani_nml_error('output_frequency must be a positive integer')
     endif
 
     ! Check that polarization_dielectric was not modified
@@ -967,6 +1065,9 @@ subroutine ani_nml_print(ani_nml, qmmm_int, use_internal_opts)
     write(6,*) 'TORCHANI:  write_charges_grad           ', ani_nml%write_charges_grad
     write(6,*) 'TORCHANI:  write_volumes                ', ani_nml%write_volumes
     write(6,*) 'TORCHANI:  write_volumes_grad           ', ani_nml%write_volumes_grad
+    write(6,*) 'TORCHANI:  write_efield                 ', ani_nml%write_efield
+    write(6,*) 'TORCHANI:  write_efield_grad_mm         ', ani_nml%write_efield_grad_mm
+    write(6,*) 'TORCHANI:  output_frequency             ', ani_nml%output_frequency
     write(6,*) 'TORCHANI:  use_torchani_charges         ', ani_nml%use_torchani_charges
     write(6,*) 'TORCHANI:  use_torchani_volumes         ', ani_nml%use_torchani_volumes
     if (qmmm_int == 1) then
@@ -1013,10 +1114,14 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     write_charges_grad, &
     write_volumes, &
     write_volumes_grad, &
+    write_efield, &
+    write_efield_grad_mm, &
     qmcharges, &
     dqmcharges, &
     qmvolumes, &
     dqmvolumes, &
+    efield, &
+    efield_grad_mm, &
     dxyzqm, &
     dxyzcl, &
     escf &
@@ -1029,6 +1134,8 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     logical, intent(in) :: write_charges_grad
     logical, intent(in) :: write_volumes
     logical, intent(in) :: write_volumes_grad
+    logical, intent(in) :: write_efield
+    logical, intent(in) :: write_efield_grad_mm
     integer, intent(in) :: mlmm_coupling
     integer, intent(in) :: ml_system_charge
     double precision, intent(in) :: qmcoords(:, :)
@@ -1039,6 +1146,8 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
     double precision, intent(inout) :: dqmcharges(:, :, :)
     double precision, intent(inout) :: qmvolumes(:)
     double precision, intent(inout) :: dqmvolumes(:, :, :)
+    double precision, intent(inout) :: efield(:, :)
+    double precision, intent(inout) :: efield_grad_mm(:, :, :, :)
     double precision, intent(inout) :: dxyzqm(:, :)
     double precision, intent(inout) :: dxyzcl(:, :)
     double precision, intent(inout) :: escf
@@ -1075,6 +1184,8 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
         write_charges_grad, &
         write_volumes, &
         write_volumes_grad, &
+        write_efield, &
+        write_efield_grad_mm, &
         ! Outputs
         dxyzqm, &
         dxyzcl, &
@@ -1082,6 +1193,8 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
         dqmcharges, &
         qmvolumes, &
         dqmvolumes, &
+        efield, &
+        efield_grad_mm, &
         ene_pot_invacuo, &
         ene_pot_embed_pol, &
         ene_pot_embed_dist, &

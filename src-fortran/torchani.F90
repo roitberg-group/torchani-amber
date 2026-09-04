@@ -279,6 +279,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     write_charges_grad, &
     write_volumes, &
     write_volumes_grad, &
+    write_efield, &
+    write_efield_grad_mm, &
     ! Outputs
     forces_on_atoms, &
     forces_on_env_charges, &
@@ -286,6 +288,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     atomic_charges_grad, &
     atomic_volumes, &
     atomic_volumes_grad, &
+    efield, &
+    efield_grad_mm, &
     ene_pot_invacuo, &
     ene_pot_embed_pol, &
     ene_pot_embed_dist, &
@@ -309,6 +313,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     logical(c_bool), value, intent(in) :: write_charges_grad
     logical(c_bool), value, intent(in) :: write_volumes
     logical(c_bool), value, intent(in) :: write_volumes_grad
+    logical(c_bool), value, intent(in) :: write_efield
+    logical(c_bool), value, intent(in) :: write_efield_grad_mm
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
     real(c_double), intent(out) :: forces_on_env_charges(*)
@@ -316,6 +322,8 @@ subroutine internal_calc_energy_force_with_coupling( &
     real(c_double), intent(out) :: atomic_charges_grad(*)
     real(c_double), intent(out) :: atomic_volumes(*)
     real(c_double), intent(out) :: atomic_volumes_grad(*)
+    real(c_double), intent(out) :: efield(*)
+    real(c_double), intent(out) :: efield_grad_mm(*)
     real(c_double), intent(out) :: ene_pot_invacuo
     real(c_double), intent(out) :: ene_pot_embed_pol
     real(c_double), intent(out) :: ene_pot_embed_dist
@@ -388,6 +396,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     write_charges_grad, &
     write_volumes, &
     write_volumes_grad, &
+    write_efield, &
+    write_efield_grad_mm, &
     ! Outputs
     forces_on_atoms, &
     forces_on_env_charges, &
@@ -395,6 +405,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     atomic_charges_grad, &
     atomic_volumes, &
     atomic_volumes_grad, &
+    efield, &
+    efield_grad_mm, &
     ene_pot_invacuo, &
     ene_pot_embed_pol, &
     ene_pot_embed_dist, &
@@ -417,6 +429,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     logical, intent(in) :: write_charges_grad
     logical, intent(in) :: write_volumes
     logical, intent(in) :: write_volumes_grad
+    logical, intent(in) :: write_efield
+    logical, intent(in) :: write_efield_grad_mm
     ! Outputs
     double precision, contiguous, intent(out) :: forces_on_atoms(:, :)
     double precision, contiguous, intent(out) :: forces_on_env_charges(:, :)
@@ -424,6 +438,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
     double precision, contiguous, intent(out) :: atomic_charges_grad(:, :, :)
     double precision, contiguous, intent(out) :: atomic_volumes(:)
     double precision, contiguous, intent(out) :: atomic_volumes_grad(:, :, :)
+    double precision, contiguous, intent(out) :: efield(:, :)
+    double precision, contiguous, intent(out) :: efield_grad_mm(:, :, :, :)
     double precision, intent(out) :: ene_pot_invacuo
     double precision, intent(out) :: ene_pot_embed_pol
     double precision, intent(out) :: ene_pot_embed_dist
@@ -446,6 +462,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
         fbool_to_cbool(write_charges_grad), &
         fbool_to_cbool(write_volumes), &
         fbool_to_cbool(write_volumes_grad), &
+        fbool_to_cbool(write_efield), &
+        fbool_to_cbool(write_efield_grad_mm), &
         ! Outputs
         forces_on_atoms, &
         forces_on_env_charges, &
@@ -453,6 +471,8 @@ subroutine torchani_calc_energy_force_with_coupling( &
         atomic_charges_grad, &
         atomic_volumes, &
         atomic_volumes_grad, &
+        efield, &
+        efield_grad_mm, &
         ene_pot_invacuo, &
         ene_pot_embed_pol, &
         ene_pot_embed_dist, &

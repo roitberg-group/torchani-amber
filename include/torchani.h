@@ -164,6 +164,10 @@ void torchani_energy_force_with_coupling(
     double* ene_pot_total_buf
 );
 
+// efield_buf has shape [num_atoms, 3] and stores the MM electric field at
+// each ML atom in atomic units. efield_grad_mm_buf is compatible with a
+// Fortran array of shape [3, num_env_charges, 3, num_atoms], where element
+// [beta, j, alpha, i] is d E_alpha(i) / d R_beta(j), in a.u./Angstrom.
 void torchani_calc_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
@@ -181,6 +185,8 @@ void torchani_calc_energy_force_with_coupling(
     bool write_charges_grad,
     bool write_volumes,
     bool write_volumes_grad,
+    bool write_efield,
+    bool write_efield_grad_mm,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
@@ -188,6 +194,8 @@ void torchani_calc_energy_force_with_coupling(
     double* atomic_charges_grad_buf,
     double atomic_volumes_buf[],  // shape (num-atoms,)
     double* atomic_volumes_grad_buf,
+    double efield_buf[][3],
+    double* efield_grad_mm_buf,
     double* ene_pot_invacuo_buf,
     double* ene_pot_embed_pol_buf,
     double* ene_pot_embed_dist_buf,
