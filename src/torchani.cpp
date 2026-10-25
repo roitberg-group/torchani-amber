@@ -28,6 +28,11 @@ torch::jit::Module model;
 torch::Tensor torchani_atomic_numbers;
 torch::Tensor torchani_do_eval_atoms_mask;
 torch::Tensor torchani_do_eval_idxs;
+// Graph kept by torchani_energy_force_atomic_charges_retain for the following
+// torchani_atomic_charges_vjp call
+torch::Tensor retained_coords;
+torch::Tensor retained_atomic_charges;
+bool charges_graph_retained = false;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
@@ -954,6 +959,92 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     );
     populate_potential_energy(energy, potential_energy);
     populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+}
+
+/**
+ * Energy, forces and charges for a host program that uses the charges in its
+ * own electrostatics (e.g. PME). The graph is kept, so that the forces due to
+ * the dependence of the charges on the coordinates can be obtained afterwards
+ * with a single backward pass (torchani_atomic_charges_vjp), once the host knows
+ * dE/dq for each atom. The forces returned here are only those of the
+ * in-vacuo energy.
+ */
+void torchani_energy_force_atomic_charges_retain(
+    int num_atoms,
+    double coords_buf[][3],
+    int net_charge,
+    /* outputs */
+    double forces_buf[][3],
+    double atomic_charges_buf[],
+    double* potential_energy
+) {
+    if (config.use_no_eval_atoms()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "torchani_energy_force_atomic_charges_retain does not support"
+                  << " atoms excluded from the evaluation" << std::endl;
+        std::exit(2);
+    }
+    // The graph outlives this call, so it must not refer to the caller's buffer
+    // (dbl_buf_to_coords_tensor does not copy for CPU double precision)
+    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms)
+                               .detach()
+                               .clone()
+                               .requires_grad_(true);
+    std::vector<torch::jit::IValue> inputs =
+        setup_inputs_nopbc(coords, /*ensemble_values=*/false, net_charge);
+    torch::jit::IValue output = model.forward(inputs);
+    validate_model_output(output, 3);
+    torch::Tensor energy = fetch_energies_from_output(output);
+    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
+
+    calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
+    populate_potential_energy(energy, potential_energy);
+    // populate_atomic_charges converts its argument to CPU double, keep the
+    // original tensor (and its graph) for the backward pass
+    torch::Tensor charges_copy = atomic_charges;
+    populate_atomic_charges(charges_copy, atomic_charges_buf, num_atoms);
+    retained_coords = coords;
+    retained_atomic_charges = atomic_charges;
+    charges_graph_retained = true;
+}
+
+/**
+ * Forces due to the charges of the last torchani_energy_force_atomic_charges_retain
+ * call: forces[j] = - sum_k charge_weights[k] * d(charge k)/d(coords j), where
+ * charge_weights[k] is dE_host/d(charge k) in kcal/mol/e. Frees the graph.
+ */
+void torchani_atomic_charges_vjp(
+    int num_atoms,
+    double charge_weights_buf[],
+    /* outputs */
+    double forces_buf[][3]
+) {
+    if (not charges_graph_retained) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "torchani_atomic_charges_vjp must follow a call to"
+                  << " torchani_energy_force_atomic_charges_retain" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor weights =
+        dbl_buf_to_tensor(config, charge_weights_buf, {1, num_atoms});
+    std::vector<torch::Tensor> output_vec = {(retained_atomic_charges * weights).sum()};
+    std::vector<torch::Tensor> coord_vec = {retained_coords};
+    torch::Tensor forces = -torch::autograd::grad(
+                               output_vec,
+                               coord_vec,
+                               /* grad_outputs= */ {},
+                               /* retain_graph= */ false
+                           )[0];
+    forces = forces.to(torch::kCPU, torch::kDouble);
+    auto forces_a = forces.accessor<double, 3>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            forces_buf[atom][c] = forces_a[0][atom][c];
+        }
+    }
+    retained_coords = torch::Tensor();
+    retained_atomic_charges = torch::Tensor();
+    charges_graph_retained = false;
 }
 
 void torchani_calc_energy_force_qbc(

@@ -197,3 +197,96 @@ TEST_CASE("C bindings") {
         }
     }
 }
+
+TEST_CASE("Charges for host electrostatics") {
+    // AIMNet2 on the CPU, compared with the other entry points of the same model.
+    // AIMNet2 keeps part of its arithmetic in float32 even in double precision,
+    // so different backward passes through the same graph only agree to float32
+    // round-off: float32 tolerances are used for both precisions.
+    int use_double = GENERATE(0, 1);
+    INFO("Double precision: " << use_double);
+    double dummy_cell[3][3] = {{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}};
+
+    SECTION("Neutral water: retain + vjp vs full charge derivatives") {
+        const int size = 3;
+        double coords[size][3] = {{0.0, 0.0, 0.1}, {0.0, 0.76, -0.47}, {0.05, -0.74, -0.5}};
+        int atomic_numbers[size] = {8, 1, 1};
+        int no_eval_atoms[size] = {0, 0, 0};
+        double weights[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
+        torchani_initialize(
+            size, atomic_numbers, no_eval_atoms, "aimnet2-wb97m-nocut", 0, -1,
+            use_double, false, false
+        );
+        double forces[size][3], charges[size], energy;
+        double ref_forces[size][3], ref_charges[size], ref_energy;
+        double* dq = (double*) malloc(size * size * 3 * sizeof(double));
+        torchani_energy_force_atomic_charges_with_derivatives(
+            size, coords, ref_forces, ref_charges, dq, &ref_energy
+        );
+        torchani_energy_force_atomic_charges_retain(
+            size, coords, 0, forces, charges, &energy
+        );
+        FLOAT_EQ(energy, ref_energy, false);
+        for (int j = 0; j != size; ++j) {
+            FLOAT_EQ(charges[j], ref_charges[j], false);
+            for (int c = 0; c != 3; ++c) {
+                FLOAT_EQ(forces[j][c], ref_forces[j][c], false);
+            }
+        }
+        double vjp_forces[size][3];
+        torchani_atomic_charges_vjp(size, weights, vjp_forces);
+        // dq[c + 3 * j + 3 * size * k] = d(charge k) / d(coordinate c of atom j)
+        for (int j = 0; j != size; ++j) {
+            for (int c = 0; c != 3; ++c) {
+                double expect = 0.0;
+                for (int k = 0; k != size; ++k) {
+                    expect -= weights[k] * dq[c + 3 * j + 3 * size * k];
+                }
+                FLOAT_EQ(vjp_forces[j][c], expect, false);
+            }
+        }
+        free(dq);
+    }
+
+    SECTION("Ammonium: net charge") {
+        const int size = 5;
+        double coords[size][3] = {
+            {0.0, 0.0, 0.0}, {0.6, 0.6, 0.6}, {-0.6, -0.6, 0.6},
+            {-0.6, 0.6, -0.6}, {0.6, -0.6, -0.65}
+        };
+        int atomic_numbers[size] = {7, 1, 1, 1, 1};
+        int no_eval_atoms[size] = {0, 0, 0, 0, 0};
+        int molecule_idxs[size] = {0, 0, 0, 0, 0};
+        torchani_initialize(
+            size, atomic_numbers, no_eval_atoms, "aimnet2-wb97m-nocut", 0, -1,
+            use_double, false, false
+        );
+        double forces[size][3], charges[size], energy;
+        double ref_forces[size][3], ref_energy;
+        torchani_calc_energy_force(
+            size, coords, dummy_cell, false, molecule_idxs, false, 1,
+            ref_forces, &ref_energy
+        );
+        torchani_energy_force_atomic_charges_retain(
+            size, coords, 1, forces, charges, &energy
+        );
+        FLOAT_EQ(energy, ref_energy, false);
+        double total = 0.0;
+        for (int j = 0; j != size; ++j) {
+            total += charges[j];
+            for (int c = 0; c != 3; ++c) {
+                FLOAT_EQ(forces[j][c], ref_forces[j][c], false);
+            }
+        }
+        FLOAT_EQ(total, 1.0, false);
+        // Uniform weights: the total charge is fixed, so no force
+        double weights[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
+        double vjp_forces[size][3];
+        torchani_atomic_charges_vjp(size, weights, vjp_forces);
+        for (int j = 0; j != size; ++j) {
+            for (int c = 0; c != 3; ++c) {
+                CHECK_THAT(vjp_forces[j][c], WithinAbs(0.0, 1e-5));
+            }
+        }
+    }
+}
