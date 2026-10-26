@@ -137,9 +137,6 @@ subroutine torchani_energy_force_atomic_charges_with_derivatives( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-! Energy and charges for the host's own electrostatics (forward pass only):
-! keeps the graph for a following torchani_energy_atomic_charges_vjp call
-! (see torchani.h)
 subroutine torchani_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
@@ -156,7 +153,6 @@ subroutine torchani_energy_atomic_charges_retain( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-! forces = - d/d(coords) [E + sum_k charge_weights(k) * charge k], frees the graph
 subroutine torchani_energy_atomic_charges_vjp( &
     num_atoms, &
     charge_weights, &

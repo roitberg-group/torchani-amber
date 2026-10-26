@@ -28,8 +28,8 @@ torch::jit::Module model;
 torch::Tensor torchani_atomic_numbers;
 torch::Tensor torchani_do_eval_atoms_mask;
 torch::Tensor torchani_do_eval_idxs;
-// Graph kept by torchani_energy_atomic_charges_retain for the following
-// torchani_energy_atomic_charges_vjp call
+// Graph kept between torchani_energy_atomic_charges_retain and
+// torchani_energy_atomic_charges_vjp
 torch::Tensor retained_coords;
 torch::Tensor retained_energy;
 torch::Tensor retained_atomic_charges;
@@ -962,14 +962,6 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
 }
 
-/**
- * Energy and charges for a host program that uses the charges in its own
- * electrostatics (e.g. PME). Only the forward pass runs here; the graph is
- * kept, so that once the host knows dE_host/dq for each atom, the forces of
- * the in-vacuo energy and of the dependence of the charges on the coordinates
- * are obtained together with a single backward pass
- * (torchani_energy_atomic_charges_vjp).
- */
 void torchani_energy_atomic_charges_retain(
     int num_atoms,
     double coords_buf[][3],
@@ -1008,12 +1000,6 @@ void torchani_energy_atomic_charges_retain(
     charges_graph_retained = true;
 }
 
-/**
- * Forces of the last torchani_energy_atomic_charges_retain call, with one
- * backward pass: forces[j] = - d/d(coords j) [E + sum_k charge_weights[k] * charge k],
- * where E is the in-vacuo energy and charge_weights[k] is dE_host/d(charge k) in
- * kcal/mol/e. Zero weights give the in-vacuo forces. Frees the graph.
- */
 void torchani_energy_atomic_charges_vjp(
     int num_atoms,
     double charge_weights_buf[],
