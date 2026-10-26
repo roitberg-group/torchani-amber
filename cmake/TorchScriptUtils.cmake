@@ -8,6 +8,7 @@ function(TorchScriptUtils_jit_compile_models)
         oneValueArgs
         DISABLE_OPTIMIZATIONS
         FORCE_RECOMPILATION
+        AIMNET2
     )
     set(multiValueArgs "")
     cmake_parse_arguments(
@@ -24,6 +25,9 @@ function(TorchScriptUtils_jit_compile_models)
     endif()
     if(_FN_FORCE_RECOMPILATION)
         list(APPEND CMD "--force")
+    endif()
+    if(_FN_AIMNET2)
+        list(APPEND CMD "--aimnet2")
     endif()
     execute_process(COMMAND ${CMD})
 endfunction()

@@ -64,22 +64,23 @@ void torchani_energy_force_atomic_charges_with_derivatives(
 );
 
 // For a host program that uses the predicted charges in its own electrostatics
-// (e.g. PME). torchani_energy_force_atomic_charges_retain returns the in-vacuo
-// energy and forces and the charges, and keeps the graph. Then
-// torchani_atomic_charges_vjp, given charge_weights[k] = dE_host/d(charge k)
-// (kcal/mol/e), returns forces[j] = - sum_k charge_weights[k] * d(charge k)/d(coords j)
-// with a single backward pass, and frees the graph.
-void torchani_energy_force_atomic_charges_retain(
+// (e.g. PME). torchani_energy_atomic_charges_retain returns the in-vacuo energy
+// and the charges (forward pass only) and keeps the graph. Then
+// torchani_energy_atomic_charges_vjp, given charge_weights[k] = dE_host/d(charge k)
+// (kcal/mol/e), returns the total forces
+//   forces[j] = - d/d(coords j) [E + sum_k charge_weights[k] * charge k]
+// with a single backward pass, and frees the graph (zero weights give the
+// in-vacuo forces).
+void torchani_energy_atomic_charges_retain(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     int net_charge,
     /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
     double atomic_charges[],  // Shape (num_atoms,)
     double* potential_energy  // Scalar
 );
 
-void torchani_atomic_charges_vjp(
+void torchani_energy_atomic_charges_vjp(
     int num_atoms,
     double charge_weights[],  // Shape (num_atoms,)
     /* outputs */

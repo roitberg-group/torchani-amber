@@ -20,8 +20,8 @@ public :: &
     torchani_calc_energy_force_from_external_neighbors, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
-    torchani_energy_force_atomic_charges_retain, &
-    torchani_atomic_charges_vjp, &
+    torchani_energy_atomic_charges_retain, &
+    torchani_energy_atomic_charges_vjp, &
     torchani_calc_energy_force_with_coupling, &
     torchani_calc_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
@@ -137,32 +137,31 @@ subroutine torchani_energy_force_atomic_charges_with_derivatives( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-! Charges for the host's own electrostatics: keeps the graph for a following
-! torchani_atomic_charges_vjp call (see torchani.h)
-subroutine torchani_energy_force_atomic_charges_retain( &
+! Energy and charges for the host's own electrostatics (forward pass only):
+! keeps the graph for a following torchani_energy_atomic_charges_vjp call
+! (see torchani.h)
+subroutine torchani_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
     net_charge, &
-    forces, &
     atomic_charges, &
     potential_energy &
-) bind(c, name="torchani_energy_force_atomic_charges_retain")
+) bind(c, name="torchani_energy_atomic_charges_retain")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     integer(c_int), value, intent(in) :: net_charge
     ! Outputs
-    real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: atomic_charges(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-! forces = - sum_k charge_weights(k) * d(charge k)/d(coords), frees the graph
-subroutine torchani_atomic_charges_vjp( &
+! forces = - d/d(coords) [E + sum_k charge_weights(k) * charge k], frees the graph
+subroutine torchani_energy_atomic_charges_vjp( &
     num_atoms, &
     charge_weights, &
     forces &
-) bind(c, name="torchani_atomic_charges_vjp")
+) bind(c, name="torchani_energy_atomic_charges_vjp")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: charge_weights(*)

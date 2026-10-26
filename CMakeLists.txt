@@ -92,6 +92,7 @@ endif()
 option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
 option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
+option(JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
 
 if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
     if(PREFER_CONDA_LIBS)
@@ -222,6 +223,7 @@ if(JIT_COMPILE_MODELS)
     TorchScriptUtils_jit_compile_models(
         FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
         DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
+        AIMNET2 ${JIT_COMPILE_AIMNET2}
     )
 else()
     msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
