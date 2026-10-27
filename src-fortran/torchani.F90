@@ -20,6 +20,8 @@ public :: &
     torchani_calc_energy_force_from_external_neighbors, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
+    torchani_energy_atomic_charges_retain, &
+    torchani_energy_atomic_charges_vjp, &
     torchani_calc_energy_force_with_coupling, &
     torchani_calc_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
@@ -133,6 +135,34 @@ subroutine torchani_energy_force_atomic_charges_with_derivatives( &
     real(c_double), intent(out) :: atomic_charges(*)
     real(c_double), intent(out) :: atomic_charges_grad(*)
     real(c_double), intent(out) :: potential_energy
+endsubroutine
+
+subroutine torchani_energy_atomic_charges_retain( &
+    num_atoms, &
+    coords, &
+    net_charge, &
+    atomic_charges, &
+    potential_energy &
+) bind(c, name="torchani_energy_atomic_charges_retain")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), value, intent(in) :: net_charge
+    ! Outputs
+    real(c_double), intent(out) :: atomic_charges(*)
+    real(c_double), intent(out) :: potential_energy
+endsubroutine
+
+subroutine torchani_energy_atomic_charges_vjp( &
+    num_atoms, &
+    charge_weights, &
+    forces &
+) bind(c, name="torchani_energy_atomic_charges_vjp")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    real(c_double), intent(in) :: charge_weights(*)
+    ! Outputs
+    real(c_double), intent(out) :: forces(*)
 endsubroutine
 
 ! TODO: Backwards compat remove when AmberTools26 is released
