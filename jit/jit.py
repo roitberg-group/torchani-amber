@@ -134,7 +134,27 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.aimnet2:
-        from aimnet2_wrapper import generate_aimnet2_wrapper
+        # The wrappers are written once (they are only rewritten with --force); if
+        # their dependencies (e.g. ase) are missing, warn and go on with the rest
+        aimnet2_files = [
+            JIT_DIR / "aimnet2" / f"aimnet2-{lot}-{mbis}{suffix}.pt"
+            for lot in ("b973c", "wb97m")
+            for mbis in ("", "mbis-")
+            for suffix in ("nocut", "dsf")
+        ]
+        if all(f.exists() for f in aimnet2_files) and not args.force:
+            console.print("-- JIT - AimNet2 wrappers found, not generating them again")
+            args.aimnet2 = False
+        else:
+            try:
+                from aimnet2_wrapper import generate_aimnet2_wrapper
+            except ImportError as e:
+                console.print(
+                    f"-- JIT - Can't generate the AimNet2 wrappers ({e});"
+                    " the AimNet2 models will not be available",
+                    style="yellow",
+                )
+                args.aimnet2 = False
     if args.nutmeg:
         from nutmeg_wrapper import generate_nutmeg_wrapper
 
