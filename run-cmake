@@ -100,11 +100,10 @@ cmake \
     -B"$bld_dir" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
-    -DLINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
-    -DJIT_COMPILE_MODELS=$use_pytorch_libs \
-    -DPREFER_CONDA_LIBS=$use_conda_libs \
-    -DDOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
-    -DCOMPILE_WITH_CXX11ABI=$use_libtorch \
+    -DTORCHANI_LINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
+    -DTORCHANI_JIT_COMPILE_MODELS=$use_pytorch_libs \
+    -DTORCHANI_PREFER_CONDA_LIBS=$use_conda_libs \
+    -DTORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
     -DTORCH_CUDA_ARCH_LIST=$torch_cuda_archs \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
@@ -115,7 +114,7 @@ if [ "$cmake_build" -eq 1 ] && [ $CFG_EXITCODE -eq 0 ]; then
 
     if [ "$run_tests" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
         echo "Starting to run tests ..."
-        if ! ./build/tests; then
+        if ! ./build/torchani_tests; then
             echo "Tests failed!!"
             # Skip install step if the tests fail
             cmake_install=0

@@ -1,11 +1,11 @@
 include_guard()
-include(Msg)
+include(Torchani_Msg)
 
 # The two following functions set, in the PARENT scope:
 # - CMAKE_CUDA_COMPILER
 # - CMAKE_CUDA_HOST_COMPILER
 # - CUDA_TOOLKIT_ROOT_DIR
-function(CudaToolkitHelper_set_custom_paths)
+function(Torchani_CudaToolkitHelper_set_custom_paths)
     set(options "")
     set(oneValueArgs CUDATK_VERSION)
     set(multiValueArgs "")
@@ -28,10 +28,10 @@ function(CudaToolkitHelper_set_custom_paths)
     message(STATUS "CUDAToolkit - Manually set root to: ${CUDA_TOOLKIT_ROOT_DIR}")
     message(STATUS "CUDAToolkit - Manually set CMAKE_CUDA_COMPILER to: ${CMAKE_CUDA_COMPILER}")
     message(STATUS "CUDAToolkit - Manually set CMAKE_CUDA_HOST_COMPILER to: ${CMAKE_CUDA_HOST_COMPILER}")
-    msg_success("CUDAToolkit - Successfully set paths")
+    Torchani_Msg_success("CUDAToolkit - Successfully set paths")
 endfunction()
 
-function(CudaToolkitHelper_set_conda_paths)
+function(Torchani_CudaToolkitHelper_set_conda_paths)
     set(options "")
     set(oneValueArgs "")
     set(multiValueArgs "")
@@ -53,5 +53,5 @@ function(CudaToolkitHelper_set_conda_paths)
     message(STATUS "CUDAToolkit - Manually set root to: ${CUDA_TOOLKIT_ROOT_DIR}")
     message(STATUS "CUDAToolkit - Manually set CMAKE_CUDA_COMPILER to: ${CMAKE_CUDA_COMPILER}")
     message(STATUS "CUDAToolkit - Manually set CMAKE_CUDA_HOST_COMPILER to: ${CMAKE_CUDA_HOST_COMPILER}")
-    msg_success("CUDAToolkit - Successfully set paths")
+    Torchani_Msg_success("CUDAToolkit - Successfully set paths")
 endfunction()
