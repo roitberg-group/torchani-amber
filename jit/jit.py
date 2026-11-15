@@ -193,6 +193,14 @@ if __name__ == "__main__":
                 console.print("-- JIT - Done (nothing to compile)", style="green")
         else:
             console.print("-- JIT - Done, but failed for some models", style="yellow")
+        custom_mlmm_file = JIT_DIR / "animbis-custom-mlmm.pt"
+        if not args.infer_model and (args.force or not custom_mlmm_file.exists()):
+            console.print("-- JIT - Generating ANImbis custom ML/MM wrapper")
+            from custom_mlmm_wrapper import generate_custom_mlmm_wrapper
+
+            generate_custom_mlmm_wrapper(
+                custom_mlmm_file, neighborlist="adaptive", strategy="cuaev"
+            )
         if args.aimnet2:
             console.print("-- JIT - Generating AimNet2 Wrappers")
             # jit one model to cache the NNPotential class

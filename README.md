@@ -389,3 +389,43 @@ Its important that the models used are JIT-compiled using the same PyTorch
 version as the LibTorch version linked to the libraries. For example, if
 `torch.__version__ == 2.13` when compiling JIT'ed models, then the linked LibTorch must
 also be 2.13, otherwise LibTorch may fail to load the models, or load them incorrectly.
+
+## Support for custom ML/MM models
+
+This functionality was added with the help of Kirill Zinovjev. For usage
+examples see the [EMLE-engine repository](https://github.com/chemle/emle-engine)
+And the corresponding [EMLE-engine article](https://pubs.acs.org/jctcce/article/20/11/4514/169286/emle-engine-A-Flexible-Electrostatic-Machine).
+
+Custom ML/MM models, which calculate both the in-vacuo energy and the ML/MM coupling
+internally, are supported by setting `mlmm_coupling = 2`. Forces on the ML and MM
+regions are calculated by autograd from the returned energy. `animbis-custom-mlmm` is
+a reference implementation (see `jit/custom_mlmm_wrapper.py`), which calculates the
+same energy as `mlmm_coupling = 1` with `use_torchani_charges = .true.`.
+
+*ADVANCED*: The exact requirements are as follows. The model must support the following
+method, which has the same signature as `forward`, with the MM region inputs added after
+`species_coords`:
+
+```python
+@torch.jit.export
+def compute_mlmm(
+    self,
+    species_coords: tuple[Tensor, Tensor],
+    mm_coords: Tensor,  # MM coordinates (shape: [1, mm-atoms, 3])
+    mm_charges: Tensor,  # MM charges (shape: [1, mm-atoms])
+    cell: Tensor | None,
+    pbc: Tensor | None,
+    charge: int,
+    atomic: bool,  # Controls atomic energy decomposition
+    ensemble_values: bool,  # Controls whether the model outputs ensemble values
+    molecule_idxs: Tensor | None,
+) -> Tensor:
+    # Where the output is:
+    #     - energies, in-vacuo + ML/MM coupling (shape: [1,])
+    ...
+    return energies
+```
+
+Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
+energies. Currently Amber always calls `compute_mlmm` with `cell = None`,
+`pbc = None`, `atomic = False` and `ensemble_values = False`.

@@ -50,6 +50,7 @@ std::vector<std::string> torchani_builtin_models = {
     "ani2dr",
     "ani2dr-infer",
     "animbis",
+    "animbis-custom-mlmm",
     "anir2s",
     "anir2s-infer",
     "anir2s_water",
@@ -165,17 +166,24 @@ std::vector<torch::jit::IValue> setup_inputs_custom_mlmm(
     torch::Tensor& mm_charges,
     torch::Tensor& cell,
     bool use_pbc,
+    torch::Tensor& molecule_idxs,
+    bool calc_only_bonded,
     int ml_system_charge
 ) {
     torch::jit::IValue cell_ival = use_pbc ? torch::jit::IValue(cell) : torch::jit::IValue();
     torch::jit::IValue pbc_ival = use_pbc ? torch::jit::IValue(config.enabled_pbc()) : torch::jit::IValue();
+    torch::jit::IValue molecule_idxs_ival =
+        calc_only_bonded ? torch::jit::IValue(molecule_idxs) : torch::jit::IValue();
     return {
         std::tuple{torchani_atomic_numbers, ml_coords},
         /* mm_coords= */ mm_coords,
         /* mm_charges= */ mm_charges,
         /* cell= */ cell_ival,
         /* pbc= */ pbc_ival,
-        /* charge= */ ml_system_charge
+        /* charge= */ ml_system_charge,
+        /* atomic= */ false,
+        /* ensemble_values= */ false,
+        /* molecule_idxs= */ molecule_idxs_ival
     };
 }
 
@@ -1001,12 +1009,15 @@ void torchani_calc_energy_force_custom_mlmm(
     double env_charges_buf[],
     double cell_buf[3][3],
     bool use_pbc,
+    int* molecule_idxs_buf,
+    bool calc_only_bonded,
     int ml_system_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],
     double forces_on_env_charges_buf[][3],
     double* ene_pot_total_buf
 ) {
+    exit_if_no_eval_atoms("torchani_calc_energy_force_custom_mlmm");
     if (!model.find_method("compute_mlmm").has_value()) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
@@ -1017,8 +1028,19 @@ void torchani_calc_energy_force_custom_mlmm(
     torch::Tensor mm_coords = dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
     torch::Tensor mm_charges = dbl_buf_to_tensor(config, env_charges_buf, {1, num_env_charges});
     torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
+    torch::Tensor molecule_idxs =
+        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
 
-    auto inputs = setup_inputs_custom_mlmm(ml_coords, mm_coords, mm_charges, cell, use_pbc, ml_system_charge);
+    auto inputs = setup_inputs_custom_mlmm(
+        ml_coords,
+        mm_coords,
+        mm_charges,
+        cell,
+        use_pbc,
+        molecule_idxs,
+        calc_only_bonded,
+        ml_system_charge
+    );
     torch::jit::IValue output = model.get_method("compute_mlmm")(inputs);
     torch::Tensor energy = output.toTensor();
 

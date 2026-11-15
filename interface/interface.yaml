@@ -196,7 +196,8 @@ functions:
       Custom ML/MM model: the TorchScript model receives ML species+coords and MM
       coords+charges and computes the total energy internally. The model must export
       a 'compute_mlmm' method (see README). Forces on both regions via autograd.
-      cell is ignored when use_pbc is false.
+      cell is ignored when use_pbc is false, and molecule_idxs is ignored when
+      calc_only_bonded is false.
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_env_charges, dtype: int}
@@ -205,6 +206,8 @@ functions:
       - {name: env_charges, dtype: double, shape: [num_env_charges]}
       - {name: cell, dtype: double, shape: [3, 3]}
       - {name: use_pbc, dtype: bool}
+      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
+      - {name: calc_only_bonded, dtype: bool}
       - {name: ml_system_charge, dtype: int}
       - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}

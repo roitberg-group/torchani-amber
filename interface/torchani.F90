@@ -354,7 +354,8 @@ endsubroutine
 ! Custom ML/MM model: the TorchScript model receives ML species+coords and MM
 ! coords+charges and computes the total energy internally. The model must export
 ! a 'compute_mlmm' method (see README). Forces on both regions via autograd.
-! cell is ignored when use_pbc is false.
+! cell is ignored when use_pbc is false, and molecule_idxs is ignored when
+! calc_only_bonded is false.
 subroutine internal_calc_energy_force_custom_mlmm( &
     num_atoms, &
     num_env_charges, &
@@ -363,6 +364,8 @@ subroutine internal_calc_energy_force_custom_mlmm( &
     env_charges, &
     cell, &
     use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
     ml_system_charge, &
     forces_on_atoms, &
     forces_on_env_charges, &
@@ -376,6 +379,8 @@ subroutine internal_calc_energy_force_custom_mlmm( &
     real(c_double), intent(in) :: env_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
     integer(c_int), value, intent(in) :: ml_system_charge
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
@@ -601,6 +606,8 @@ subroutine torchani_calc_energy_force_custom_mlmm( &
     env_charges, &
     cell, &
     use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
     ml_system_charge, &
     forces_on_atoms, &
     forces_on_env_charges, &
@@ -613,6 +620,8 @@ subroutine torchani_calc_energy_force_custom_mlmm( &
     real(c_double), intent(in) :: env_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical, intent(in) :: calc_only_bonded
     integer(c_int), value, intent(in) :: ml_system_charge
     ! Outputs
     real(c_double), intent(out) :: forces_on_atoms(*)
@@ -626,6 +635,8 @@ subroutine torchani_calc_energy_force_custom_mlmm( &
         env_charges, &
         cell, &
         fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
         ml_system_charge, &
         forces_on_atoms, &
         forces_on_env_charges, &

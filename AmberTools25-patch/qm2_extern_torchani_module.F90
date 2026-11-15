@@ -1028,7 +1028,9 @@ subroutine get_energies_and_forces_through_custom_mlmm_model( &
         clcoords(:3, :), &
         clcoords(4, :), &
         dummy_ucell, &
-        .false., &
+        .false., &  ! Use pbc
+        pme_external_molecule_idx, &
+        .false., &  ! Use all_amber_nonbond
         ml_system_charge, &
         dxyzqm, &
         dxyzcl, &
