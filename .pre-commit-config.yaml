@@ -37,3 +37,15 @@ repos:
     hooks:
       - id: autoflake
         stages: [pre-push]
+
+  # Regenerate include/torchani.h and interface/torchani.F90
+  - repo: local
+    hooks:
+      - id: generate-interfaces
+        name: generate C and Fortran interfaces
+        entry: python interface/generate.py
+        language: python
+        additional_dependencies: [jinja2, pyyaml]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, pre-push]

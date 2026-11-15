@@ -429,8 +429,8 @@ void torchani_initialize(
     int num_atoms,
     int atomic_nums[],
     int no_eval_atoms[],  // Shape (num_atoms,)
-    const char* model_type,
     int device_index,
+    const char* model_type,
     int network_index,
     bool use_double_precision,
     bool use_cuda_device,
@@ -623,7 +623,7 @@ void torchani_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords_buf[][3],
-    int* neighborlist_buf[2],
+    int neighborlist_buf[],
     double shifts_buf[][3],
     int* molecule_idxs_buf,  // Shape (num_atoms,)
     bool calc_only_bonded,

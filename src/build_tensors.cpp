@@ -41,7 +41,7 @@ torch::Tensor dbl_buf_to_cell_tensor(
 
 torch::Tensor int_buf_to_neighborlist_tensor(
     const GlobalConfig& config,
-    int* neighborlist_buf[2],
+    int neighborlist_buf[],
     long num_neighbors
 ) {
     return int_buf_to_i64_tensor(config, neighborlist_buf, {2, num_neighbors});

@@ -95,8 +95,8 @@ TEST_CASE("C bindings") {
             size,
             atomic_numbers,
             no_eval_atoms,
-            model_type.c_str(),
             device_index,
+            model_type.c_str(),
             network_index,
             use_double,
             use_cuda_device,
@@ -224,7 +224,7 @@ TEST_CASE("Charges for host electrostatics") {
         double weights[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
         double zero_weights[size] = {0.0, 0.0, 0.0};
         torchani_initialize(
-            size, atomic_numbers, no_eval_atoms, "aimnet2-wb97m-nocut", 0, -1,
+            size, atomic_numbers, no_eval_atoms, 0, "aimnet2-wb97m-nocut", -1,
             use_double, false, false
         );
         double charges[size], energy;
@@ -272,7 +272,7 @@ TEST_CASE("Charges for host electrostatics") {
         int no_eval_atoms[size] = {0, 0, 0, 0, 0};
         int molecule_idxs[size] = {0, 0, 0, 0, 0};
         torchani_initialize(
-            size, atomic_numbers, no_eval_atoms, "aimnet2-wb97m-nocut", 0, -1,
+            size, atomic_numbers, no_eval_atoms, 0, "aimnet2-wb97m-nocut", -1,
             use_double, false, false
         );
         double charges[size], energy;
