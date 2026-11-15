@@ -6,7 +6,7 @@ cmake_minimum_required(
 project(
     Torchani
     LANGUAGES C CXX
-    VERSION 0.5
+    VERSION 0.6
     DESCRIPTION "Fortran, C and C++ interface to execute ANI-Style models built using the TorchANI library"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
