@@ -11,6 +11,7 @@ usage() { echo "Usage: [OPTION]...
     -C Don't use Conda libraries
     -a Builds for archs 7.0, 7.5, 8.0, 8.9, 10.0 (auto detect by default)
     -b Build for the B200 and L4 archs (8.9;10.0)
+    (archs can also be set with the TORCH_CUDA_ARCH_LIST env var)
     -g Build in Debug configuration
     -h Print this message" 1>&2; }
 
@@ -20,7 +21,7 @@ use_pytorch_libs=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
-torch_cuda_archs=""
+torch_cuda_archs="${TORCH_CUDA_ARCH_LIST:-}"
 cmake_build_type="Release"
 prefix="$HOME/.local/"
 while getopts "TIBPCabghxy" o; do

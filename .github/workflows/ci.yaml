@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda-archs:
+        description: CUDA archs to build for (TORCH_CUDA_ARCH_LIST)
+        default: '8.9'
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  TORCH_CUDA_ARCH_LIST: ${{ inputs.cuda-archs || '8.9' }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Create conda env
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: environment.yaml
+          activate-environment: ani-amber
+          conda-remove-defaults: true
+
+      - name: Install TorchANI
+        run: pip install --no-deps --no-build-isolation -v -e ./submodules/torchani
+
+      - name: Build
+        run: ./run-cmake -I -T
+
+      - name: Run tests on CPU
+        env:
+          TORCHANI_SKIP_CUDA_TESTS: 1
+        run: ./build/torchani_tests
+
+concurrency:
+  group: ani-amber-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
