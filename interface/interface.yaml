@@ -9,7 +9,6 @@
 #   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
 #       in templates/torchani_fortran_utils.F90. Otherwise, functions with bool args get
 #       an auto-generated Fortran wrapper that converts logical -> logical(c_bool)
-#   c_dummy_definition: (optional) true to define an empty body in the header
 #
 # Arg fields:
 #   name: argument name
@@ -106,7 +105,6 @@ functions:
 
   - name: torchani_energy_force_qbc
     comment: Backwards compat, dummy fn, remove when AmberTools26 is released
-    c_dummy_definition: true
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -117,7 +115,6 @@ functions:
 
   - name: torchani_data_for_monitored_mlmm
     comment: Backwards compat, dummy fn, remove when AmberTools26 is released
-    c_dummy_definition: true
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}

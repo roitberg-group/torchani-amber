@@ -70,7 +70,7 @@ def prepare_arg(arg: dict) -> dict:
 
 
 def prepare_function(fn: dict) -> dict:
-    fn = {"comment": "", "fortran_wrapper": "auto", "c_dummy_definition": False, **fn}
+    fn = {"comment": "", "fortran_wrapper": "auto", **fn}
     fn["args"] = [prepare_arg(arg) for arg in fn["args"]]
     dtypes = {arg["dtype"] for arg in fn["args"]}
     needs_wrapper = bool(dtypes & {"bool", "str"})

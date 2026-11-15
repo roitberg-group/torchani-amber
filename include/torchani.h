@@ -97,7 +97,7 @@ void torchani_energy_force_qbc(
     double* qbc,
     double qbc_grad[][3],  // Shape (num_atoms, 3)
     double* potential_energy
-) {};
+);
 
 // Backwards compat, dummy fn, remove when AmberTools26 is released
 void torchani_data_for_monitored_mlmm(
@@ -110,7 +110,7 @@ void torchani_data_for_monitored_mlmm(
     double* qbc,
     double qbc_grad[][3],  // Shape (num_atoms, 3)
     double* potential_energy
-) {};
+);
 
 void torchani_calc_energy_force_qbc(
     int num_atoms,

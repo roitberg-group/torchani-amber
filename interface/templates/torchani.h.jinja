@@ -14,7 +14,7 @@ void {{ fn.name }}(
     {{ arg.c_decl }}{{ "," if not loop.last }}{% if arg.shape %}  // Shape ({{ arg.shape | join(", ") }}{{ "," if arg.shape | length == 1 }}){% endif %}
 
 {% endfor %}
-){{ " {}" if fn.c_dummy_definition }};
+);
 {% if not loop.last %}
 
 {% endif %}
