@@ -36,8 +36,6 @@ double precision :: au_to_ang3 = 0.1481847d0
 double precision :: amber_charge_units_to_au = 18.2223d0
 double precision :: dummy_ucell(3,3) = 0.0d0
 
-integer, parameter :: INFER_ML_SYSTEM_CHARGE = -9999999
-
 ! Dummy variables, allocated on first call to get_torchani_forces
 integer, allocatable :: no_eval_atoms(:)
 integer, allocatable :: pme_external_molecule_idx(:)  ! Read-only
@@ -184,7 +182,12 @@ subroutine get_torchani_forces(&
     ! Charge grad is init to 0, if the qs are geom-dependent it is modified in-place
     dqmcharges = 0.0d0
     ! QM charges are initialied as the FF charges, but may be modified by torchani
-    qmcharges = qmmm_struct%qm_resp_charges / amber_charge_units_to_au
+    ! The total size of the qmcharges array is nqmatoms (num qm atoms + num link atoms).
+    ! The num qm atoms can be read directly from qmmm_struct%nquant.
+    ! Assign the topology RESP charges to the qm atoms and *zero charge* to the link atoms.
+    qmcharges = 0.0d0
+    qmcharges(1:qmmm_struct%nquant) = &
+        qmmm_struct%qm_resp_charges(1:qmmm_struct%nquant) / amber_charge_units_to_au
     if (ani_nml%use_torch_coupling .or. ani_nml%mlmm_coupling == 2) then
         ! In this case torch handles both the in-vacuo energy calculation and the ML/MM coupling,
         ! No need to retrieve the in-vacuo energies separately
@@ -999,7 +1002,7 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
 endsubroutine
 
 ! Fully custom ML/MM model path (mlmm_coupling=2).
-! The TorchScript model receives ML species+coords and
+! The model receives ML species+coords and
 ! MM coords+charges, and returns the total energy.
 ! Forces on both regions are computed by C++ via autograd.
 ! Note: MM coordinates are already in correct periodic images (handled by sander
