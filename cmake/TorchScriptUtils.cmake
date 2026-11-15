@@ -1,8 +1,8 @@
 include_guard()
-# JIT compile all Torchani models
+# Add a target, built by default, that JIT compiles all Torchani models
 # (requires torchani and torch to be in PYTHONPATH or inside a conda environment)
 # All messages are delegated to the underlying python process
-function(TorchScriptUtils_jit_compile_models)
+function(TorchScriptUtils_add_jit_compile_models_target)
     set(options "")
     set(
         oneValueArgs
@@ -29,5 +29,5 @@ function(TorchScriptUtils_jit_compile_models)
     if(_FN_AIMNET2)
         list(APPEND CMD "--aimnet2")
     endif()
-    execute_process(COMMAND ${CMD})
+    add_custom_target(jit_compile_models ALL COMMAND ${CMD} VERBATIM)
 endfunction()

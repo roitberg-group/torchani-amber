@@ -217,26 +217,11 @@ else()
     set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 endif()
 
-# TODO: Disabling JIT optimizations during scripting probably does nothing
-if(JIT_COMPILE_MODELS)
-    msg_info("Will attempt to JIT-compile ANI models")
-    TorchScriptUtils_jit_compile_models(
-        FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
-        DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
-        AIMNET2 ${JIT_COMPILE_AIMNET2}
-    )
-else()
-    msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
-endif()
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
 # LibTorch is a required dep
 # Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
 find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
-
-# The cuAEV extension lib is a required dep, and needs the Python headers and libraries
-# Set Python_LIBRARIES, Python_INCLUDE_DIRS
-find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
 # Build both libcuaev, libcell_list, and libtorchani
 set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
@@ -254,8 +239,8 @@ target_compile_options(
 if(PREFER_CONDA_LIBS)
     target_link_directories(cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(cell_list PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
-target_include_directories(cell_list PRIVATE ${CELL_ROOT} ${Python_INCLUDE_DIRS})
+target_link_libraries(cell_list PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(cell_list PRIVATE ${CELL_ROOT})
 
 set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
 add_library(
@@ -263,6 +248,7 @@ add_library(
     SHARED
     "${CUAEV_ROOT}/cuaev.cpp"
     "${CUAEV_ROOT}/aev.cu"
+    "${CUAEV_ROOT}/aev_cpu.cpp"
     "${CUAEV_ROOT}/aev.h"
     "${CUAEV_ROOT}/cuaev_cub.cuh"
 )
@@ -290,8 +276,34 @@ target_compile_options(
 if(PREFER_CONDA_LIBS)
     target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
-target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
+target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(cuaev PRIVATE ${CUAEV_ROOT})
+
+# MNP is not used by libtorchani, it is only built for the TorchANI Python package
+find_package(OpenMP REQUIRED COMPONENTS CXX)
+add_library(mnp SHARED "${CUAEV_ROOT}/mnp.cpp")
+target_compile_features(mnp PRIVATE cxx_std_17)
+target_compile_definitions(mnp PRIVATE ${TORCH_CXX_FLAGS})
+target_compile_options(mnp PRIVATE $<$<CONFIG:Debug>:"-g">)
+if(PREFER_CONDA_LIBS)
+    target_link_directories(mnp PRIVATE $ENV{CONDA_PREFIX}/lib)
+endif()
+target_link_libraries(mnp PRIVATE ${TORCH_LIBRARIES} OpenMP::OpenMP_CXX)
+
+# The extensions are named as the TorchANI Python package expects them (cuaev.so,
+# cell_list.so, mnp.so). If they are built against PyTorch, they are placed inside the
+# TorchANI Python package, so that they are loaded by "import torchani", and they don't
+# need to be built a second time by pip or "ani build-extensions"
+set_target_properties(cuaev cell_list mnp PROPERTIES PREFIX "")
+if(LINK_TO_PYTORCH_LIBS)
+    set_target_properties(
+        cuaev
+        cell_list
+        mnp
+        PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani"
+    )
+endif()
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
@@ -329,7 +341,7 @@ endif()
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev cell_list)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
-# For libcuaev, libcell_list and libtorchani, the install RPATH is set by default to be
+# For cuaev, cell_list, mnp and libtorchani, the install RPATH is set by default to be
 # the same as the link path to avoid issues if the correct CUDA is not
 # installed system-wide. If this is not done then CMake tries to re-link the
 # binaries at install-time, and prefers the system CUDA, which may be bad. In addition,
@@ -358,6 +370,7 @@ if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
     )
     set_target_properties(
         cell_list
+        mnp
         PROPERTIES
             INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
             INSTALL_RPATH_USE_LINK_PATH TRUE
@@ -368,6 +381,21 @@ if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
             INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
             INSTALL_RPATH_USE_LINK_PATH TRUE
     )
+endif()
+
+# The models are JIT-compiled after the extensions are built, since scripting them
+# requires the cuAEV ops to be registered
+# TODO: Disabling JIT optimizations during scripting probably does nothing
+if(JIT_COMPILE_MODELS)
+    msg_info("Will attempt to JIT-compile ANI models after building the extensions")
+    TorchScriptUtils_add_jit_compile_models_target(
+        FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
+        DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
+        AIMNET2 ${JIT_COMPILE_AIMNET2}
+    )
+    add_dependencies(jit_compile_models cuaev cell_list)
+else()
+    msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
@@ -448,6 +476,7 @@ install(
         torchani
         cuaev
         cell_list
+        mnp
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
         DESTINATION "${LIBRARY_INSTALL_DIR}"
