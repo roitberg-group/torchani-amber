@@ -220,6 +220,12 @@ struct CouplingOutput {
     double ene_pot_total;
 };
 
+// Amber defaults for mlmm_coupling=1 (H and C polarizabilities in AU, converted to
+// Ang^3 as in the Amber patch)
+static const double AMBER_INV_POL_DIELECTRIC = 0.5;
+static const double AMBER_AU_TO_ANG3 = 0.1481847;
+static const double AMBER_ATOMIC_ALPHAS_AU[] = {3.08, 11.3};
+
 static CouplingOutput calc_coupling(
     double coords[][3], double env_charge_coords[][3], bool use_charge_derivatives
 ) {
@@ -485,6 +491,84 @@ TEST_CASE("C bindings for other entry points") {
             }
         }
     }
+
+    SECTION("Energy + Force with custom ML/MM model") {
+        if (model_has_charges) {
+            double env_charge_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+            double env_charges[2] = {COUPLING_ENV_CHARGES[0], COUPLING_ENV_CHARGES[1]};
+            double atomic_alphas[2] = {
+                AMBER_ATOMIC_ALPHAS_AU[0] * AMBER_AU_TO_ANG3,
+                AMBER_ATOMIC_ALPHAS_AU[1] * AMBER_AU_TO_ANG3,
+            };
+            double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
+            // Reference: animbis, mlmm_coupling=1, use_torchani_charges=.true.
+            CouplingOutput expect{};
+            torchani_calc_energy_force_with_coupling(
+                size,
+                2,
+                AMBER_INV_POL_DIELECTRIC,
+                coords,
+                atomic_alphas,
+                env_charge_coords,
+                env_charges,
+                /* predict_charges= */ true,
+                /* use_simple_polarization_correction= */ true,
+                /* use_charge_derivatives= */ true,
+                /* ml_system_charge= */ 0,
+                expect.forces_on_atoms,
+                expect.forces_on_env_charges,
+                expect.atomic_charges,
+                &expect.ene_pot_invacuo,
+                &expect.ene_pot_embed_pol,
+                &expect.ene_pot_embed_dist,
+                &expect.ene_pot_embed_coulomb,
+                &expect.ene_pot_total
+            );
+
+            torchani_initialize(
+                size,
+                atomic_numbers,
+                no_eval_atoms,
+                0,
+                "animbis-custom-mlmm",
+                network_index,
+                use_double,
+                use_cuda_device,
+                use_cuaev
+            );
+            bool calc_only_bonded = GENERATE(false, true);
+            INFO("calc_only_bonded: " << calc_only_bonded);
+            double forces_on_atoms[size][3];
+            double forces_on_env_charges[2][3];
+            double ene_pot_total;
+            torchani_calc_energy_force_custom_mlmm(
+                size,
+                2,
+                coords,
+                env_charge_coords,
+                env_charges,
+                cell,
+                /* use_pbc= */ false,
+                molecule_idxs_buf,
+                calc_only_bonded,
+                /* ml_system_charge= */ 0,
+                forces_on_atoms,
+                forces_on_env_charges,
+                &ene_pot_total
+            );
+            FLOAT_EQ(ene_pot_total, expect.ene_pot_total, use_double);
+            for (int j = 0; j != size; ++j) {
+                for (int c = 0; c != 3; ++c) {
+                    FLOAT_EQ(forces_on_atoms[j][c], expect.forces_on_atoms[j][c], use_double);
+                    FLOAT_EQ(
+                        forces_on_env_charges[j][c],
+                        expect.forces_on_env_charges[j][c],
+                        use_double
+                    );
+                }
+            }
+        }
+    }
 }
 
 
@@ -546,7 +630,12 @@ TEST_CASE("Charges for host electrostatics") {
                 for (int k = 0; k != size; ++k) {
                     expect -= weights[k] * dq[c + 3 * j + 3 * size * k];
                 }
-                FLOAT_EQ(vjp_forces[j][c], expect, false);
+                // Round-off error is amplified by the weights applied in the vj product
+                // So increase tolerance a little above float precision
+                CHECK_THAT(
+                    vjp_forces[j][c],
+                    WithinAbs(expect, 1e-4) || WithinRel(expect, 1e-4)
+                );
             }
         }
         free(dq);

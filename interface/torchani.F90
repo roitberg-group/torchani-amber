@@ -25,6 +25,7 @@ public :: &
     torchani_calc_data_for_monitored_mlmm, &
     torchani_energy_force_with_coupling, &
     torchani_calc_energy_force_with_coupling, &
+    torchani_calc_energy_force_custom_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
     torchani_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
@@ -350,6 +351,43 @@ subroutine internal_calc_energy_force_with_coupling( &
     real(c_double), intent(out) :: ene_pot_total
 endsubroutine
 
+! Custom ML/MM model: the TorchScript model receives ML species+coords and MM
+! coords+charges and computes the total energy internally. The model must export
+! a 'compute_mlmm' method (see README). Forces on both regions via autograd.
+! cell is ignored when use_pbc is false, and molecule_idxs is ignored when
+! calc_only_bonded is false.
+subroutine internal_calc_energy_force_custom_mlmm( &
+    num_atoms, &
+    num_env_charges, &
+    coords, &
+    env_charge_coords, &
+    env_charges, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    ml_system_charge, &
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    ene_pot_total &
+) bind(c, name="torchani_calc_energy_force_custom_mlmm")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_env_charges
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: env_charge_coords(*)
+    real(c_double), intent(in) :: env_charges(*)
+    real(c_double), intent(in) :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: ml_system_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces_on_atoms(*)
+    real(c_double), intent(out) :: forces_on_env_charges(*)
+    real(c_double), intent(out) :: ene_pot_total
+endsubroutine
+
 endinterface
 
 contains
@@ -554,6 +592,54 @@ subroutine torchani_calc_energy_force_with_coupling( &
         ene_pot_embed_pol, &
         ene_pot_embed_dist, &
         ene_pot_embed_coulomb, &
+        ene_pot_total &
+    )
+endsubroutine
+
+! Wrapper needed in case fortran logicals don't have the same binary
+! representation as c_bool
+subroutine torchani_calc_energy_force_custom_mlmm( &
+    num_atoms, &
+    num_env_charges, &
+    coords, &
+    env_charge_coords, &
+    env_charges, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    ml_system_charge, &
+    forces_on_atoms, &
+    forces_on_env_charges, &
+    ene_pot_total &
+)
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), value, intent(in) :: num_env_charges
+    real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: env_charge_coords(*)
+    real(c_double), intent(in) :: env_charges(*)
+    real(c_double), intent(in) :: cell(*)
+    logical, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: ml_system_charge
+    ! Outputs
+    real(c_double), intent(out) :: forces_on_atoms(*)
+    real(c_double), intent(out) :: forces_on_env_charges(*)
+    real(c_double), intent(out) :: ene_pot_total
+    call internal_calc_energy_force_custom_mlmm( &
+        num_atoms, &
+        num_env_charges, &
+        coords, &
+        env_charge_coords, &
+        env_charges, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        ml_system_charge, &
+        forces_on_atoms, &
+        forces_on_env_charges, &
         ene_pot_total &
     )
 endsubroutine

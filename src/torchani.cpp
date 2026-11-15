@@ -50,6 +50,7 @@ std::vector<std::string> torchani_builtin_models = {
     "ani2dr",
     "ani2dr-infer",
     "animbis",
+    "animbis-custom-mlmm",
     "anir2s",
     "anir2s-infer",
     "anir2s_water",
@@ -156,6 +157,33 @@ std::vector<torch::jit::IValue> setup_inputs_nopbc(
         /* atomic= */ false,
         /* ensemble_values= */ ensemble_values,
         /* molecule_idxs */ torch::indexing::None
+    };
+}
+
+std::vector<torch::jit::IValue> setup_inputs_custom_mlmm(
+    torch::Tensor& ml_coords,
+    torch::Tensor& mm_coords,
+    torch::Tensor& mm_charges,
+    torch::Tensor& cell,
+    bool use_pbc,
+    torch::Tensor& molecule_idxs,
+    bool calc_only_bonded,
+    int ml_system_charge
+) {
+    torch::jit::IValue cell_ival = use_pbc ? torch::jit::IValue(cell) : torch::jit::IValue();
+    torch::jit::IValue pbc_ival = use_pbc ? torch::jit::IValue(config.enabled_pbc()) : torch::jit::IValue();
+    torch::jit::IValue molecule_idxs_ival =
+        calc_only_bonded ? torch::jit::IValue(molecule_idxs) : torch::jit::IValue();
+    return {
+        std::tuple{torchani_atomic_numbers, ml_coords},
+        /* mm_coords= */ mm_coords,
+        /* mm_charges= */ mm_charges,
+        /* cell= */ cell_ival,
+        /* pbc= */ pbc_ival,
+        /* charge= */ ml_system_charge,
+        /* atomic= */ false,
+        /* ensemble_values= */ false,
+        /* molecule_idxs= */ molecule_idxs_ival
     };
 }
 
@@ -569,9 +597,20 @@ void torchani_initialize(
         throw;
     }
 
-    // This is only necessary for double precision, since
-    // the buffers / parameters are kFloat by default
-    model.to(config.dtype());
+    // NOTE: Unfortunately, due to a strange LibTorch design choice, Module::to() converts
+    // *all params and bufs* to the dtype, not only the float tensors like the Python API.
+    // Here we loop over the params and buffers manually and convert only the floating
+    // point ones
+    for (at::Tensor t : model.parameters()) {
+        if (t.is_floating_point()) {
+            t.set_data(t.to(config.dtype()));
+        }
+    }
+    for (at::Tensor t : model.buffers()) {
+        if (t.is_floating_point()) {
+            t.set_data(t.to(config.dtype()));
+        }
+    }
 #ifdef DEBUG
     std::cout << "Cast model to the specified precision" << '\n';
 #endif
@@ -961,6 +1000,56 @@ void torchani_energy_force_with_coupling(
     );
 }
 
+
+void torchani_calc_energy_force_custom_mlmm(
+    int num_atoms,
+    int num_env_charges,
+    double coords_buf[][3],
+    double env_charge_coords_buf[][3],
+    double env_charges_buf[],
+    double cell_buf[3][3],
+    bool use_pbc,
+    int* molecule_idxs_buf,
+    bool calc_only_bonded,
+    int ml_system_charge,
+    /* outputs */
+    double forces_on_atoms_buf[][3],
+    double forces_on_env_charges_buf[][3],
+    double* ene_pot_total_buf
+) {
+    exit_if_no_eval_atoms("torchani_calc_energy_force_custom_mlmm");
+    if (!model.find_method("compute_mlmm").has_value()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
+                  << "See the torchani-amber README for the required signature." << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor ml_coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
+    torch::Tensor mm_coords = dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
+    torch::Tensor mm_charges = dbl_buf_to_tensor(config, env_charges_buf, {1, num_env_charges});
+    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
+    torch::Tensor molecule_idxs =
+        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
+
+    auto inputs = setup_inputs_custom_mlmm(
+        ml_coords,
+        mm_coords,
+        mm_charges,
+        cell,
+        use_pbc,
+        molecule_idxs,
+        calc_only_bonded,
+        ml_system_charge
+    );
+    torch::jit::IValue output = model.get_method("compute_mlmm")(inputs);
+    torch::Tensor energy = output.toTensor();
+
+    calculate_and_populate_embedding_forces(
+        energy, ml_coords, mm_coords, num_atoms, num_env_charges,
+        forces_on_atoms_buf, forces_on_env_charges_buf
+    );
+    populate_potential_energy(energy, ene_pot_total_buf);
+}
 
 void torchani_energy_force_atomic_charges_with_derivatives(
     int num_atoms,
