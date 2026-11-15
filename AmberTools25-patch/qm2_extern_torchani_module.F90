@@ -817,7 +817,7 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
             write(6,*) "     The electrostatic coupling approximation will be used"
             write(6,*) "     The QM energies and forces will be also corrected"
         else
-            ! Check coupling kind. Options are: 0 (coulombic), 1 (simple polarizable), 2 (custom model)
+            ! Check coupling kind. Options are: 0 (coulombic), 1 (simple polarizable), 2 (custom coupling)
             if (ani_nml%mlmm_coupling == 0) then
                 write(6,*) "TORCHANI: Will use a coulombic-only QM/MM interaction energy, with no polarization corrections"
             elseif (ani_nml%mlmm_coupling == 1) then
@@ -827,22 +827,23 @@ subroutine ani_nml_validate(ani_nml, qmmm_int, ml_system_charge)
                 write(6,*) "     If you use this setting please cite 'https://doi.org/10.1021/acs.jcim.4c00478'"
             elseif (ani_nml%mlmm_coupling == 2) then
                 write(6,*) "TORCHANI: Will use a fully custom ML/MM model (mlmm_coupling=2)"
-                write(6,*) "     The model must export 'compute_mlmm'; it receives ML species+coords and MM coords+charges"
-                write(6,*) "     and returns the total energy (Hartree). Forces via autograd."
+                write(6,*) "     The model receives ML species+coords and MM coords+charges"
+                write(6,*) "     and computes the coupling internally."
+                write(6,*) "     Only models exposing custom_mlmm() support this kind of coupling."
                 if (ani_nml%use_extcoupling) then
                     call ani_nml_error('mlmm_coupling=2 is incompatible with use_extcoupling')
                 endif
                 if (ani_nml%use_torchani_charges) then
-                    call ani_nml_error('mlmm_coupling=2: the custom model handles charges internally; set use_torchani_charges=.false.')
+                    call ani_nml_error('mlmm_coupling=2: the custom coupling handles charges internally; set use_torchani_charges=.false.')
                 endif
                 if (ani_nml%write_charges) then
-                    call ani_nml_error('mlmm_coupling=2: custom model returns no charges; set write_charges=.false.')
+                    call ani_nml_error('mlmm_coupling=2: custom coupling returns no charges; set write_charges=.false.')
                 endif
                 if (ani_nml%write_charges_grad) then
-                    call ani_nml_error('mlmm_coupling=2: custom model returns no charges; set write_charges_grad=.false.')
+                    call ani_nml_error('mlmm_coupling=2: custom coupling returns no charges; set write_charges_grad=.false.')
                 endif
             else
-                call ani_nml_error('Valid mlmm_coupling values are 0 (coulombic), 1 (simple polarizable), 2 (custom model)')
+                call ani_nml_error('Valid mlmm_coupling values are 0 (coulombic), 1 (simple polarizable), 2 (custom coupling)')
             endif
             ! Check charges kind for mlmm_coupling 0 and 1 only
             if (ani_nml%mlmm_coupling /= 2) then
@@ -892,7 +893,7 @@ subroutine ani_nml_print(ani_nml, qmmm_int, use_internal_opts)
         elseif (ani_nml%mlmm_coupling == 1) then
             write(6,*) 'TORCHANI:  mlmm_coupling                ', 1, "(simple polarizable)"
         elseif (ani_nml%mlmm_coupling == 2) then
-            write(6,*) 'TORCHANI:  mlmm_coupling                ', 2, "(custom model)"
+            write(6,*) 'TORCHANI:  mlmm_coupling                ', 2, "(custom coupling)"
         else
             call internal_error()
         endif
@@ -998,8 +999,8 @@ subroutine get_vacuum_and_coupling_energies_and_forces_through_torchani( &
 endsubroutine
 
 ! Fully custom ML/MM model path (mlmm_coupling=2).
-! The TorchScript model receives ML species+coords and the sander-provided
-! cutoff-filtered MM coords+charges, and returns the total energy.
+! The TorchScript model receives ML species+coords and
+! MM coords+charges, and returns the total energy.
 ! Forces on both regions are computed by C++ via autograd.
 ! Note: MM coordinates are already in correct periodic images (handled by sander
 ! before this call), so use_pbc is always .false. here.

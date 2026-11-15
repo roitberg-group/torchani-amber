@@ -589,18 +589,23 @@ void torchani_initialize(
         throw;
     }
 
-    // This is only necessary for double precision, since
-    // the buffers / parameters are kFloat by default.
-    // Skip for custom MLMM models (those exporting compute_mlmm): they are
-    // pre-compiled at the intended dtype, and C++ module.to() converts ALL
-    // tensor attributes unconditionally — including integer index buffers
-    // (triu_index, conv_tensor, _n_ref, _species_map, …) which must stay int64.
-    if (!model.find_method("compute_mlmm").has_value()) {
-        model.to(config.dtype());
-#ifdef DEBUG
-        std::cout << "Cast model to the specified precision" << '\n';
-#endif
+    // NOTE: Unfortunately, due to a strange LibTorch design choice, Module::to() converts
+    // *all params and bufs* to the dtype, not only the float tensors like the Python API.
+    // Here we loop over the params and buffers manually and convert only the floating
+    // point ones
+    for (at::Tensor t : model.parameters()) {
+        if (t.is_floating_point()) {
+            t.set_data(t.to(config.dtype()));
+        }
     }
+    for (at::Tensor t : model.buffers()) {
+        if (t.is_floating_point()) {
+            t.set_data(t.to(config.dtype()));
+        }
+    }
+#ifdef DEBUG
+    std::cout << "Cast model to the specified precision" << '\n';
+#endif
 
     // Set the correct model configuration
     if (network_index != -1) {
