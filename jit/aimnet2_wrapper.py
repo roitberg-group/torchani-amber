@@ -97,7 +97,7 @@ class AimNet2Wrapper(torch.nn.Module):
         self._model = model
         self._nlist = AdaptiveList().to(device=device, dtype=dtype)
         if cutoff_lr < model.cutoff:
-            raise ValueError("cutoff_lr must be < cutoff")
+            raise ValueError("cutoff_lr must be >= cutoff")
         self._cutoff = model.cutoff
         self._cutoff_lr = cutoff_lr
         self._factor = 1.0 / HARTREE_TO_EV if output_hartree else 1.0

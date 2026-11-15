@@ -125,7 +125,6 @@ class NutmegWrapper(torch.nn.Module):
             shiftidxs = torch.round(
                 reconstruct_shifts(coords.unsqueeze(0), neigh) @ inv_cell
             )
-            # TODO: Make sure the -sign is needed
             full_shiftidxs = -torch.cat((shiftidxs, -shiftidxs), dim=0).to(coords.dtype)
         else:
             pbc = species.new_zeros(3, dtype=torch.bool)
@@ -144,7 +143,7 @@ class NutmegWrapper(torch.nn.Module):
             "batch": species.new_zeros(coords.size(0)),
             "num_graphs": species.new_ones((1,)),
             "pbc": pbc,
-            "cell": cell,
+            "cell": cell * self._angstrom_to_nm,
         }
         # Call core model, without neighborlist
         energy = self._model.model(data)["y_graph_scalars"].view(1)
@@ -153,7 +152,8 @@ class NutmegWrapper(torch.nn.Module):
 
 def generate_nutmeg_wrapper():
     for size in ("small", "medium", "large"):
-        model = NutmegWrapper(torch.jit.load(f"./nutmeg-{size}.raw.pt"))
+        raw_path = Path(__file__).parent / f"nutmeg-{size}.raw.pt"
+        model = NutmegWrapper(torch.jit.load(raw_path))
         out_dir = Path(__file__).parent / "nutmeg"
         out_dir.mkdir(exist_ok=True)
         torch.jit.save(torch.jit.script(model), out_dir / f"nutmeg-{size}.pt")

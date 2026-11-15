@@ -341,7 +341,10 @@ endif()
 
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
-# TODO: Disabling JIT optimizations during scripting probably does nothing
+# NOTE: Disabling JIT optimizations during scripting has been confirmed to be a no-op
+# (the saved *.pt files are identical), since these flags only affect how torch *runs*
+# TorchScript graphs, not how it scripts or serializes them
+# TODO: Remove this in the future
 if(TORCHANI_JIT_COMPILE_MODELS)
     Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
     Torchani_TorchScriptUtils_add_jit_compile_models_target(
