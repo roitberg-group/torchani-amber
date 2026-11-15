@@ -54,7 +54,6 @@ dependencies:
 
   # TorchANI-Amber specific
   - conda-forge::cmake=3.31.1
-  - conda-forge::tinydb
   - conda-forge::pyyaml
   - nvidia::cuda-toolkit=13.0
   - pip:

@@ -18,7 +18,7 @@ class ModelSpec:
     infer: bool = False
 
     @property
-    def kwargs(self) -> tp.Dict[str, tp.Any]:
+    def kwargs(self) -> dict[str, tp.Any]:
         return {"neighborlist": "adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
@@ -30,7 +30,7 @@ class ModelSpec:
 def _check_which_models_need_compilation(
     force_recompilation: bool,
     infer_model: str = "",
-) -> tp.List[ModelSpec]:
+) -> list[ModelSpec]:
     model_names: tuple[str, ...] = (
         "ANI1x",
         "ANI1ccx",
