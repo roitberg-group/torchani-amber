@@ -109,7 +109,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--disable-optimizations",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
@@ -172,7 +172,9 @@ if __name__ == "__main__":
             import torch
             import torchani
 
-            # TODO Does this do anything?
+            # NOTE: Confirmed to be a no-op (the saved *.pt files are identical), since
+            # these flags only affect how torch *runs* TorchScript graphs
+            # TODO: Remove this in the future
             if args.disable_optimizations:
                 console.print(
                     "-- JIT - Disabling optimizations before scripting",
@@ -181,7 +183,8 @@ if __name__ == "__main__":
         success = True
         console.print("-- JIT - Starting to compile models")
         for spec in tqdm(model_specs, leave=False):
-            success = _jit_compile_and_save_models_in_spec(spec)
+            if not _jit_compile_and_save_models_in_spec(spec):
+                success = False
 
         if success:
             if model_specs:
