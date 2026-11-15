@@ -1,7 +1,7 @@
 # Configuration file that stores all hooks that pre-commit runs
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.3.0
+    rev: v6.0.0
     hooks:
       - id: no-commit-to-branch  # disallow commiting to master / main directly
         args: ['--branch', 'main', '--branch', 'master']
