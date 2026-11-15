@@ -53,7 +53,7 @@ subroutine internal_initialize( &
     logical(c_bool), value, intent(in) :: use_cuaev
 endsubroutine
 
-subroutine internal_energy_force( &
+subroutine internal_calc_energy_force( &
     num_atoms, &
     coords, &
     cell, &
@@ -77,7 +77,7 @@ subroutine internal_energy_force( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine internal_energy_force_from_external_neighbors( &
+subroutine internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
     coords, &
@@ -533,7 +533,7 @@ subroutine torchani_calc_energy_force( &
 
     logical, intent(in) :: calc_only_bonded
     logical, intent(in) :: use_pbc
-    call internal_energy_force( &
+    call internal_calc_energy_force( &
         num_atoms, &
         coords, &
         cell, &
@@ -571,7 +571,7 @@ subroutine torchani_calc_energy_force_from_external_neighbors( &
 
     logical, intent(in) :: calc_only_bonded
 
-call internal_energy_force_from_external_neighbors( &
+call internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
     coords, &
@@ -650,7 +650,7 @@ subroutine torchani_energy_force_from_external_neighbors( &
     allocate(molecule_idxs(num_atoms))
     molecule_idxs = 0
 
-call internal_energy_force_from_external_neighbors( &
+call internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
     coords, &
@@ -688,7 +688,7 @@ subroutine torchani_energy_force( &
     use_pbc = .false.
     calc_only_bonded = .false.
     net_charge = 0
-    call internal_energy_force( &
+    call internal_calc_energy_force( &
         num_atoms, &
         coords, &
         cell, &
@@ -724,7 +724,7 @@ subroutine torchani_energy_force_pbc( &
     use_pbc = .true.
     calc_only_bonded = .false.
     net_charge = 0
-    call internal_energy_force( &
+    call internal_calc_energy_force( &
         num_atoms, &
         coords, &
         cell, &
@@ -759,7 +759,7 @@ subroutine torchani_bonded_energy_force_pbc( &
     use_pbc = .true.
     calc_only_bonded = .true.
     net_charge = 0
-    call internal_energy_force( &
+    call internal_calc_energy_force( &
         num_atoms, &
         coords, &
         cell, &

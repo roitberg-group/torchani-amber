@@ -387,5 +387,5 @@ but it may be an issue if you use your own custom models.
 
 Its important that the models used are JIT-compiled using the same PyTorch
 version as the LibTorch version linked to the libraries. For example, if
-`torch.__version__ == 2.8` when compiling JIT'ed models, then the linked LibTorch must
-also be 2.8, otherwise LibTorch may fail to load the models, or load them incorrectly.
+`torch.__version__ == 2.13` when compiling JIT'ed models, then the linked LibTorch must
+also be 2.13, otherwise LibTorch may fail to load the models, or load them incorrectly.
