@@ -1,5 +1,5 @@
 from pathlib import Path
-import typing as tp
+from collections.abc import Sequence
 import warnings
 
 import torch
@@ -41,7 +41,7 @@ class NutmegWrapper(torch.nn.Module):
     def __init__(
         self,
         model: Module,
-        atomic_charges: tp.Sequence[float] = (),
+        atomic_charges: Sequence[float] = (),
     ) -> None:
         super().__init__()
         self._model = model
@@ -60,7 +60,7 @@ class NutmegWrapper(torch.nn.Module):
         self._nlist = AdaptiveList().to(device=param.device, dtype=param.dtype)
 
     @torch.jit.export
-    def set_extra_features(self, extra_features: tp.List[float]) -> None:
+    def set_extra_features(self, extra_features: list[float]) -> None:
         self._atomic_charges = torch.tensor(
             extra_features,
             dtype=self._atomic_charges.dtype,
@@ -69,7 +69,7 @@ class NutmegWrapper(torch.nn.Module):
 
     def _create_atom_features(
         self, species: Tensor, coords: Tensor
-    ) -> tp.Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         atom_types = self._types_map[species].long()
         one_hot_z = torch.nn.functional.one_hot(atom_types, num_classes=17).to(
             coords.dtype
@@ -83,9 +83,9 @@ class NutmegWrapper(torch.nn.Module):
         self,
         species: Tensor,
         coords: Tensor,
-        cell: tp.Optional[Tensor],
-        pbc: tp.Optional[Tensor],
-        _molecule_idxs: tp.Optional[Tensor],
+        cell: Tensor | None,
+        pbc: Tensor | None,
+        _molecule_idxs: Tensor | None,
     ) -> Neighbors:
         # Neighborlist is "complete" (duplicated)
         # edge_attrs is None for these models
@@ -105,14 +105,14 @@ class NutmegWrapper(torch.nn.Module):
 
     def forward(
         self,
-        species_coords: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
+        species_coords: tuple[Tensor, Tensor],
+        cell: Tensor | None = None,
+        pbc: Tensor | None = None,
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: tp.Optional[Tensor] = None,
-    ) -> tp.Tuple[Tensor, Tensor]:
+        _molecule_idxs: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
 
         species, coords = species_coords
         neigh = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)

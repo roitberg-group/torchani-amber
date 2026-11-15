@@ -1,4 +1,3 @@
-import typing as tp
 import subprocess
 import sys
 from copy import deepcopy
@@ -19,7 +18,7 @@ def send_to_scheduler(
     unique_id: str,
     core_num: int,
     install_kind: str,
-    env: tp.Optional[jinja2.Environment] = None,
+    env: jinja2.Environment | None = None,
 ) -> None:
     if cluster == "hpg":
         assert gpu in ["2080ti", "b200", "l4", ""]
