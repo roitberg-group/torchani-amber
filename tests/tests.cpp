@@ -630,7 +630,12 @@ TEST_CASE("Charges for host electrostatics") {
                 for (int k = 0; k != size; ++k) {
                     expect -= weights[k] * dq[c + 3 * j + 3 * size * k];
                 }
-                FLOAT_EQ(vjp_forces[j][c], expect, false);
+                // Round-off error is amplified by the weights applied in the vj product
+                // So increase tolerance a little above float precision
+                CHECK_THAT(
+                    vjp_forces[j][c],
+                    WithinAbs(expect, 1e-4) || WithinRel(expect, 1e-4)
+                );
             }
         }
         free(dq);
