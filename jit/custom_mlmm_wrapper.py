@@ -113,7 +113,9 @@ class CustomMLMMANImbis(torch.nn.Module):
         )
         atomic_coulomb = pair_coulomb.sum(1) / self._angstrom_to_bohr
 
-        pair_efield = mm_charges[:, :, None, None] * delta / distances.unsqueeze(-1) ** 3
+        pair_efield = (
+            mm_charges[:, :, None, None] * delta / distances.unsqueeze(-1) ** 3
+        )
         efield = pair_efield.sum(1) / self._angstrom_to_bohr**2
         alphas_bohr = self._znum_to_alpha[species] * self._angstrom_to_bohr**3
         atomic_pol = -self._inv_pol_dielectric * alphas_bohr * efield.pow(2).sum(-1)
