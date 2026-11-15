@@ -40,6 +40,6 @@ torch::Tensor dbl_buf_to_cell_tensor(
 
 torch::Tensor int_buf_to_neighborlist_tensor(
     const GlobalConfig& config,
-    int* neighborlist_buf[2],
+    int neighborlist_buf[],
     long num_neighbors
 );

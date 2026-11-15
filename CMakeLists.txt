@@ -439,7 +439,7 @@ install(
 # Install module file necessary for a portable fortran interface
 install(
     FILES
-        "${CMAKE_CURRENT_LIST_DIR}/src-fortran/torchani.F90"
+        "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
     DESTINATION "${DATA_INSTALL_DIR}/Fortran"
 )
 # TODO Add model.jit.pt files

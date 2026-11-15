@@ -1,0 +1,254 @@
+! Hand-written part of the torchani module, from
+! interface/templates/torchani_fortran_utils.F90.
+!
+! This is not a standalone file. interface/templates/torchani.F90.jinja includes
+! it verbatim inside the "contains" section of module torchani, and the result
+! is interface/torchani.F90. Backwards-compat shims live in the template, this
+! file holds the rest of the hand-written code. Things to keep in mind:
+! - It relies on the module header in the template: "use iso_c_binding" and
+!   "implicit none" are not repeated here.
+! - torchani_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of torchani_initialize
+!   change in the yaml, that call must be updated.
+! - The generated Fortran wrappers and the shims in the template call
+!   fbool_to_cbool, defined here.
+! - Routines here are made public in the "public" list of the template, so a
+!   new public routine must also be added there.
+
+subroutine torchani_initialize( &
+    atomic_nums, &
+    no_eval_atoms, &
+    device_index, &
+    model_type, &
+    network_index, &
+    use_double_precision, &
+    use_cuda_device, &
+    use_cuaev &
+)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    integer(c_int), contiguous, intent(in) :: no_eval_atoms(:)
+    integer(c_int), value, intent(in) :: device_index
+    character(len=*, kind=kind("a")), intent(in) :: model_type
+    integer(c_int), intent(in) :: network_index
+    ! Flags
+    logical, intent(in) :: use_double_precision
+    logical, intent(in) :: use_cuda_device
+    logical, intent(in) :: use_cuaev
+
+    character(len=len_trim(model_type) + 1, kind=c_char) :: c_model_type
+    ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
+    c_model_type = trim(model_type) // c_null_char
+    call internal_initialize( &
+        size(atomic_nums), &
+        atomic_nums, &
+        no_eval_atoms, &
+        device_index, &
+        c_model_type, &
+        network_index, &
+        fbool_to_cbool(use_double_precision), &
+        fbool_to_cbool(use_cuda_device), &
+        fbool_to_cbool(use_cuaev) &
+    )
+endsubroutine
+
+! Coordinates must be mapped to central cell in sander!!!
+
+! TODO: Check which of these arrays store img_idx and which store atom_idx
+! (for both pmemd)
+
+! TODO: There seems to be a serious problem with the shifts, the shifts are not the same for sander and for ani, setting shifts to 0
+! fixes this but avoids pbc. I believe there may be a similar issue with the pmemd shifts
+
+! Convert the amber-neighborlist to "ANI fmt", which is a 2-dim array. Each column
+! in the array holds the index of one of the two atoms in each pair. The array's shape
+! is not known at compile-time, so it is dynamically created *each time this function is called*
+subroutine convert_sander_neighborlist_to_ani_fmt( &
+    img_idx_to_atom_idx, &
+    atom_idx_to_neighbors_num, &
+    translation_vector, &
+    sander_neighborlist, &
+    ani_neighborlist, &
+    ani_shifts &
+)
+    integer, intent(in) :: img_idx_to_atom_idx(:)
+    integer, intent(in) :: atom_idx_to_neighbors_num(:)
+    ! Sander's list is assumed-shape, so (:) can't be used
+    integer, intent(in) :: sander_neighborlist(*)
+    double precision, intent(in) :: translation_vector(1:3, 1:18)
+    integer, allocatable, intent(out) :: ani_neighborlist(:, :)
+    double precision, allocatable, intent(out) :: ani_shifts(:, :)
+
+    integer :: num_atoms
+    integer :: img_idx
+    integer :: offset
+    integer :: pair_idx
+    integer :: img_neighbors_num
+
+    ! Sander's list containes img_idx of the neighbors of each atom.
+    ! They are ordered in *the img-order*
+    ! (see ew_force for details, iteration happens over k)
+
+    ! The number of neighbors for a given img_idx is given by
+    ! atom_idx_to_neighbors_num(img_idx_to_atom_idx(img_idx))
+    ! atom_idx_to_neighbors_num can be obtained from numvdw + numhbnd within sander
+    ! (numhbnd should be zero for modern FF)
+    num_atoms = size(img_idx_to_atom_idx, dim=1)
+    allocate(ani_neighborlist(sum(atom_idx_to_neighbors_num), 2))
+    allocate(ani_shifts(3, sum(atom_idx_to_neighbors_num)))
+    pair_idx = 0
+    do img_idx = 1, num_atoms
+        img_neighbors_num = atom_idx_to_neighbors_num(img_idx_to_atom_idx(img_idx))
+        do offset = 1, img_neighbors_num
+            pair_idx = pair_idx + 1
+            ! The order in which atoms are added into the ani_neighborlist
+            ! is irrelevant, the important thing is that the atom_idx are added, and
+            ! not the img_idx. Most straightforward is to fill using the img-order
+            ani_neighborlist(pair_idx, 1) = img_idx_to_atom_idx(img_idx)
+            ! The translation vec index and the image idx
+            ! are encoded by sander into the same elem. iand and ishft decode them
+            ani_neighborlist(pair_idx, 2) &
+                = img_idx_to_atom_idx(iand(sander_neighborlist(pair_idx), 2**27 - 1))
+            ani_shifts(:, pair_idx) &
+                = translation_vector(:, ishft(sander_neighborlist(pair_idx), -27))
+        end do
+    end do
+    ! ANI neighborlist has idxs 1 less than Sander, so subtract 1 fromm all idxs
+    ani_neighborlist = ani_neighborlist - 1
+    ani_shifts = -ani_shifts
+end subroutine
+
+! Convert the pmemd-neighborlist to "ANI fmt", which is a 2-dim array. Each column
+! in the array holds the index of one of the two atoms in each pair. The array's shape
+! is not known at compile-time, so it is dynamically created *each time this function is called*
+subroutine convert_pmemd_neighborlist_to_ani_fmt( &
+    image_idx_to_atom_idx, &
+    translation_vector, &
+    pmemd_neighborlist, &
+    ani_neighborlist, &
+    ani_shifts &
+)
+    integer, intent(in) :: image_idx_to_atom_idx(:)
+    integer, intent(in) :: pmemd_neighborlist(:)
+    double precision, intent(in) :: translation_vector(1:3, 0:17)
+    integer, allocatable, intent(out) :: ani_neighborlist(:, :)
+    double precision, allocatable, intent(out) :: ani_shifts(:, :)
+
+    integer :: num_atoms
+    integer :: img_idx, j
+    integer :: image_idx
+    integer :: pmemd_idx
+    integer :: ani_idx
+    integer :: translation_vector_idx
+    integer, allocatable :: img_neighbors_num(:)
+    logical :: has_no_translation
+    ! The ANI neighborlist is constructed naively. First do a pass over
+    ! the Pmemd neighborlist to determine the shape of the array, then allocate it,
+    ! and finally perform a second pass to fill the array.
+    num_atoms = size(image_idx_to_atom_idx, dim=1)
+    allocate(img_neighbors_num(num_atoms))
+    call get_pmemd_img_neighbors_num(pmemd_neighborlist, img_neighbors_num)
+    allocate(ani_neighborlist(sum(img_neighbors_num), 2))
+    allocate(ani_shifts(3, sum(img_neighbors_num)))
+
+    ! Atom indices for pmemd and ani
+    pmemd_idx = 1
+    ani_idx = 0
+    do img_idx = 1, num_atoms
+        do j = 1, img_neighbors_num(img_idx)
+            ani_neighborlist(ani_idx + j, 1) = image_idx_to_atom_idx(img_idx) - 1
+        end do
+
+        has_no_translation = (pmemd_neighborlist(pmemd_idx) == 1)
+        pmemd_idx = pmemd_idx + 2
+        if (has_no_translation) then
+            do j = 1, img_neighbors_num(img_idx)
+                ! If no translation is present the tranvec_idx is hardcoded to 13
+                image_idx = pmemd_neighborlist(pmemd_idx + j)
+                translation_vector_idx = 13
+                ! ani neighborlist has indices 1 less than amber due to indices in python starting from zero
+                ani_neighborlist(ani_idx + j, 2) = image_idx_to_atom_idx(image_idx) - 1
+                ani_shifts(:, ani_idx + j) = translation_vector(:, translation_vector_idx)
+            end do
+        else
+            do j = 1, img_neighbors_num(img_idx)
+                ! If translation is present the translation vector index and the image idx
+                ! are encoded by pmemd into the same idx. To decode them, use iand and ishft
+                image_idx = iand(pmemd_neighborlist(pmemd_idx + j), Z"07FFFFFF")
+                translation_vector_idx = ishft(pmemd_neighborlist(pmemd_idx + j), -27)
+                ani_neighborlist(ani_idx + j, 2) = image_idx_to_atom_idx(image_idx) - 1
+                ani_shifts(:, ani_idx + j) = translation_vector(:, translation_vector_idx)
+            end do
+        end if
+        ani_idx = ani_idx + img_neighbors_num(img_idx)
+        pmemd_idx = pmemd_idx + img_neighbors_num(img_idx) + 1
+    end do
+    ! ANI shifts are shifted with respect to the amber shifts, thus the negative sign
+    ani_shifts = -ani_shifts
+end subroutine
+
+! Obtain the number of neighbors of each atom in the neighborlist
+subroutine get_pmemd_img_neighbors_num(pmemd_neighborlist, img_neighbors_num)
+    integer, intent(in) :: pmemd_neighborlist(:)
+    integer, intent(out) :: img_neighbors_num(:)
+
+    integer :: idx
+    integer :: total_neighbors
+    integer :: i
+    idx = 1
+    do i=1, size(img_neighbors_num, 1)
+        ! Add "electrostatic neighbors" and "VDW neighbors"
+        total_neighbors = pmemd_neighborlist(idx + 1)  + pmemd_neighborlist(idx + 2)
+        img_neighbors_num(i) = total_neighbors
+        ! Move the index forward to jump over the read atoms
+        idx = idx + 2 + total_neighbors + 1
+    end do
+end subroutine
+
+logical(c_bool) function fbool_to_cbool(fbool) result(ret)
+    logical, intent(in) :: fbool
+    if (fbool) then
+        ret = .true._c_bool
+    else
+        ret = .false._c_bool
+    endif
+endfunction
+
+subroutine torchani_dump_walltime()
+    ! State, clock count rate is assumed to be constant between calls
+    logical, save :: first_call = .true.
+    character(len=1), save :: need_walltime = "0"  ! Only set once
+    integer(kind=8), save :: clock_count_rate = 1  ! Only set once
+    double precision, save :: prev_time_ms = 0.0D0  ! Reset every call
+    integer, parameter :: walltime_fd = 280000
+    ! TODO: It is gfortran specific that kind=8 is int64, which makes the clock precise
+    integer(kind=8) :: clock_count
+    double precision :: time_ms
+
+    clock_count = 0_8
+    time_ms = 0.0D0
+
+    if (first_call) then
+        call get_environment_variable("TORCHANI_AMBER_WALLTIME", need_walltime)
+        if (need_walltime /= "1") then
+            return
+        endif
+        open(unit=walltime_fd, file='walltime_ms.dat', status='REPLACE')
+        close(walltime_fd)
+        call system_clock(clock_count, clock_count_rate)
+        prev_time_ms = dble(clock_count) / dble(clock_count_rate) * 1000.0D0
+        first_call = .false.
+    else
+        if (need_walltime /= "1") then
+            return
+        endif
+        ! NOTE: possible wraparound in system clock is disregarded since time
+        ! between calls is extremely short
+        open(unit=walltime_fd, file='walltime_ms.dat', status='OLD', position='APPEND')
+        call system_clock(clock_count)
+        time_ms = dble(clock_count) / dble(clock_count_rate) * 1000.0D0
+        write(walltime_fd, "(es30.15E4)") time_ms - prev_time_ms
+        flush(unit=walltime_fd)
+        prev_time_ms = time_ms
+        close(unit=walltime_fd)
+    endif
+endsubroutine
