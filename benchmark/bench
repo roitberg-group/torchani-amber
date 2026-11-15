@@ -16,7 +16,6 @@ import socket
 import sys
 import typing as tp
 from uuid import uuid4
-import typing_extensions as tpx
 
 from typer import Option, Typer, Abort
 import jinja2
@@ -53,20 +52,20 @@ class ScalingConfig:
 
 @app.command()
 def run(
-    hpg: tpx.Annotated[
+    hpg: tp.Annotated[
         tp.Optional[bool],
         Option("--hpg/--no-hpg"),
     ] = None,
-    gpu: tpx.Annotated[str, Option("--gpu")] = "",
-    dump_traj: tpx.Annotated[
+    gpu: tp.Annotated[str, Option("--gpu")] = "",
+    dump_traj: tp.Annotated[
         bool,
         Option("--dump-traj/--no-dump-traj"),
     ] = False,
-    shake: tpx.Annotated[
+    shake: tp.Annotated[
         bool,
         Option("--shake/--no-shake"),
     ] = False,
-    systems: tpx.Annotated[
+    systems: tp.Annotated[
         tp.Optional[tp.List[str]],
         Option(
             "-s",
@@ -75,75 +74,75 @@ def run(
             help="Name of system(s) to run on, must be found on benchmark/system",
         ),
     ] = None,
-    cuaev: tpx.Annotated[
+    cuaev: tp.Annotated[
         tp.Optional[bool],
         Option("--cuaev/--no-cuaev", help="Benchmark cuaev"),
     ] = None,
-    model: tpx.Annotated[
+    model: tp.Annotated[
         str,
         Option("-m", "--model"),
     ] = "ani2xr",
-    cutoff: tpx.Annotated[
+    cutoff: tp.Annotated[
         tp.Optional[float],
         Option("--cutoff"),
     ] = None,
-    cuda: tpx.Annotated[
+    cuda: tp.Annotated[
         tp.Optional[bool],
         Option("--cuda/--no-cuda", help="Benchmark on CUDA device"),
     ] = None,
     # At least 200 are needed
-    tstep_num: tpx.Annotated[
+    tstep_num: tp.Annotated[
         int,
         Option(
             "--tsteps",
             help="Number of timesteps to run benchmarks for",
         ),
     ] = 1000,
-    time_ps: tpx.Annotated[
+    time_ps: tp.Annotated[
         tp.Optional[float],
         Option("-t", "--time-ps"),
     ] = None,
-    debug: tpx.Annotated[
+    debug: tp.Annotated[
         bool,
         Option("-g/-G", "--debug/--no-debug"),
     ] = False,
-    install_kind: tpx.Annotated[
+    install_kind: tp.Annotated[
         str,
         Option("--install-kind"),
     ] = "local",
-    hours: tpx.Annotated[
+    hours: tp.Annotated[
         int,
         Option("--hours"),
     ] = 1,
-    name: tpx.Annotated[
+    name: tp.Annotated[
         str,
         Option("-n", "--name"),
     ] = "",
-    out_root: tpx.Annotated[
+    out_root: tp.Annotated[
         tp.Optional[Path],
         Option("--out-root", show_default=False),
     ] = None,
-    sander: tpx.Annotated[
+    sander: tp.Annotated[
         bool,
         Option("--no-pmemd/--pmemd", "--sander/--no-sander"),
     ] = True,
-    use_amber_neighborlist: tpx.Annotated[
+    use_amber_neighborlist: tp.Annotated[
         bool,
         Option("--amber-neighborlist/--no-amber-neighborlist"),
     ] = False,
-    use_all_amber_nonbond: tpx.Annotated[
+    use_all_amber_nonbond: tp.Annotated[
         bool,
         Option("--amber-nonbond/--no-amber-nonbond"),
     ] = False,
-    bench_kind: tpx.Annotated[
+    bench_kind: tp.Annotated[
         tp.Optional[BenchKind],
         Option("-b", "--bench-kind"),
     ] = None,
-    systems_src_dir: tpx.Annotated[
+    systems_src_dir: tp.Annotated[
         tp.Optional[Path],
         Option("--systems-src-dir", show_default=False),
     ] = None,
-    suffix: tpx.Annotated[
+    suffix: tp.Annotated[
         str,
         Option("--suffix"),
     ] = "",
@@ -308,32 +307,32 @@ def run(
 
 @app.command()
 def plot(
-    names_or_paths: tpx.Annotated[list[str], Argument()],
-    burn_in_tstep_num: tpx.Annotated[
+    names_or_paths: tp.Annotated[list[str], Argument()],
+    burn_in_tstep_num: tp.Annotated[
         int,
         Option("-b", "--burn-in-tstep-num"),
     ] = 50,
-    labels: tpx.Annotated[
+    labels: tp.Annotated[
         tp.Optional[list[str]],
         Option("-l", "--label"),
     ] = None,
-    out_root: tpx.Annotated[
+    out_root: tp.Annotated[
         tp.Optional[Path],
         Option("--out-root", show_default=False),
     ] = None,
-    ns_per_day: tpx.Annotated[
+    ns_per_day: tp.Annotated[
         bool,
         Option("--ns-per-day/--no-ns-per-day"),
     ] = False,
-    max_num_atoms: tpx.Annotated[
+    max_num_atoms: tp.Annotated[
         int,
         Option("--max-num-atoms"),
     ] = int(1e12),
-    ymax: tpx.Annotated[
+    ymax: tp.Annotated[
         tp.Optional[float],
         Option("-y", "--ymax"),
     ] = None,
-    manual_ticks: tpx.Annotated[
+    manual_ticks: tp.Annotated[
         bool,
         Option("--manual-ticks/--no-manual-ticks"),
     ] = True,

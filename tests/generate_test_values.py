@@ -1,4 +1,4 @@
-import typing as tp
+from collections.abc import Iterable
 import warnings
 from pathlib import Path
 
@@ -55,7 +55,7 @@ def _save_jit_compiled_model_results_to_file(
 
 
 def _generate_cpu_or_cuda_values(
-    model_jit_files: tp.Iterable[Path],
+    model_jit_files: Iterable[Path],
     device: str,
     tests_dir: Path,
 ) -> None:
@@ -83,7 +83,7 @@ def _generate_cpu_or_cuda_values(
 
 
 def _main(
-    model_jit_files: tp.Iterable[Path],
+    model_jit_files: Iterable[Path],
     tests_dir: Path,
 ) -> None:
     if torch.cuda.is_available():

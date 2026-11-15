@@ -1,0 +1,211 @@
+# Single source of truth for the C interface (include/torchani.h) and the
+# Fortran interface (interface/torchani.F90). After editing, run:
+#   python interface/generate.py
+# (this also runs automatically as a pre-commit / pre-push hook)
+#
+# Function fields:
+#   name: C symbol name
+#   comment: (optional) emitted above the declaration in both languages
+#   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
+#       in templates/torchani_fortran_utils.F90. Otherwise, functions with bool args get
+#       an auto-generated Fortran wrapper that converts logical -> logical(c_bool)
+#
+# Arg fields:
+#   name: argument name
+#   dtype: int | double | bool | str
+#   shape: (optional) C (row-major) shape, omit for scalars. If all dims except
+#       the first are integer literals the C arg is typed as e.g. double x[][3],
+#       otherwise as a flat pointer
+#   intent: (optional) in | out | inout, default in. Scalar inputs are passed
+#       by value, everything else by reference
+
+functions:
+  - name: torchani_initialize
+    fortran_wrapper: manual
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: atomic_nums, dtype: int, shape: [num_atoms]}
+      - {name: no_eval_atoms, dtype: int, shape: [num_atoms]}
+      - {name: device_index, dtype: int}
+      - {name: model_type, dtype: str}
+      - {name: network_index, dtype: int}
+      - {name: use_double_precision, dtype: bool}
+      - {name: use_cuda_device, dtype: bool}
+      - {name: use_cuaev, dtype: bool}
+
+  - name: torchani_calc_energy_force
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: cell, dtype: double, shape: [3, 3]}
+      - {name: use_pbc, dtype: bool}
+      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
+      - {name: calc_only_bonded, dtype: bool}
+      - {name: net_charge, dtype: int}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_calc_energy_force_from_external_neighbors
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: num_neighbors, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: neighborlist, dtype: int, shape: [2, num_neighbors]}
+      - {name: shifts, dtype: double, shape: [num_neighbors, 3]}
+      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
+      - {name: calc_only_bonded, dtype: bool}
+      - {name: net_charge, dtype: int}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_energy_force_atomic_charges
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_energy_force_atomic_charges_with_derivatives
+    comment: |
+      Note that atomic_charges_grad is a [num_atoms x num_atoms x 3]
+      array In fortran, an array of shape [3, num_atoms, num_atoms] should be
+      passed Where the element [i, j, k] is the derivative of the **charge on
+      k-th atom** with respect to the **i-th position of the j-th atom**
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
+      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_energy_atomic_charges_retain
+    comment: |
+      For a host program that uses the predicted charges in its own electrostatics
+      (e.g. PME). torchani_energy_atomic_charges_retain returns the in-vacuo energy
+      and the charges (forward pass only) and keeps the graph. Then
+      torchani_energy_atomic_charges_vjp, given charge_weights[k] = dE_host/d(charge k)
+      (kcal/mol/e), returns the total forces
+        forces[j] = - d/d(coords j) [E + sum_k charge_weights[k] * charge k]
+      with a single backward pass, and frees the graph (zero weights give the
+      in-vacuo forces).
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: net_charge, dtype: int}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_energy_atomic_charges_vjp
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: charge_weights, dtype: double, shape: [num_atoms]}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+
+  - name: torchani_energy_force_qbc
+    comment: Backwards compat, dummy fn, remove when AmberTools26 is released
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: qbc, dtype: double, intent: out}
+      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_data_for_monitored_mlmm
+    comment: Backwards compat, dummy fn, remove when AmberTools26 is released
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
+      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
+      - {name: qbc, dtype: double, intent: out}
+      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_calc_energy_force_qbc
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: net_charge, dtype: int}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: qbc, dtype: double, intent: out}
+      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_calc_data_for_monitored_mlmm
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: net_charge, dtype: int}
+      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
+      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
+      - {name: qbc, dtype: double, intent: out}
+      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: potential_energy, dtype: double, intent: out}
+
+  - name: torchani_energy_force_with_coupling
+    comment: Backwards compat, remove when AmberTools26 is released
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: num_env_charges, dtype: int}
+      - {name: inv_pol_dielectric, dtype: double}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: atomic_alphas, dtype: double, shape: [num_atoms]}
+      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
+      - {name: env_charges, dtype: double, shape: [num_env_charges]}
+      - {name: predict_charges, dtype: bool}
+      - {name: use_simple_polarization_correction, dtype: bool}
+      - {name: use_charge_derivatives, dtype: bool}
+      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: inout}
+      - {name: ene_pot_invacuo, dtype: double, intent: out}
+      - {name: ene_pot_embed_pol, dtype: double, intent: out}
+      - {name: ene_pot_embed_dist, dtype: double, intent: out}
+      - {name: ene_pot_embed_coulomb, dtype: double, intent: out}
+      - {name: ene_pot_total, dtype: double, intent: out}
+
+  - name: torchani_calc_energy_force_with_coupling
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: num_env_charges, dtype: int}
+      - {name: inv_pol_dielectric, dtype: double}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: atomic_alphas, dtype: double, shape: [num_atoms]}
+      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
+      - {name: env_charges, dtype: double, shape: [num_env_charges]}
+      - {name: predict_charges, dtype: bool}
+      - {name: use_simple_polarization_correction, dtype: bool}
+      - {name: use_charge_derivatives, dtype: bool}
+      - {name: ml_system_charge, dtype: int}
+      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
+      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: inout}
+      - {name: ene_pot_invacuo, dtype: double, intent: out}
+      - {name: ene_pot_embed_pol, dtype: double, intent: out}
+      - {name: ene_pot_embed_dist, dtype: double, intent: out}
+      - {name: ene_pot_embed_coulomb, dtype: double, intent: out}
+      - {name: ene_pot_total, dtype: double, intent: out}
+
+  - name: torchani_calc_energy_force_custom_mlmm
+    comment: |
+      Custom ML/MM model: the TorchScript model receives ML species+coords and MM
+      coords+charges and computes the total energy internally. The model must export
+      a 'compute_mlmm' method (see README). Forces on both regions via autograd.
+      cell is ignored when use_pbc is false.
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: num_env_charges, dtype: int}
+      - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
+      - {name: env_charges, dtype: double, shape: [num_env_charges]}
+      - {name: cell, dtype: double, shape: [3, 3]}
+      - {name: use_pbc, dtype: bool}
+      - {name: ml_system_charge, dtype: int}
+      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
+      - {name: ene_pot_total, dtype: double, intent: out}

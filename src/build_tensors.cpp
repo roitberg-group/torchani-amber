@@ -12,7 +12,7 @@
 // memory location that has some data (from_blob).
 // WARNING: It is crucial that
 // the pointer type and the tensor type are the same when doing this,
-// otherwise memory alignment issues occurr
+// otherwise memory alignment issues occur
 // coords must be set to require grad, since automatic differentiation is
 // used to get the forces
 torch::Tensor dbl_buf_to_coords_tensor(
@@ -41,7 +41,7 @@ torch::Tensor dbl_buf_to_cell_tensor(
 
 torch::Tensor int_buf_to_neighborlist_tensor(
     const GlobalConfig& config,
-    int* neighborlist_buf[2],
+    int neighborlist_buf[],
     long num_neighbors
 ) {
     return int_buf_to_i64_tensor(config, neighborlist_buf, {2, num_neighbors});

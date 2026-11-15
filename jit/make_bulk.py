@@ -13,12 +13,12 @@ if __name__ == "__main__":
     else:
         solute_path = Path(args.solute_path)
         solute = solute_path.read_text().split()
-    wat = Path("./water.charges").read_text().split()
+    wat = (Path(__file__).parent / "water.charges").read_text().split()
     for _ in range(args.num_waters):
         solute.extend(wat)
     if args.num_waters == 2500:
         suffix = "2_5k"
     else:
         suffix = f"{args.num_waters // 1000}k"
-    out_path = Path(f"./{solute_path.stem}-bulk-{suffix}.charges")
+    out_path = Path(__file__).parent / f"{solute_path.stem}-bulk-{suffix}.charges"
     out_path.write_text("\n".join(solute))

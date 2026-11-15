@@ -6,7 +6,7 @@ cmake_minimum_required(
 project(
     Torchani
     LANGUAGES C CXX
-    VERSION 0.5
+    VERSION 0.6
     DESCRIPTION "Fortran, C and C++ interface to execute ANI-Style models built using the TorchANI library"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
@@ -19,94 +19,86 @@ include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Internal modules
-include(Msg)
-include(LinuxBuild)
-include(OutOfSourceBuild)
-include(LibtorchHelper)
-include(PytorchHelper)
-include(CudnnHelper)
-include(CudaToolkitHelper)
-include(TorchScriptUtils)
+include(Torchani_Msg)
+include(Torchani_LinuxBuild)
+include(Torchani_OutOfSourceBuild)
+include(Torchani_LibtorchHelper)
+include(Torchani_PytorchHelper)
+include(Torchani_CudnnHelper)
+include(Torchani_CudaToolkitHelper)
+include(Torchani_TorchScriptUtils)
 
-OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
-LinuxBuild_ensure()  # Fail with fatal error if non-linux
+Torchani_OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
+Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
 
 # General: options and flags
-option(LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
-option(SET_TORCHANI_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs" ON)
-option(COMPILE_WITH_CXX11ABI "Compile binaries with C++11 ABI. Requires 'LINK_TO_PYTORCH_LIBS=OFF'" OFF)
-option(DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract locally to ./external/libtorch<version>-cuda<version>" OFF)
-option(PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
-option(USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
-option(USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
-option(ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
-option(CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
+option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
+option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs" ON)
+option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract locally to ./external/libtorch<version>-cuda<version>" OFF)
+option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
+option(TORCHANI_USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
+option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
+option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
+option(TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
 
 # Exact major.minor versions must match for these
-set(REQUIRED_TORCH_VERSION "2.5" CACHE STRING "Require this version of PyTorch/LibTorch")
-set(REQUIRED_LIBTORCH_PATCH_VERSION "1" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
-set(REQUIRED_CUDATK_VERSION "12.9" CACHE STRING "Require this version of the CUDA Toolkit")
-set(REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
+set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of PyTorch/LibTorch")
+set(TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION "0" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
+set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
+set(TORCHANI_REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
 
 # Validate options
-if(LINK_TO_PYTORCH_LIBS AND DOWNLOAD_AND_INSTALL_LIBTORCH)
-    msg_error("'LINK_TO_PYTORCH_LIBS' is incompatible with 'DOWNLOAD_AND_INSTALL_LIBTORCH'")
+if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
+    Torchani_Msg_error("'TORCHANI_LINK_TO_PYTORCH_LIBS' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
 endif()
 
-if(PREFER_CONDA_LIBS AND (USE_CUSTOM_CUDNN OR USE_CUSTOM_CUDATK))
-    msg_error("'PREFER_CONDA_LIBS' is incompatible with USE_CUSTOM_CUDNN or USE_CUSTOM_CUDATK")
+if(TORCHANI_PREFER_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
+    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
-if(COMPILE_WITH_CXX11ABI AND LINK_TO_PYTORCH_LIBS)
-    msg_error("'LINK_TO_PYTORCH_LIBS=OFF' is needed to compile with the CXX11ABI")
-elseif(NOT COMPILE_WITH_CXX11ABI)
-    msg_banner(
-        "NOTE: All binaries will be compiled *without* the C++11 ABI
-        This means linking to other binaries compiled *with* the C++11 ABI will *not* be possible
-        If you need this, you will need to link to LibTorch instead
-        of PyTorch, to do this reconfigure with the following options:
-        -DLINK_TO_PYTORCH_LIBS=OFF -DCOMPILE_WITH_CXX11ABI=ON -DDOWNLOAD_AND_INSTALL_LIBTORCH=ON"
-    )
+if(TORCHANI_PREFER_CONDA_LIBS AND "$ENV{CONDA_PREFIX}" STREQUAL "")
+    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' requires an active conda env, activate one or reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
 endif()
 
 # Validate compilers
-if(NOT ALLOW_UNSUPPORTED_COMPILERS)
+if(NOT TORCHANI_ALLOW_UNSUPPORTED_COMPILERS)
     set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
     foreach(COMPILER_ID ${COMPILER_IDS})
         if(NOT (COMPILER_ID STREQUAL GNU))
-            msg_error("TorchANI-Interface requires GNU compilers (g++, gcc, gfortran)")
+            Torchani_Msg_error("TorchANI-Interface requires GNU compilers (g++, gcc, gfortran)")
         endif()
     endforeach()
-    set(COMPILER_VERSIONS ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_FORTRAN_COMPILER_VERSION})
+    set(COMPILER_VERSIONS ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_Fortran_COMPILER_VERSION})
     foreach(COMPILER_VERSION ${COMPILER_VERSIONS})
-        if(COMPILER_VERSION VERSION_LESS 11.0 OR COMPILER_VERSION VERSION_GREATER 13.2)
-            msg_error("TorchANI-Interface requires GNU compilers with version >11 and <13.2")
+        if(COMPILER_VERSION VERSION_LESS 11.0 OR COMPILER_VERSION VERSION_GREATER_EQUAL 16.0)
+            Torchani_Msg_error("TorchANI-Interface requires GNU compilers with version >=11 and <16")
         endif()
     endforeach()
 endif()
 
 # JIT: Options and flags
-option(JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
-option(JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
-option(JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
-option(JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
+option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
+option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
+option(TORCHANI_JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
 
 if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
-    if(PREFER_CONDA_LIBS)
-        msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
-        msg_info("Libs will be searched first under this prefix")
-        msg_info("If you don't want this, reconfigure with -DPREFER_CONDA_LIBS=OFF")
+    if(TORCHANI_PREFER_CONDA_LIBS)
+        Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
+        Torchani_Msg_info("Libs will be searched first under this prefix")
+        Torchani_Msg_info("If you don't want this, reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
         list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
         # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
+        # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
         set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
         set(USE_CONDA_CUDNN ON)
         set(USE_CONDA_CUDATK ON)
     else()
-        msg_warn("You seem to be installing inside a conda env but with PREFER_CONDA_LIBS=OFF")
-        msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
+        Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
+        Torchani_Msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
         set(USE_CONDA_CUDNN OFF)
         set(USE_CONDA_CUDATK OFF)
     endif()
@@ -116,189 +108,152 @@ else()
 endif()
 
 # PyTorch/LibTorch setup
-if(LINK_TO_PYTORCH_LIBS)
-    # Detect PyTorch's location using Python directly
-    msg_info("Will try to find and link to an existing PyTorch installation")
-    message(STATUS "Trying to use python to import PyTorch and find its path and specs")
-    # Note that the CUDA and torch versions are M.m.p and the cuDNN is Mmmpp
-    execute_process(
-        COMMAND python cmake/detect_pytorch.py
-        OUTPUT_VARIABLE PYTORCH_SPECS
-        RESULT_VARIABLE PYTORCH_DETECTION_FAILED
+if(TORCHANI_LINK_TO_PYTORCH_LIBS)
+    Torchani_Msg_info("Will try to find and link to an existing PyTorch installation")
+    # Set var PYTORCH_ROOT
+    Torchani_PytorchHelper_detect(
+        CHECK_VERSIONS ${TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS}
+        LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
+        CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
+        CUDNN_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
     )
-    if(PYTORCH_DETECTION_FAILED)
-        msg_error("Could not find a PyTorch installation compiled with CUDA and cuDNN support")
-    else()
-        list(GET PYTORCH_SPECS 0 DETECTED_TORCH_VERSION)
-        list(GET PYTORCH_SPECS 1 DETECTED_CUDATK_VERSION)
-        list(GET PYTORCH_SPECS 2 DETECTED_CUDNN_VERSION)
-        list(GET PYTORCH_SPECS 3 DETECTED_TORCH_ROOT)
-        msg_success("Successfully found a PyTorch installation compiled with CUDA and cuDNN support")
-        message(STATUS "The PyTorch root is ${DETECTED_TORCH_ROOT}")
-        message(STATUS "Validating the detected PyTorch installation")
-        if(CHECK_TORCH_AND_CUDA_VERSIONS)
-            if(NOT DETECTED_TORCH_VERSION STREQUAL REQUIRED_TORCH_VERSION)
-                msg_error("PyTorch version ${DETECTED_TORCH_VERSION} doesn't match required ${REQUIRED_TORCH_VERSION}")
-            else()
-                msg_success("PyTorch version ${DETECTED_TORCH_VERSION} is consistent with required")
-            endif()
-            if(NOT DETECTED_CUDATK_VERSION STREQUAL REQUIRED_CUDATK_VERSION)
-                msg_error("CUDA-Toolkit PyTorch was compiled against version: ${DETECTED_CUDATK_VERSION} doesn't match required ${REQUIRED_CUDATK_VERSION}")
-            else()
-                msg_success("CUDA-Toolkit PyTorch was compiled against version: ${DETECTED_CUDATK_VERSION}, consistent with required")
-            endif()
-            if(NOT DETECTED_CUDNN_VERSION STREQUAL REQUIRED_CUDNN_VERSION)
-                msg_error("cuDNN PyTorch was compiled against version: ${DETECTED_CUDNN_VERSION} which doesn't match required ${REQUIRED_CUDNN_VERSION}")
-            else()
-                msg_success("cuDNN PyTorch was compiled against version: ${DETECTED_CUDNN_VERSION}, consistent with required")
-            endif()
-        endif()
-    endif()
-    # Print banner since currently there are no checks for the presence of the dev
-    # version of the CUDAToolkit libs
-    list(APPEND CMAKE_PREFIX_PATH ${DETECTED_TORCH_ROOT})
-elseif(DOWNLOAD_AND_INSTALL_LIBTORCH)
-    msg_info("Will download and install user-specified LibTorch")
+    list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_ROOT})
+elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
+    Torchani_Msg_info("Will download and install user-specified LibTorch")
     # NOTE: If the requested version already exists it is *not* extracted
     # Set vars LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR
-    LibtorchHelper_download_and_install(
-        CXX11ABI ${COMPILE_WITH_CXX11ABI}
-        LIB_VERSION ${REQUIRED_TORCH_VERSION}
-        PATCH_VERSION ${REQUIRED_LIBTORCH_PATCH_VERSION}
-        CUDATK_VERSION ${REQUIRED_CUDATK_VERSION}
+    Torchani_LibtorchHelper_download_and_install(
+        LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
+        PATCH_VERSION ${TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION}
+        CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
 
 # cuDNN setup
 if(USE_CONDA_CUDNN)
-    msg_info("Will try to use cuDNN from active Conda env if needed")
+    Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    CudnnHelper_set_conda_paths()
-    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
-elseif(USE_CUSTOM_CUDNN)
-    msg_info("Will manually set variables that point to cuDNN")
-    msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
+    Torchani_CudnnHelper_set_conda_paths()
+    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
+elseif(TORCHANI_USE_CUSTOM_CUDNN)
+    Torchani_Msg_info("Will manually set variables that point to cuDNN")
+    Torchani_Msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    CudnnHelper_set_custom_paths(
-        LIB_VERSION ${REQUIRED_CUDNN_VERSION}
-        CUDA_VERSION ${REQUIRED_CUDATK_VERSION}
+    Torchani_CudnnHelper_set_custom_paths(
+        LIB_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
+        CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
     )
-    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_LIBRARY})
+    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
 else()
     # cuDNN may be directly extracted into the CUDA Toolkit dir,
     # if a user has done this then they don't need to specify an external version
-    msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
+    Torchani_Msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
 endif()
 
 # CUDA Toolkit setup
 if(USE_CONDA_CUDATK)
-    msg_info("Will try to use CUDA Toolkit from the active Conda env")
+    Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    CudaToolkitHelper_set_conda_paths()
-    msg_banner(
-        "TorchANI requires CUDA Toolkit dev version, which is *not* bundled with PyTorch,
-        and is *not* contained in the conda 'nvidia::cudatoolkit' package.
+    Torchani_CudaToolkitHelper_set_conda_paths()
+    Torchani_Msg_banner(
+        "TorchANI requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
         At this stage of the configuration, we don't check whether all necessary CUDA
         Toolkit features are present.
         Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
         ensure this, for example, use the provided conda env, which has all
         dependencies, or directly download and install the CUDA Toolkit
-        ${REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
+        ${TORCHANI_REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
         after this point may indicate you are missing a required part of the Toolkit."
     )
-elseif(USE_CUSTOM_CUDATK)
-    msg_info("Will manually set variables that point to the CUDA Toolkit")
-    msg_info("assuming it is located in /usr/local/cuda-<version>")
+elseif(TORCHANI_USE_CUSTOM_CUDATK)
+    Torchani_Msg_info("Will manually set variables that point to the CUDA Toolkit")
+    Torchani_Msg_info("assuming it is located in /usr/local/cuda-<version>")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${REQUIRED_CUDATK_VERSION})
+    Torchani_CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION})
 else()
-    msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
+    Torchani_Msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
     set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 endif()
+enable_language(CUDA)
 
-# TODO: Disabling JIT optimizations during scripting probably does nothing
-if(JIT_COMPILE_MODELS)
-    msg_info("Will attempt to JIT-compile ANI models")
-    TorchScriptUtils_jit_compile_models(
-        FORCE_RECOMPILATION ${JIT_FORCE_RECOMPILATION}
-        DISABLE_OPTIMIZATIONS ${JIT_DISABLE_OPTIMIZATIONS}
-        AIMNET2 ${JIT_COMPILE_AIMNET2}
-    )
-else()
-    msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
-endif()
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
 # LibTorch is a required dep
-# Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS, TORCH_CXX_FLAGS
-find_package(Torch ${REQUIRED_TORCH_VERSION} REQUIRED)
-
-# The cuAEV extension lib is a required dep, and needs the Python headers and libraries
-# Set Python_LIBRARIES, Python_INCLUDE_DIRS
-find_package(Python REQUIRED COMPONENTS Interpreter Development)
+# Set TORCH_FOUND, TORCH_LIBRARIES, TORCH_INCLUDE_DIRS
+Torchani_Msg_banner(
+    "CMake warnings about 'kineto not being found', or 'CMAKE_CUDA_ARCHITECTURES being
+    incompatible with pytorch' are safe to ignore. Other warnings should not be ignored."
+)
+find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
 # Build both libcuaev, libcell_list, and libtorchani
-set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
 add_library(
-    cell_list
+    torchani_cell_list
     SHARED
     "${CELL_ROOT}/cell_list.cpp"
 )
-target_compile_features(cell_list PRIVATE cxx_std_17)
-target_compile_options(
-    cell_list
-    PRIVATE
-        $<$<CONFIG:Debug>:"-g">
-)
-if(PREFER_CONDA_LIBS)
-    target_link_directories(cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
+target_compile_features(torchani_cell_list PRIVATE cxx_std_17)
+if(TORCHANI_PREFER_CONDA_LIBS)
+    target_link_directories(torchani_cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(cell_list PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
-target_include_directories(cell_list PRIVATE ${CELL_ROOT} ${Python_INCLUDE_DIRS})
+target_link_libraries(torchani_cell_list PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(torchani_cell_list PRIVATE ${CELL_ROOT})
 
-set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani_sandbox/torchani/csrc")
+set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
 add_library(
-    cuaev
+    torchani_cuaev
     SHARED
     "${CUAEV_ROOT}/cuaev.cpp"
     "${CUAEV_ROOT}/aev.cu"
+    "${CUAEV_ROOT}/aev_cpu.cpp"
     "${CUAEV_ROOT}/aev.h"
     "${CUAEV_ROOT}/cuaev_cub.cuh"
 )
-target_compile_features(cuaev PRIVATE cxx_std_17)
+target_compile_features(torchani_cuaev PRIVATE cxx_std_17)
 # TORCHANI_OPT and "-use_fast_math" make calculations faster in libcuaev.so.
 # TORCHANI_OPT commands libcuaev to use cuda intrinsics for cos, sin, etc.
 # "-use_fast_math" commands nvcc to use the fast math library
 # The wrapped cub namespace flags are needed to safely use cub:
 # https://github.com/pytorch/pytorch/pull/55292
 # https://github.com/pytorch/pytorch/pull/66219
+# TODO: CUB_NS_* are deprecated in CCCL in favor of CUB_WRAPPED_NAMESPACE
 set(CUAEV_CUB_NAMESPACE_DEFS "CUB_NS_QUALIFIER=::cuaev::cub" "CUB_NS_PREFIX=namespace cuaev {" "CUB_NS_POSTFIX=}")
 target_compile_definitions(
-    cuaev
-    PUBLIC ${TORCH_CXX_FLAGS}
+    torchani_cuaev
     PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:TORCHANI_OPT>
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
-target_compile_options(
-    cuaev
-    PRIVATE
-        $<$<CONFIG:Debug>:"-g">
-        $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>
-)
-if(PREFER_CONDA_LIBS)
-    target_link_directories(cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
+target_compile_options(torchani_cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
+if(TORCHANI_PREFER_CONDA_LIBS)
+    target_link_directories(torchani_cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(cuaev PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES})
-target_include_directories(cuaev PRIVATE ${CUAEV_ROOT} ${Python_INCLUDE_DIRS})
+target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
+
+# The extensions are named as the TorchANI Python package expects them (cuaev.so,
+# cell_list.so). If they are built against PyTorch, they are placed inside the
+# TorchANI Python package, so that they are loaded by "import torchani", and they don't
+# need to be built a second time by pip or "ani build-extensions"
+set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
+set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
+set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
+if(TORCHANI_LINK_TO_PYTORCH_LIBS)
+    set_target_properties(
+        torchani_cuaev
+        torchani_cell_list
+        PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani"
+    )
+endif()
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
 target_compile_options(
     torchani
     PRIVATE
-        $<$<CONFIG:Debug>:"-g">
         -pedantic
         -Wall
         -Wextra
@@ -314,22 +269,31 @@ target_compile_options(
 target_compile_features(torchani PRIVATE cxx_std_17)
 target_compile_definitions(
     torchani
-        PUBLIC ${TORCH_CXX_FLAGS}
-        PRIVATE
-            $<$<CONFIG:Debug>:"DEBUG">
-            $<$<CONFIG:Debug>:"TIMING">
+    PRIVATE
+        $<$<CONFIG:Debug>:DEBUG>
+        $<$<CONFIG:Debug>:TIMING>
 )
-# TODO: cuAEV needs to be force-loaded due to an internal limitation of Torch extensions
-# I'm not sure why, when linking to libtorch instead of PyTorch, --no-as-needed is also
-# required
-target_link_options(torchani PRIVATE LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cuaev> LINKER:--no-as-needed LINKER:-force_load,$<TARGET_FILE:cell_list>)
-if(PREFER_CONDA_LIBS)
+# cuaev and cell_list must stay in DT_NEEDED even though libtorchani references none of
+# their symbols: loading them is what registers their Torch ops. --no-as-needed is
+# scoped to these two libs since conda's LDFLAGS append a global --as-needed
+set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED
+    "LINKER:--push-state,--no-as-needed"
+    "<LINK_ITEM>"
+    "LINKER:--pop-state"
+)
+set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED_SUPPORTED TRUE)
+if(TORCHANI_PREFER_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} cuaev cell_list)
+target_link_libraries(
+    torchani
+    PRIVATE
+        ${TORCH_LIBRARIES}
+        "$<LINK_LIBRARY:NO_AS_NEEDED,torchani_cuaev,torchani_cell_list>"
+)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
-# For libcuaev, libcell_list and libtorchani, the install RPATH is set by default to be
+# For cuaev, cell_list and libtorchani, the install RPATH is set by default to be
 # the same as the link path to avoid issues if the correct CUDA is not
 # installed system-wide. If this is not done then CMake tries to re-link the
 # binaries at install-time, and prefers the system CUDA, which may be bad. In addition,
@@ -344,20 +308,25 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # since the CUDA driver is unrelated to the CUDA Toolkit, but I'm documenting
 # it here for completeness.
 #
-if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
+# INSTALL_RPATH_USE_LINK_PATH bakes the linked library paths from *outside* this project
+# into the install rpath of the targets (it doesn't bake the lib paths *inside* the
+# project). The link paths inside the project are baked in manually
+# (LIBTORCH_LIBRARY_DIR and the Torchani installation dir, which is $ORIGIN).
+# NOTE: INSTALL_RPATH_USE_LINK_PATH also adds /lib/intel64, /lib/intel64_win and
+# /lib/win-x64, derived from TORCH_LIBRARIES. These don't exist, but this is harmless
+if(TORCHANI_SET_LIBRARIES_INSTALL_RPATH)
     set(TORCHANI_LIBRARIES_INSTALL_RPATH
         ${LIBTORCH_LIBRARY_DIR}
-        ${CUDA_TOOLKIT_ROOT_DIR}
-        ${CMAKE_INSTALL_FULL_LIBDIR}/Torchani
+        "$ORIGIN"
     )
     set_target_properties(
-        cuaev
+        torchani_cuaev
         PROPERTIES
             INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
             INSTALL_RPATH_USE_LINK_PATH TRUE
     )
     set_target_properties(
-        cell_list
+        torchani_cell_list
         PROPERTIES
             INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
             INSTALL_RPATH_USE_LINK_PATH TRUE
@@ -370,43 +339,54 @@ if(SET_TORCHANI_LIBRARIES_INSTALL_RPATH)
     )
 endif()
 
-# Build Catch2 subproject (unit test framework) and Torchani unit tests
-#
-# NOTE:
-# Catch2 needs to be compiled with the same GLIBCXX_ABI as torch. Manually adding
-# public "target_compile_options" to the Catch2 liberaries is the dirty way I found to
-# do this. There may be a better way, but I'm not sure how to otherwise propagate these
-# flags to the subproject.
-#
-# Also, note that flags can't be set on alias targets (such as Catch2::Catch2WithMain),
-# they have to be set on "Catch2WithMain" directly, and they have to be set on both,
-# "Catch2" and "Catch2WithMain", since CMake doesn't propagate the flags between these
-# libraries either.
-include(CTest)
-set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
-add_subdirectory(${CATCH2_ROOT})
-target_compile_definitions(Catch2WithMain PUBLIC ${TORCH_CXX_FLAGS})
-target_compile_definitions(Catch2 PUBLIC ${TORCH_CXX_FLAGS})
-# Make Catch2 provided cmake-modules available
-list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
-include(Catch)
+# The models are JIT-compiled after the extensions are built, since scripting them
+# requires the cuAEV ops to be registered
+# NOTE: Disabling JIT optimizations during scripting has been confirmed to be a no-op
+# (the saved *.pt files are identical), since these flags only affect how torch *runs*
+# TorchScript graphs, not how it scripts or serializes them
+# TODO: Remove this in the future
+if(TORCHANI_JIT_COMPILE_MODELS)
+    Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
+    Torchani_TorchScriptUtils_add_jit_compile_models_target(
+        FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
+        DISABLE_OPTIMIZATIONS ${TORCHANI_JIT_DISABLE_OPTIMIZATIONS}
+        AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
+    )
+    add_dependencies(torchani_jit_compile_models torchani_cuaev torchani_cell_list)
+else()
+    Torchani_Msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
+endif()
 
-add_executable(tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-target_compile_definitions(tests PUBLIC ${TORCH_CXX_FLAGS})
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain torchani)
-catch_discover_tests(tests)
+# Build Catch2 subproject (unit test framework) and Torchani unit tests
+include(CTest)
+if(BUILD_TESTING)
+    set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
+    add_subdirectory(${CATCH2_ROOT})
+    # Make Catch2 provided cmake-modules available
+    list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
+    include(Catch)
+
+    add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
+    target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+    target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
+    catch_discover_tests(torchani_tests)
+endif()
+
+# Same names as the exported targets, for consumers that use add_subdirectory
+add_library(${PROJECT_NAME}::torchani ALIAS torchani)
+add_library(${PROJECT_NAME}::cuaev ALIAS torchani_cuaev)
+add_library(${PROJECT_NAME}::cell_list ALIAS torchani_cell_list)
 
 # Create and install files for discovery and config by downstream pkgs
 # - pkg-config-file: <Pkg>Config.cmake
 # - pkg-ver-file: <Pkg>ConfigVersion.cmake
-set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
+set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
 write_basic_package_version_file(
     "${PKG_VERSION_FILE_BLDTREE_PATH}"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
 )
-set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
 
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
 set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
@@ -415,7 +395,7 @@ set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
 set(LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
 set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
 configure_package_config_file(
-    "${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
     "${PKG_CONFIG_FILE_BLDTREE_PATH}"
     INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
     PATH_VARS
@@ -446,8 +426,8 @@ install(
 install(
     TARGETS
         torchani
-        cuaev
-        cell_list
+        torchani_cuaev
+        torchani_cell_list
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
         DESTINATION "${LIBRARY_INSTALL_DIR}"
@@ -455,14 +435,14 @@ install(
 # Install C-interface include file
 install(
     FILES
-        "${CMAKE_SOURCE_DIR}/include/torchani.h"
+        "${CMAKE_CURRENT_LIST_DIR}/include/torchani.h"
     DESTINATION "${INCLUDE_INSTALL_DIR}"
 )
 
 # Install module file necessary for a portable fortran interface
 install(
     FILES
-        "${CMAKE_SOURCE_DIR}/src-fortran/torchani.F90"
+        "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
     DESTINATION "${DATA_INSTALL_DIR}/Fortran"
 )
 # TODO Add model.jit.pt files

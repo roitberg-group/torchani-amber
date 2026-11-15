@@ -2,7 +2,6 @@ import dataclasses
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-import typing_extensions as tpx
 import typing as tp
 
 import ase
@@ -38,8 +37,8 @@ except (ImportError, OSError):
 @dataclasses.dataclass
 class AimNetArgs:
     method_lr: str
-    cutoff_lr: tp.Optional[float] = None
-    dsf_alpha: tp.Optional[float] = None
+    cutoff_lr: float | None = None
+    dsf_alpha: float | None = None
     output_hartree: bool = True
 
     @property
@@ -55,9 +54,9 @@ class AimNet2Wrapper(torch.nn.Module):
     def __init__(
         self,
         model: Module,
-        method_lr: tp.Optional[str] = None,
-        cutoff_lr: tp.Optional[float] = None,
-        dsf_alpha: tp.Optional[float] = None,
+        method_lr: str | None = None,
+        cutoff_lr: float | None = None,
+        dsf_alpha: float | None = None,
         output_hartree: bool = True,
     ) -> None:
         super().__init__()
@@ -98,7 +97,7 @@ class AimNet2Wrapper(torch.nn.Module):
         self._model = model
         self._nlist = AdaptiveList().to(device=device, dtype=dtype)
         if cutoff_lr < model.cutoff:
-            raise ValueError("cutoff_lr must be < cutoff")
+            raise ValueError("cutoff_lr must be >= cutoff")
         self._cutoff = model.cutoff
         self._cutoff_lr = cutoff_lr
         self._factor = 1.0 / HARTREE_TO_EV if output_hartree else 1.0
@@ -106,26 +105,26 @@ class AimNet2Wrapper(torch.nn.Module):
     @classmethod
     def from_jit_file(
         cls,
-        path: tp.Union[Path, str],
+        path: Path | str,
         device: str = "cpu",
-        method_lr: tp.Optional[str] = None,
-        cutoff_lr: tp.Optional[float] = None,
-        dsf_alpha: tp.Optional[float] = None,
+        method_lr: str | None = None,
+        cutoff_lr: float | None = None,
+        dsf_alpha: float | None = None,
         output_hartree: bool = True,
-    ) -> tpx.Self:
+    ) -> tp.Self:
         path = Path(path)
         model = torch.jit.load(path, map_location=device)
         return cls(model, method_lr, cutoff_lr, dsf_alpha, output_hartree)
 
     def forward(
         self,
-        species_coords: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
+        species_coords: tuple[Tensor, Tensor],
+        cell: Tensor | None = None,
+        pbc: Tensor | None = None,
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: tp.Optional[Tensor] = None,
+        _molecule_idxs: Tensor | None = None,
     ) -> SpeciesEnergiesAtomicCharges:
         species, coords = species_coords
         neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
@@ -146,8 +145,8 @@ class AimNet2Wrapper(torch.nn.Module):
         species: Tensor,
         coords: Tensor,
         neighbors_lr: Neighbors,
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
+        cell: Tensor | None = None,
+        pbc: Tensor | None = None,
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
@@ -155,7 +154,7 @@ class AimNet2Wrapper(torch.nn.Module):
 
         neigh = discard_outside_cutoff(neighbors_lr, self._cutoff)
         atoms_num = coords.shape[1]
-        data: tp.Dict[str, Tensor] = {
+        data: dict[str, Tensor] = {
             "mol_idx": coords.new_zeros(atoms_num + 1),
             "numbers": self.pad_dim0(species.squeeze(0)).long(),
             "charge": torch.tensor([charge], dtype=coords.dtype, device=coords.device),
@@ -202,7 +201,7 @@ class AimNet2Wrapper(torch.nn.Module):
 
     def _sparse_to_dense_pbc(
         self, coords: Tensor, neighbors: Neighbors, inv_cell: Tensor
-    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         atoms_num = coords.shape[1]
         shift_idxs = torch.round(reconstruct_shifts(coords, neighbors) @ inv_cell)
         dense_nb, sort_idxs, mask, max_neigh = self._sparse_to_dense(
@@ -215,7 +214,7 @@ class AimNet2Wrapper(torch.nn.Module):
 
     def _sparse_to_dense(
         self, idx: Tensor, atoms_num: int
-    ) -> tp.Tuple[Tensor, Tensor, Tensor, int]:
+    ) -> tuple[Tensor, Tensor, Tensor, int]:
         num_neighbors = torch.bincount(idx.view(-1), minlength=atoms_num + 1)
         max_neigh = int(num_neighbors.max().item())
         mask = (
@@ -233,9 +232,9 @@ class AimNet2Wrapper(torch.nn.Module):
         self,
         species: Tensor,
         coords: Tensor,
-        cell: tp.Optional[Tensor],
-        pbc: tp.Optional[Tensor],
-        _molecule_idxs: tp.Optional[Tensor],
+        cell: Tensor | None,
+        pbc: Tensor | None,
+        _molecule_idxs: Tensor | None,
     ) -> Neighbors:
         # Neighborlist is "complete" (duplicated)
         # edge_attrs is None for these models
@@ -267,9 +266,9 @@ class AimNet2Mbis(AimNet2Wrapper):
     def __init__(
         self,
         model: Module,
-        method_lr: tp.Optional[str] = None,
-        cutoff_lr: tp.Optional[float] = None,
-        dsf_alpha: tp.Optional[float] = None,
+        method_lr: str | None = None,
+        cutoff_lr: float | None = None,
+        dsf_alpha: float | None = None,
         output_hartree: bool = True,
         strategy: str = "pyaev",
     ) -> None:
@@ -309,13 +308,13 @@ class AimNet2Mbis(AimNet2Wrapper):
 
     def forward(
         self,
-        species_coords: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
+        species_coords: tuple[Tensor, Tensor],
+        cell: Tensor | None = None,
+        pbc: Tensor | None = None,
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: tp.Optional[Tensor] = None,
+        _molecule_idxs: Tensor | None = None,
     ) -> SpeciesEnergiesAtomicCharges:
         species, coords = species_coords
         neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
@@ -349,7 +348,7 @@ class AimNet2Mbis(AimNet2Wrapper):
 
 
 # Utility function useful for debugging and comparing with the input of AimNet
-def sort_model_inputs(inputs: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
+def sort_model_inputs(inputs: dict[str, Tensor]) -> dict[str, Tensor]:
     if "shifts" not in inputs:
         return inputs
     for suffix in ("", "_lr"):
