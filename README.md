@@ -89,12 +89,12 @@ described next. Other procedures may work, but are untested. GCC >= 12.2 is requ
 3. Install TorchANI (python), together with its compiled extensions
     If you have access to a GPU and you want to install only for that GPU:
     ```bash
-    TORCHANI_BUILD_EXT=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani_sandbox
+    TORCHANI_BUILD_EXT=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani
     ```
     If you don't have access to a GPU currently (e.g. you are compiling in a node
     without a GPU and you want to afterwards run in a node with a GPU) you can do:
     ```bash
-    TORCHANI_BUILD_ALL_SMS=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani_sandbox
+    TORCHANI_BUILD_ALL_SMS=1 pip install --no-deps --no-build-isolation -v -e ./submodules/torchani
     ```
     to build for all possible GPUs (it will take significantly longer)
 

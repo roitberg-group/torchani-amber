@@ -2,7 +2,6 @@ import dataclasses
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-import typing_extensions as tpx
 import typing as tp
 
 import ase
@@ -112,7 +111,7 @@ class AimNet2Wrapper(torch.nn.Module):
         cutoff_lr: tp.Optional[float] = None,
         dsf_alpha: tp.Optional[float] = None,
         output_hartree: bool = True,
-    ) -> tpx.Self:
+    ) -> tp.Self:
         path = Path(path)
         model = torch.jit.load(path, map_location=device)
         return cls(model, method_lr, cutoff_lr, dsf_alpha, output_hartree)

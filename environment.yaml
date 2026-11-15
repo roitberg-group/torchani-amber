@@ -5,10 +5,9 @@ channels:
   - https://conda.anaconda.org/conda-forge
 dependencies:
   ## Required dependencies to run TorchANI ##
-  - python=3.11
-  - conda-forge::pip>=24.0
+  - conda-forge::python=3.11
+  - conda-forge::pip>=26.0
   - conda-forge::numpy=1.26  # This is required by netcdf-fortran=4.6.1=mpi_openmpi_...
-  - conda-forge::typing_extensions>=4.0.0
   - conda-forge::h5py  # HDF5 backend for datasets
   - conda-forge::tqdm  # progress bar util
   - conda-forge::typer  # CLI support
@@ -35,31 +34,30 @@ dependencies:
   # NetCDF-fortran *requires* numpy 1.26 (!) only if compiled with mpi_openmpi
   - conda-forge::netcdf-fortran=4.6.1=mpi_openmpi_hc2a85ae_1  # For Sander / Pmemd
   - conda-forge::openmpi=4.1.6  # For MNP, Sander-MPI, and Pmemd-MPI
-  - conda-forge::ucx=1.18  # For openmpi
+  - conda-forge::ucx=1.20  # For openmpi
 
   ## Running torchani-amber/tests ##
   - conda-forge::netcdf4
   ## Running torchani/tests ##
-  - black  # formatter
-  - flake8  # linter
-  - mypy  # type checking
-  - pytest  # tests runner
-  - pre_commit  # run pre commit hooks
-  - parameterized  # parametrize test classes
-  - expecttest  # indirect dependency of torch.testing
+  - conda-forge::black  # formatter
+  - conda-forge::flake8  # linter
+  - conda-forge::mypy  # type checking
+  - conda-forge::pytest  # tests runner
+  - conda-forge::pre_commit  # run pre commit hooks
+  - conda-forge::parameterized  # parametrize test classes
+  - conda-forge::expecttest  # indirect dependency of torch.testing
   # Extra data backends for tests:
-  - pandas  # Parquet backend
-  - pyarrow  # Parquet backend
+  - conda-forge::pandas  # Parquet backend
+  - conda-forge::pyarrow  # Parquet backend
   ## Running scripts in torchani/tools ##
-  - jinja2  # Templating engine to build generated code and docs
+  - conda-forge::jinja2  # Templating engine to build generated code and docs
 
   # TorchANI-Amber specific
   - conda-forge::cmake=3.31.1
   - conda-forge::tinydb
   - conda-forge::pyyaml
-  - nvidia::cuda-toolkit=12.9
-  # Use torch 2.8 since 2.7 has a bug with nvtx that has to be manually patched
+  - nvidia::cuda-toolkit=13.0
   - pip:
-    - --index-url https://download.pytorch.org/whl/cu129
+    - --index-url https://download.pytorch.org/whl/cu130
     - --extra-index-url https://pypi.python.org/simple
-    - torch==2.8.*
+    - torch==2.13.*
