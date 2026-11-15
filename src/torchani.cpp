@@ -1085,8 +1085,11 @@ void torchani_calc_data_for_monitored_mlmm(
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor ensemble_energy = fetch_energies_from_output(output);
-    // Squeeze ensemble dimension from atomic charges
-    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output).squeeze(0);
+    // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms)
+    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
+    if (atomic_charges.dim() == 3) {
+        atomic_charges = atomic_charges.squeeze(0);
+    }
     torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
     torch::Tensor energy = ensemble_energy.mean(0);
 

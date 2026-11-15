@@ -34,6 +34,6 @@ RUN \
     && git tag -a "v3.0-dev" -m "Version v3.0-dev"
 
 # Install torchani + core requirements + extensions
-RUN pip install --no-build-isolation --config-settings=--global-option=ext-all-sms -v -e ./submodules/torchani_sandbox
+RUN pip install --no-build-isolation --config-settings=--global-option=ext-all-sms -v -e ./submodules/torchani
 # Install ani-amber and run tests
 RUN ./run-cmake.sh -I
