@@ -1,5 +1,6 @@
+#pragma once
+
 #include <torch/all.h>
-#include <torch/script.h>
 
 namespace electro {
 auto polarizable_embedding_energy(
