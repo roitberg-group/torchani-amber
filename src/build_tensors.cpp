@@ -1,8 +1,10 @@
 #include "build_tensors.h"
-#include "config.h"
 
 #include <vector>
+
 #include <torch/script.h>
+
+#include "config.h"
 
 // Torch needs as an input a TensorDataContainer to the
 // torch::tensor constructor. The TensorDataContainer supports an initializer

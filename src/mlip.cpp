@@ -2,12 +2,12 @@
 
 #include <cstdint>
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <c10/util/Logging.h>
 #include <torch/all.h>
 #include <torch/script.h>
 
@@ -33,9 +33,7 @@ auto MlipModel::cast_float_tensors(torch::ScalarType dtype) -> void {
             t.set_data(t.to(dtype));
         }
     }
-#ifdef DEBUG
-    std::cout << "Cast model to the specified precision" << '\n';
-#endif
+    LOG(INFO) << "Cast MLIP model to the specified precision.";
 }
 
 auto MlipModel::use_only_ensemble_member(std::int64_t member_idx) -> void {

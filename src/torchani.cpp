@@ -1,13 +1,5 @@
-#include <torch/all.h>
 #include <torchani.h>
-#include "config.h"
-#include "electro.h"
-#include "build_tensors.h"
-#include "mlip.h"
 
-#ifdef TIMING
-#include <chrono>
-#endif
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -15,15 +7,23 @@
 #include <tuple>
 #include <vector>
 
-#include <torch/csrc/jit/runtime/graph_executor.h>
+#include <c10/util/Logging.h>
+#include <torch/all.h>
 #include <torch/csrc/autograd/autograd.h>  // For forces
+#include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/script.h>
+
+#include "build_tensors.h"
+#include "config.h"
+#include "electro.h"
+#include "mlip.h"
+#include "timing.h"
 
 // Globals:
 namespace {
 // Default device is CPU, and default kind is Float32
 GlobalConfig config{};
-MlipModel model;
+MlipModel model{};
 torch::Tensor torchani_atomic_numbers;
 torch::Tensor torchani_do_eval_atoms_mask;
 torch::Tensor torchani_do_eval_idxs;
@@ -522,9 +522,7 @@ void torchani_initialize(
         } else {
             jit_model_path = jit_models_dir + "/" + jit_model_fname;
         }
-#ifdef DEBUG
-        std::cout << "jit_model_fname: " << jit_model_fname << '\n';
-#endif
+        LOG(INFO) << "MLIP Model file name: " << jit_model_fname;
     } else {
         // Assume the path has been passed directly
         jit_model_path = model_type_str;
@@ -551,9 +549,7 @@ void torchani_initialize(
     config.set_no_eval_atoms(use_no_eval_atoms);
     torchani_do_eval_atoms_mask = ~no_eval_atoms_mask;
     torchani_do_eval_idxs = torchani_do_eval_atoms_mask.nonzero().view({-1});
-#ifdef DEBUG
-    std::cout << "jit_model_path: " << jit_model_path << '\n';
-#endif
+    LOG(INFO) << "MLIP Model full path: " << jit_model_path;
     torchani_atomic_numbers = torchani_atomic_numbers.to(config.device());
     torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
     // This is necessary since torch has to use this tensor to index internally,
@@ -561,25 +557,17 @@ void torchani_initialize(
     // to be performed.
     // Also, torchani needs an extra dimension as batch dimension
     torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
-#ifdef DEBUG
-    std::cout << "Initialized torchani with atomic numbers:" << '\n';
-    std::cout << torchani_atomic_numbers << '\n';
-#endif
+    LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << torchani_atomic_numbers;
     // Discard unused idxs
     torchani_atomic_numbers = torchani_atomic_numbers.index_select(1, {torchani_do_eval_idxs});
-#ifdef DEBUG
-    std::cout << "After discarding unused atoms:" << '\n';
-    std::cout << torchani_atomic_numbers << '\n';
-#endif
+    LOG(INFO) << "After discarding unused atoms, atomic numbers are:\n" << torchani_atomic_numbers;
 
     // Disable TF32 and FP16 for accuracy
     torch::jit::setGraphExecutorOptimize(false);
     torch::globalContext().setAllowTF32CuBLAS(false);
     torch::globalContext().setAllowTF32CuDNN(false);
     torch::globalContext().setAllowFP16ReductionCuBLAS(false);
-#ifdef DEBUG
-    std::cout << "Disabled JIT optimizations" << '\n';
-#endif
+    LOG(INFO) << "Disabled TorchScript optimizations (TF32 cuBLAS and cuDNN, no executor optimize, no FP16 reduction in cuBLAS)";
 
     // The model is loaded from a JIT compiled file always.
     try {
@@ -639,10 +627,7 @@ void torchani_initialize(
             std::exit(2);
         }
     }
-#ifdef DEBUG
-    std::cout << "Loaded MLIP model" << '\n';
-    std::cout << "Finalized TorchANI Initialization" << '\n';
-#endif
+    LOG(INFO) << "Loaded MLIP model. Finished TorchANI-Amber MLIP initialization";
 }
 
 void torchani_calc_energy_force_from_external_neighbors(
@@ -658,9 +643,7 @@ void torchani_calc_energy_force_from_external_neighbors(
     double forces_buf[][3],
     double* potential_energy_buf
 ) {
-#ifdef TIMING
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
+    ScopedTimer timer{"energy force external neighbors"};
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     torch::Tensor shifts = dbl_buf_to_shifts_tensor(config, shifts_buf, num_neighbors);
     torch::Tensor neighborlist =
@@ -722,14 +705,6 @@ void torchani_calc_energy_force_from_external_neighbors(
                   << "https://github.com/roitberg-group/torchani-amber" << std::endl;
         std::exit(2);
     }
-#ifdef TIMING
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::cout
-        << "TORCHANI-AMBER: energy force external neighbors time: "
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() /
-            1000.0
-        << "ms" << std::endl;
-#endif
 }
 
 void torchani_calc_energy_force(
@@ -743,9 +718,7 @@ void torchani_calc_energy_force(
     double forces_buf[][3],
     double* potential_energy
 ) {
-#ifdef TIMING
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
+    ScopedTimer timer{"energy force"};
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
     torch::Tensor molecule_idxs =
@@ -781,14 +754,6 @@ void torchani_calc_energy_force(
     torch::Tensor energy = fetch_energies_from_output(output);
     calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
     populate_potential_energy(energy, potential_energy);
-#ifdef TIMING
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::cout
-        << "TORCHANI-AMBER: energy force time: "
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() /
-            1000.0
-        << "ms" << std::endl;
-#endif
 }
 
 void torchani_energy_force_atomic_charges(
