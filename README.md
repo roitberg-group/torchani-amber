@@ -147,7 +147,7 @@ Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
 
 To use TorchANI-Amber to run full-ML simulations, you need three different
 namelists in your input file:
-- The usual `&cntrl` namelist, which *must have* the flag `iextpot = 1`, together
+- The usual `&cntrl` namelist, which *must have* the flag `iextpot = 2`, together
   with the usual simulation configuration.
 - Second, the `&extpot` namelist, with the only setting `extprog = 'TORCHANI'`.
 - Third, the `&ani` namelist, with the actual `TorchANI` configuration.
@@ -156,7 +156,7 @@ The `&ani` namelist supports the following basic options:
 - `model_type` (*string*)
    The neural network to choose. Possible values are `"ani1x"`, `"ani1ccx"`, `"ani2x"`,
    `anidr`. For usage of custom models see section *Support for custom
-   models*. Default is `"ani1x"` (case sensitive).
+   models*. Default is `"ani2x"` (case sensitive).
 - `use_double_precision` (*bool*)
    Determines whether the network runs using float64 parameters. Defaults to `.true.` We
    recommend this setting for accurate dynamics.
@@ -171,6 +171,9 @@ There are also some advanced options:
    Whether to use the cuAEV cuda extension to accelerate potentials that support it.
 - `use_amber_neighborlist` (*bool*)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
+- `use_all_amber_nonbond` (*bool*)
+   Whether to let Sander handle all inter-molecular non-bonded interactions. See
+   section *Amber-NB configuration*. Default is `.false.`.
 - `model_index` (*int*)
    Select a specific model (0-indexed) from a model ensemble. The default is to use the
    whole ensemble (set to -1). We recommend you do *not* set this flag unless you know
@@ -185,7 +188,7 @@ An example `mdin` input file with the correct format:
 
 ```
 &cntrl
-    iextpot = 1 ! Required to run full-ML TorchANI-Amber
+    iextpot = 2  ! Required to run full-ML TorchANI-Amber
     ! ... Add the rest of the Sander options here
 /
 &extpot
@@ -200,13 +203,47 @@ An example `mdin` input file with the correct format:
 /
 ```
 
+## Amber-NB configuration
+
+In the Amber-NB configuration, the NN-IP only calculates the *intra-molecular*
+interactions, and all *inter-molecular* non-bonded interactions (van der Waals and PME
+electrostatics) are calculated by the force field. Molecules are defined by the
+`ATOMS_PER_MOLECULE` section of the topology file. This configuration is useful, for
+example, for memory-hungry models, or for offloading long range interactions to the FF.
+
+To use it, set `use_all_amber_nonbond = .true.` in the `&ani` namelist of a full-ML
+input. The other namelists stay the same.
+Pmemd is (currently) not supported for this configuration. Periodic boundary conditions
+(`igb = 0`) are required.
+
+An example `mdin` input file for the Amber-NB configuration:
+
+```
+&cntrl
+    iextpot = 2  ! Required to run full-ML TorchANI-Amber
+    cut = 8.0  ! Cutoff for the inter-molecular FF non-bonded interactions
+    ! ... Add the rest of the Sander options here
+/
+&extpot
+    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
+/
+&ani
+    model_type = "ani2x"
+    use_all_amber_nonbond = .true.  ! Required for the Amber-NB configuration
+    use_double_precision = .true.
+    use_cuda_device = .true.
+    use_cuaev = .true.
+    ! ... Add the rest of the TorchANI-Amber config options here
+/
+```
+
 ## Usage of the interface for ML/MM
 
 TorchANI-Amber is also integrated with the QM/MM Sander subsystem, which means you can
 perform ML/MM simulations with it. Sander is *required* for this, Pmemd is not
 supported.
 
-If you want to run this kind of dynamics, **instead** of setting `iextpot = 1` and
+If you want to run this kind of dynamics, **instead** of setting `iextpot = 2` and
 including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
 namelist.
 
