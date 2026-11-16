@@ -1,17 +1,19 @@
-#include "catch2/matchers/catch_matchers_floating_point.hpp"
-#include <tuple>
+#include <torchani.h>
+
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
-#include <vector>
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <cstdlib>
+#include <tuple>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators_all.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
-#include <torchani.h>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
 // Default tolerances are:
 // 4.5e-6 rel, 3.5e-5 abs for float32 (x3 than torch, needed for ensembles)
 // 1e-7 rel, 1e-7 abs for float64 (same as torch)

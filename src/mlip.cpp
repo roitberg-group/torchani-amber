@@ -7,11 +7,16 @@
 #include <utility>
 #include <vector>
 
+#include <c10/util/Logging.h>
 #include <torch/all.h>
 #include <torch/script.h>
 
-MlipModel::MlipModel(const std::string& path, torch::Device device)
-    : m_module{torch::jit::load(path, device)} {}
+MlipModel::MlipModel(
+    const std::string& path, torch::Device device, torch::ScalarType dtype
+)
+    : m_module{torch::jit::load(path, device)} {
+    cast_float_tensors(dtype);
+}
 
 // NOTE: Unfortunately, due to a strange LibTorch design choice, Module::to() converts
 // *all params and bufs* to the dtype, not only the float tensors like the Python API.
@@ -28,6 +33,7 @@ auto MlipModel::cast_float_tensors(torch::ScalarType dtype) -> void {
             t.set_data(t.to(dtype));
         }
     }
+    LOG(INFO) << "Cast MLIP model to the specified precision.";
 }
 
 auto MlipModel::use_only_ensemble_member(std::int64_t member_idx) -> void {
@@ -60,6 +66,8 @@ auto MlipModel::has_method(const std::string& name) const -> bool {
     return m_module.find_method(name).has_value();
 }
 
+auto MlipModel::supports_custom_mlmm() const -> bool { return has_method("compute_mlmm"); }
+
 auto MlipModel::call_method(const std::string& name, std::vector<torch::jit::IValue> inputs) const
     -> torch::jit::IValue {
     return m_module.get_method(name)(std::move(inputs));
@@ -67,4 +75,11 @@ auto MlipModel::call_method(const std::string& name, std::vector<torch::jit::IVa
 
 auto MlipModel::forward(std::vector<torch::jit::IValue> inputs) -> torch::jit::IValue {
     return m_module.forward(std::move(inputs));
+}
+
+auto MlipModel::compute_mlmm(std::vector<torch::jit::IValue> inputs) -> torch::jit::IValue {
+    if (not supports_custom_mlmm()) {
+        throw std::runtime_error("Model doesn't export a method 'compute_mlmm(...)'");
+    }
+    return call_method("compute_mlmm", std::move(inputs));
 }

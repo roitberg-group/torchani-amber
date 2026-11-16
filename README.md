@@ -417,6 +417,20 @@ To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a wo
 binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
 and Full-ML Amber integrations.
 
+## Debug logging
+
+The C++ library logs debugging information (model path, atomic numbers, initialization
+steps, and the wall time of each energy and force calculation) using LibTorch's
+built-in logging. These messages are hidden by default. To print
+them to `stderr`, set the `TORCH_CPP_LOG_LEVEL` environment variable when running Amber:
+
+```bash
+TORCH_CPP_LOG_LEVEL=INFO sander -O -i md.in ...
+```
+
+Valid values are `INFO`, `WARNING` (default), `ERROR` and `FATAL`. Note that this also
+enables LibTorch's own messages at the chosen level.
+
 ## Notes on LibTorch (C++) and PyTorch (Python) compatibility
 
 **NOTE**: This is a non-issue if you use the normal installation instructions,

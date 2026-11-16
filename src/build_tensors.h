@@ -1,9 +1,10 @@
 #pragma once
 
-#include "config.h"
-
 #include <vector>
+
 #include <torch/script.h>
+
+#include "config.h"
 
 /**
  * Utilities for building Tensors from buffers

@@ -271,7 +271,6 @@ target_compile_definitions(
     torchani
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
-        $<$<CONFIG:Debug>:TIMING>
 )
 # cuaev and cell_list must stay in DT_NEEDED even though libtorchani references none of
 # their symbols: loading them is what registers their Torch ops. --no-as-needed is
