@@ -3,15 +3,12 @@
 #include "config.h"
 #include "electro.h"
 #include "build_tensors.h"
+#include "mlip.h"
 
-#include <limits>
-#include <cmath>
 #include <chrono>
-#include <stdint.h>
 #include <cstdlib>
 #include <iostream>
-#include <fstream>
-#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -24,7 +21,7 @@
 namespace {
 // Default device is CPU, and default kind is Float32
 GlobalConfig config{};
-torch::jit::Module model;
+MlipModel model;
 torch::Tensor torchani_atomic_numbers;
 torch::Tensor torchani_do_eval_atoms_mask;
 torch::Tensor torchani_do_eval_idxs;
@@ -578,14 +575,13 @@ void torchani_initialize(
     torch::globalContext().setAllowTF32CuBLAS(false);
     torch::globalContext().setAllowTF32CuDNN(false);
     torch::globalContext().setAllowFP16ReductionCuBLAS(false);
-
 #ifdef DEBUG
     std::cout << "Disabled JIT optimizations" << '\n';
 #endif
 
     // The model is loaded from a JIT compiled file always.
     try {
-        model = torch::jit::load(jit_model_path, config.device());
+        model = MlipModel(jit_model_path, config.device());
     } catch (const c10::Error& e) {
         std::cerr
             << "ERROR (libtorchani)\n"
@@ -596,42 +592,25 @@ void torchani_initialize(
             << std::endl;
         throw;
     }
-
-    // NOTE: Unfortunately, due to a strange LibTorch design choice, Module::to() converts
-    // *all params and bufs* to the dtype, not only the float tensors like the Python API.
-    // Here we loop over the params and buffers manually and convert only the floating
-    // point ones
-    for (at::Tensor t : model.parameters()) {
-        if (t.is_floating_point()) {
-            t.set_data(t.to(config.dtype()));
-        }
-    }
-    for (at::Tensor t : model.buffers()) {
-        if (t.is_floating_point()) {
-            t.set_data(t.to(config.dtype()));
-        }
-    }
+    model.cast_float_tensors(config.dtype());
 #ifdef DEBUG
     std::cout << "Cast model to the specified precision" << '\n';
 #endif
 
     // Set the correct model configuration
     if (network_index != -1) {
-        if (model.find_method("set_active_members").has_value()) {
-            model.get_method("set_active_members")(
-                {torch::List<std::int64_t>{network_index}}
-            );
-        } else {
+        try {
+            model.use_only_ensemble_member(network_index);
+        } catch (const std::runtime_error& e) {
             std::cerr << "ERROR (libtorchani)\n"
-                      << "You set 'network_index' to a value != -1"
-                      << " but the selected model doesn't export"
-                      << " a method 'set_active_members(list[int]) -> None'" << std::endl;
+                      << "You set 'network_index' to a value != -1, but:\n"
+                      << e.what() << std::endl;
             std::exit(2);
         }
     }
     if (use_cuaev) {
-        if (model.find_method("set_strategy").has_value()) {
-            model.get_method("set_strategy")({"cuaev"});
+        if (model.has_method("set_strategy")) {
+            model.call_method("set_strategy", {"cuaev"});
         } else {
             std::cerr << "WARNING (libtorchani)\n"
                       << " The selected model doesn't export"
@@ -645,31 +624,25 @@ void torchani_initialize(
     } else {
         // It is not required that models support this
         try {
-            model.get_method("set_strategy")({"pyaev"});
+            model.call_method("set_strategy", {"pyaev"});
         } catch (const c10::Error& e) {
         }
     }
-    // Nutmeg models require a set of features passed as floats
-    // In general a model can read arbitrary features from a newline separated
-    // file with floats
-    if (model.find_method("set_extra_features").has_value() and
-        (not extra_features_fpath.empty())) {
-        // TODO: This is ugly, it would be better to fail gracefully if the file can't
-        // be parsed
-        std::ifstream features_file(extra_features_fpath);
-        torch::List<double> features;
-        std::string line;
-        double val;
-        while (features_file >> val) {
-            features.push_back(val);
+    // Models can read arbitrary features from a newline separated
+    // file with floats (e.g. Nutmeg potentials use this)
+    if (not extra_features_fpath.empty()) {
+        try {
+            model.read_extra_features_from_file(extra_features_fpath);
+        } catch (const std::runtime_error& e) {
+            std::cerr << "ERROR (libtorchani)\n"
+                      << "You specified an extra features file '" << extra_features_fpath
+                      << "', but:\n"
+                      << e.what() << std::endl;
+            std::exit(2);
         }
-        model.get_method("set_extra_features")({features});
-    };
+    }
 #ifdef DEBUG
     std::cout << "Loaded JIT-compiled model" << '\n';
-#endif
-
-#ifdef DEBUG
     std::cout << "Finalized TorchANI Initialization" << '\n';
 #endif
 }
@@ -736,9 +709,9 @@ void torchani_calc_energy_force_from_external_neighbors(
             /* molecule_idxs= */ torch::indexing::None
         };
     }
-    if (model.find_method("compute_from_external_neighbors").has_value()) {
+    if (model.has_method("compute_from_external_neighbors")) {
         torch::jit::IValue output =
-            model.get_method("compute_from_external_neighbors")(inputs);
+            model.call_method("compute_from_external_neighbors", inputs);
 
         torch::Tensor energy = fetch_energies_from_output(output);
         calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
@@ -747,7 +720,8 @@ void torchani_calc_energy_force_from_external_neighbors(
         std::cerr << "ERROR (libtorchani)\n"
                   << "To use an external neighborlist"
                   << " the model must export 'compute_from_external_neighbors(...)'."
-                  << " Consult the TorchANI-Amber readme for more info" << std::endl;
+                  << " Consult the TorchANI-Amber README.md for more info\n"
+                  << "https://github.com/roitberg-group/torchani-amber" << std::endl;
         std::exit(2);
     }
 #ifdef TIMING
@@ -1018,7 +992,7 @@ void torchani_calc_energy_force_custom_mlmm(
     double* ene_pot_total_buf
 ) {
     exit_if_no_eval_atoms("torchani_calc_energy_force_custom_mlmm");
-    if (!model.find_method("compute_mlmm").has_value()) {
+    if (!model.has_method("compute_mlmm")) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
                   << "See the torchani-amber README for the required signature." << std::endl;
@@ -1041,7 +1015,7 @@ void torchani_calc_energy_force_custom_mlmm(
         calc_only_bonded,
         ml_system_charge
     );
-    torch::jit::IValue output = model.get_method("compute_mlmm")(inputs);
+    torch::jit::IValue output = model.call_method("compute_mlmm", inputs);
     torch::Tensor energy = output.toTensor();
 
     calculate_and_populate_embedding_forces(
