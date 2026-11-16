@@ -15,7 +15,7 @@
 ! ----------------------------------------------------------------
 module qm2_extern_torchani_module
 #ifdef TORCHANI
-use qmmm_module, only: qmmm_nml
+use qmmm_module, only: qmmm_nml, qmmm_struct
 use qmmm_nml_module, only: qmmm_nml_type
 use torchani, only : &
     torchani_initialize, &
@@ -27,6 +27,16 @@ use torchani, only : &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives
 implicit none
+external :: &
+    mexit, &
+    sander_bomb, &
+    ! sqm routines, used only for extcoupling with 'amber-dftb'
+    qm2_load_params_and_allocate, &
+    qm2_calc_rij_and_eqns, &
+    qm2_dftb_energy, &
+    qm2_dftb_get_qm_forces, &
+    qm2_dftb_get_qmmm_forces, &
+    qm2_print_energy
 
 private
 public :: get_torchani_forces
@@ -100,8 +110,6 @@ subroutine get_torchani_forces(&
     dxyzcl,&
     id&
 )
-    use file_io_dat
-    use qm2_dftb_module
     integer, intent(in) :: nstep                ! Current dynamics step
     integer, intent(in) :: ntpr_internal        ! Interval for disk output
     character(len=3), intent(in) :: id          ! ID number for PIMD or REMD (unused)
@@ -1891,7 +1899,8 @@ subroutine get_amber_dftb_forces(nqmatoms,nclatoms,escf,ext_dxyzqm,ext_dxyzcl,va
     )  ! TODO: Explicitly import routine
 
     if (qmmm_nml%qmgb == 2) then !Move this above
-      call sander_bomb('qmgb is not available for torchani based simulations')  ! TODO: Explicitly import routine
+      call sander_bomb('get_amber_dftb_forces', &
+          'qmgb is not available for torchani based simulations', '')  ! TODO: Explicitly import routine
     end if
 
     ! calculates scf energy

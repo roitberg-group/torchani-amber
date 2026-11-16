@@ -18,6 +18,9 @@ Different modes are available, allowing for both "full ML" simulations, and simu
 where intermolecular non-bonded interactions are calculated by the force field. ML/MM
 simulations are also possible. Both `sander` and `pmemd` are supported.
 
+TorchANI-Amber has been tested with the latest `AmberTools` and `pmemd` versions (2026).
+Apply all patches with `update_amber` before installation.
+
 If you find this work useful please cite the following articles:
 - *TorchANI-Amber: Bridging neural network potentials and classical biomolecular simulations* <br>
     https://doi.org/10.1021/acs.jpcb.5c05725 
@@ -51,12 +54,6 @@ Other NN-IPs supported out of the box:
     Small, medium and large are supported (wB97M-D3BJ)
 
 Including your custom NN-IP is simple if you follow the TorchANI 2 API
-
-Important: For running ML/MM charged systems with `AimNet2` and `Nutmeg`, you will need
-to patch `sander` from your `AmberTools` version, *before compilation* unless using
-`AmberTools26`. To do this, replace the file in
-`amber_src/AmberTools/sander/qm2_extern_torchani_module.F90` with
-`AmberTools25-patch/qm2_extern_torchani_module.F90`.
 
 ## Installing from source
 
@@ -216,7 +213,7 @@ input. The other namelists stay the same.
 Pmemd is (currently) not supported for this configuration. Periodic boundary conditions
 (`igb = 0`) are required.
 
-An example `mdin` input file for the Amber-NB configuration:
+An example `mdin` input file for the Amber-NB configuration is, schematically:
 
 ```
 &cntrl
@@ -237,6 +234,8 @@ An example `mdin` input file for the Amber-NB configuration:
 /
 ```
 
+For a full example see `inputs/ala-dipep-fullml-ani2x-nb/`.
+
 ## Usage of the interface for ML/MM
 
 TorchANI-Amber is also integrated with the QM/MM Sander subsystem, which means you can
@@ -248,8 +247,11 @@ including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&
 namelist.
 
 Many options can be used in the `&qmmm` namelist, but `qmmm_int = 1` (default),
-`qm_ewald = 0` (default), and `qmmm_theory = 'EXTERN'` (must be specified) are *required*
-to run ML/MM simulations with TorchANI-Amber.
+`qm_ewald = 0`, and `qm_theory = 'EXTERN'` (must be specified) are *required* to run
+ML/MM simulations with TorchANI-Amber. The default for `qm_ewald` is `1`, and it is only
+turned off automatically if `ntb = 0` or `use_pme = 0`, so it must be set explicitly
+for periodic systems. The QM region has no default, it must be selected with `qmmask`
+(or `iqmatoms`). `qmcut` defaults to the value of `cut` in the `&cntrl` namelist.
 
 The `&ani` namelist remains the same, with the following extra available options:
 
@@ -266,10 +268,10 @@ Output related options:
 ML/MM and electrostatic related options:
 - `use_torchani_charges` (bool)
    **This option can only be specified if a charge-predicting model is selected.**
-   Currently the only available `model_type` that supports it is `animbis`. Partial
-   charges for the QM atoms will be predicted by TorchANI (MBIS atomic charges at the
-   `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. This
-   charges are geometry-dependent, and the derivativse w.r.t. coordinates are used to
+   Currently the `model_type`s that support it are `animbis` and `aimnet2-*-mbis-*`.
+   Partial charges for the QM atoms will be predicted by TorchANI (MBIS atomic charges at
+   the `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. These
+   charges are geometry-dependent, and the derivatives w.r.t. coordinates are used to
    calculate their contribution to the forces.
 - `mlmm_coupling` (int = `0` or `1`)
    Currently available are: `0` (*coulombic coupling*) and `1` (*simple polarizable*
@@ -278,8 +280,6 @@ ML/MM and electrostatic related options:
 We recommend using one of the following two settings:
 - *mlmm_coupling = 1* and *use_torchani_charges=.true.* (variable nn-predicted charges)
 - *mlmm_coupling = 0* and *use_torchani_charges=.false.* (fixed topology charges)
-
-TODO: Check what the defaults are for qm_ewald and qm_mask
 
 A template for the first setting (simple polarizable with variable charges) is:
 
@@ -296,7 +296,7 @@ A template for the first setting (simple polarizable with variable charges) is:
     qmcut = 15.0  ! Recommended
 /
 &ani
-    model_type = 'animbis'  ! Charge-predicting model. Currently available: 'animbis'
+    model_type = 'animbis'  ! Charge-predicting model, 'animbis' or 'aimnet2-*-mbis-*'
     use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
     mlmm_coupling = 1  ! Simple polarizable coupling
     use_torch_coupling = .True.  ! Accelerated torch coupling
