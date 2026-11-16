@@ -51,7 +51,6 @@ def _check_which_models_need_compilation(
 
     specs = []
     for name in model_names:
-        # TODO: With infer this segfaults sometimes !!! not sure what's up
         if infer and not (
             name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
         ):
