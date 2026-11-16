@@ -5,7 +5,9 @@
 #include "build_tensors.h"
 #include "mlip.h"
 
+#ifdef TIMING
 #include <chrono>
+#endif
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -727,7 +729,7 @@ void torchani_calc_energy_force_from_external_neighbors(
 #ifdef TIMING
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
-        << "TORCHANI-AMBER: energy force external neighbors time"
+        << "TORCHANI-AMBER: energy force external neighbors time: "
         << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() /
             1000.0
         << "ms" << std::endl;
@@ -786,7 +788,7 @@ void torchani_calc_energy_force(
 #ifdef TIMING
     auto stop = std::chrono::high_resolution_clock::now();
     std::cout
-        << "TORCHANI-AMBER: energy force PBC time"
+        << "TORCHANI-AMBER: energy force time: "
         << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() /
             1000.0
         << "ms" << std::endl;
