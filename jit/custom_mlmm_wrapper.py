@@ -6,10 +6,12 @@ from torchani.tuples import SpeciesEnergiesAtomicCharges
 
 # Same constant as src/electro.cpp
 ANGSTROM_TO_BOHR = 1.8897261328727875
-# Same constant as AmberTools25-patch/qm2_extern_torchani_module.F90
+
+# Same as in AmberTools/src/sander/qm2_extern_torchani_module.F90 (amber source)
 AU_TO_ANG3 = 0.1481847
-# Default atomic polarizabilities in AU (H to Ar), and default inverse dielectric,
-# same as in AmberTools25-patch/qm2_extern_torchani_module.F90
+
+# Default atomic polarizabilities in AU (H to Ar), and default inverse dielectric.
+# Same as in AmberTools/src/sander/qm2_extern_torchani_module.F90 (amber source)
 DEFAULT_ALPHAS_AU = (
     3.08,
     1.38375,
