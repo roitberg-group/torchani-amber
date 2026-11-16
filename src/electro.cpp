@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include <torch/all.h>
-#include <torch/script.h>
 
 namespace {
 // Factor used by Amber

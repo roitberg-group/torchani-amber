@@ -3,7 +3,6 @@
 #include "config.h"
 
 #include <vector>
-#include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/script.h>
 
 /**
