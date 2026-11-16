@@ -67,12 +67,6 @@ def _check_which_models_need_compilation(
     return specs
 
 
-def _reset_jit_registry():
-    torch._C._jit_clear_class_registry()
-    torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
-    torch.jit._state._clear_class_state()
-
-
 def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
     # First construction of models will trigger download of the model data if needed
     try:
@@ -85,9 +79,6 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
         model.potentials["nnp"].neural_networks = model.potentials[
             "nnp"
         ].neural_networks.to_infer_model(use_mnp=False)
-
-    # TODO: is this still needed?
-    _reset_jit_registry()
     torch.jit.save(torch.jit.script(model), spec.file_path())
     return True
 
