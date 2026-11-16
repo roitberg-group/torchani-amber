@@ -493,13 +493,13 @@ void torchani_initialize(
     jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
     jit_models_dir = jit_models_dir + "/jit";
 
-    std::string jit_model = model_type;
+    std::string model_type_str = model_type;
     // Path to extra features may be inside jit_model, separated by ::
-    std::size_t loc = jit_model.find("::");
+    std::size_t loc = model_type_str.find("::");
     std::string extra_features_fpath = "";
     if (loc != std::string::npos) {
-        extra_features_fpath = jit_model.substr(loc + 2);
-        jit_model = jit_model.substr(0, loc);
+        extra_features_fpath = model_type_str.substr(loc + 2);
+        model_type_str = model_type_str.substr(0, loc);
         // Use internal test file in this case
         if (extra_features_fpath == "ace-ala-nme-test") {
             extra_features_fpath = jit_models_dir + "/ace-ala-nme.charges";
@@ -508,9 +508,9 @@ void torchani_initialize(
 
     std::string jit_model_path = "";
     if (std::find(
-            torchani_builtin_models.begin(), torchani_builtin_models.end(), jit_model
+            torchani_builtin_models.begin(), torchani_builtin_models.end(), model_type_str
         ) != torchani_builtin_models.end()) {
-        std::string jit_model_fname = jit_model + ".pt";
+        std::string jit_model_fname = model_type_str + ".pt";
         //  AimNet2 models are stored in a subdirectory
         std::string aimnet2_prefix = "aimnet2";
         std::string nutmeg_prefix = "nutmeg";
@@ -527,7 +527,7 @@ void torchani_initialize(
 #endif
     } else {
         // Assume the path has been passed directly
-        jit_model_path = jit_model;
+        jit_model_path = model_type_str;
     }
     config.set_device_and_precision(
         use_cuda_device, device_index, use_double_precision
@@ -583,7 +583,7 @@ void torchani_initialize(
 
     // The model is loaded from a JIT compiled file always.
     try {
-        model = MlipModel(jit_model_path, config.device());
+        model = MlipModel(jit_model_path, config.device(), config.dtype());
     } catch (const c10::Error& e) {
         std::cerr
             << "ERROR (libtorchani)\n"
@@ -594,10 +594,6 @@ void torchani_initialize(
             << std::endl;
         throw;
     }
-    model.cast_float_tensors(config.dtype());
-#ifdef DEBUG
-    std::cout << "Cast model to the specified precision" << '\n';
-#endif
 
     // Set the correct model configuration
     if (network_index != -1) {
@@ -644,7 +640,7 @@ void torchani_initialize(
         }
     }
 #ifdef DEBUG
-    std::cout << "Loaded JIT-compiled model" << '\n';
+    std::cout << "Loaded MLIP model" << '\n';
     std::cout << "Finalized TorchANI Initialization" << '\n';
 #endif
 }
@@ -846,7 +842,6 @@ void torchani_calc_energy_force_with_coupling(
 ) {
     exit_if_no_eval_atoms("torchani_calc_energy_force_with_coupling");
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-
     torch::Tensor atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
 
     // backwards compatibility
@@ -983,7 +978,7 @@ void torchani_calc_energy_force_custom_mlmm(
     double coords_buf[][3],
     double env_charge_coords_buf[][3],
     double env_charges_buf[],
-    double cell_buf[3][3],
+    double cell_buf[][3],
     bool use_pbc,
     int* molecule_idxs_buf,
     bool calc_only_bonded,
@@ -994,7 +989,7 @@ void torchani_calc_energy_force_custom_mlmm(
     double* ene_pot_total_buf
 ) {
     exit_if_no_eval_atoms("torchani_calc_energy_force_custom_mlmm");
-    if (!model.has_method("compute_mlmm")) {
+    if (!model.supports_custom_mlmm()) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
                   << "See the torchani-amber README for the required signature." << std::endl;
@@ -1017,7 +1012,7 @@ void torchani_calc_energy_force_custom_mlmm(
         calc_only_bonded,
         ml_system_charge
     );
-    torch::jit::IValue output = model.call_method("compute_mlmm", inputs);
+    torch::jit::IValue output = model.compute_mlmm(inputs);
     torch::Tensor energy = output.toTensor();
 
     calculate_and_populate_embedding_forces(
