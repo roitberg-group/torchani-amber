@@ -49,6 +49,7 @@ std::vector<std::string> torchani_builtin_models = {
     "ani2dr",
     "ani2dr-infer",
     "animbis",
+    "animbis-infer",
     "animbis-custom-mlmm",
     "anir2s",
     "anir2s-infer",

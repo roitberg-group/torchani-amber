@@ -29,7 +29,7 @@ class ModelSpec:
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
-    infer_model: str = "",
+    infer: bool = False,
 ) -> list[ModelSpec]:
     model_names: tuple[str, ...] = (
         "ANI1x",
@@ -43,26 +43,19 @@ def _check_which_models_need_compilation(
         # "ANIr2s_ch3cn",
         # "ANIr2s_chcl3",
     )
-    if infer_model:
-        model_names = (infer_model.replace("ani", "ANI"),)
-        infer = True
-    else:
-        infer = False
+    all_specs = [ModelSpec(cls=name) for name in model_names]
+    if infer:
+        all_specs.extend(ModelSpec(cls=name, infer=True) for name in model_names)
 
     specs = []
-    for name in model_names:
-        if infer and not (
-            name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
-        ):
-            continue
-        spec = ModelSpec(cls=name, infer=infer)
+    for spec in all_specs:
         if spec.file_path().exists() and not force_recompilation:
             continue
         specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
-            console.print(f"-- {s.cls}")  # noqa
+            console.print(f"-- {s.file_path().stem}")  # noqa
     return specs
 
 
@@ -103,9 +96,10 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--infer-model",
-        type=str,
-        default="",
+        "--infer",
+        action="store_true",
+        default=False,
+        help="Also compile the inference-optimized (*-infer.pt) version of each model",
     )
     parser.add_argument(
         "--force",
@@ -151,7 +145,7 @@ if __name__ == "__main__":
     try:
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
-            infer_model=args.infer_model,
+            infer=args.infer,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
@@ -184,7 +178,7 @@ if __name__ == "__main__":
         else:
             console.print("-- JIT - Done, but failed for some models", style="yellow")
         custom_mlmm_file = JIT_DIR / "animbis-custom-mlmm.pt"
-        if not args.infer_model and (args.force or not custom_mlmm_file.exists()):
+        if args.force or not custom_mlmm_file.exists():
             console.print("-- JIT - Generating ANImbis custom ML/MM wrapper")
             from custom_mlmm_wrapper import generate_custom_mlmm_wrapper
 
