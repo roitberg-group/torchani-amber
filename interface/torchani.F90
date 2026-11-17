@@ -19,8 +19,6 @@ public :: &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_energy_atomic_charges_retain, &
     torchani_energy_atomic_charges_vjp, &
-    torchani_energy_force_qbc, &
-    torchani_data_for_monitored_mlmm, &
     torchani_calc_energy_force_qbc, &
     torchani_calc_data_for_monitored_mlmm, &
     torchani_calc_energy_force_with_coupling, &
@@ -175,48 +173,6 @@ subroutine torchani_energy_atomic_charges_vjp( &
     real(c_double), intent(in) :: charge_weights(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
-endsubroutine
-
-! Backwards compat, dummy fn, remove when AmberTools26 is released
-subroutine torchani_energy_force_qbc( &
-    num_atoms, &
-    coords, &
-    forces, &
-    qbc, &
-    qbc_grad, &
-    potential_energy &
-) bind(c, name="torchani_energy_force_qbc")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-! Backwards compat, dummy fn, remove when AmberTools26 is released
-subroutine torchani_data_for_monitored_mlmm( &
-    num_atoms, &
-    coords, &
-    forces, &
-    atomic_charges, &
-    atomic_charges_grad, &
-    qbc, &
-    qbc_grad, &
-    potential_energy &
-) bind(c, name="torchani_data_for_monitored_mlmm")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: atomic_charges_grad(*)
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
-    real(c_double), intent(out) :: potential_energy
 endsubroutine
 
 subroutine torchani_calc_energy_force_qbc( &

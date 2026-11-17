@@ -245,16 +245,6 @@ void exitIfNoEvalAtoms(const std::string& fn_name) {
 }
 
 extern "C" {
-// Backwards compat, dummy fn, remove when AmberTools26 is released
-void torchani_energy_force_qbc(
-    int, double[][3], double[][3], double*, double[][3], double*
-) {}
-
-// Backwards compat, dummy fn, remove when AmberTools26 is released
-void torchani_data_for_monitored_mlmm(
-    int, double[][3], double[][3], double[], double*, double*, double[][3], double*
-) {}
-
 void torchani_initialize(
     int num_atoms,
     int atomic_nums[],
