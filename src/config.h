@@ -26,31 +26,31 @@ class GlobalConfig {
         return m_opts.device();
     }
 
-    auto use_no_eval_atoms() const -> bool {
+    auto useNoEvalAtoms() const -> bool {
         return m_use_no_eval_atoms;
     }
 
-    auto set_no_eval_atoms(bool use_no_eval_atoms) -> void {
+    auto setNoEvalAtoms(bool use_no_eval_atoms) -> void {
         m_use_no_eval_atoms = use_no_eval_atoms;
     }
 
-    auto set_device_and_precision(bool use_cuda_device, torch::DeviceIndex device_idx, bool use_double_precision) -> void {
+    auto setDeviceAndPrecision(bool use_cuda_device, torch::DeviceIndex device_idx, bool use_double_precision) -> void {
         torch::DeviceType dev_type{use_cuda_device ? torch::kCUDA : torch::kCPU};
         torch::Device dev{torch::Device{dev_type, device_idx}};
         torch::ScalarType dtype{use_double_precision ? torch::kFloat64 : torch::kFloat32};
         m_opts = torch::TensorOptions().device(dev).dtype(dtype);
     }
 
-    auto tensor_to_torchani_device(torch::Tensor x) const -> torch::Tensor {
+    auto tensorToTorchaniDevice(torch::Tensor x) const -> torch::Tensor {
         return x.to(m_opts.device());
     }
 
-    auto tensor_to_torchani_dtype_and_device(torch::Tensor x) const -> torch::Tensor {
+    auto tensorToTorchaniDtypeAndDevice(torch::Tensor x) const -> torch::Tensor {
         return x.to(m_opts);
     }
 
     // Amber has PBC enabled in all directions for PME
-    auto enabled_pbc() const -> torch::Tensor {
+    auto enabledPbc() const -> torch::Tensor {
         return torch::tensor(
             {true, true, true},
             torch::TensorOptions()

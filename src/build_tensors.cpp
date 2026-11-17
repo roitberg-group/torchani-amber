@@ -16,39 +16,39 @@
 // otherwise memory alignment issues occur
 // coords must be set to require grad, since automatic differentiation is
 // used to get the forces
-torch::Tensor dbl_buf_to_coords_tensor(
+torch::Tensor dblBufToCoordsTensor(
     const GlobalConfig& config,
     double coords_buf[][3],
     long num_atoms
 ) {
     // torchani needs an extra dimension as "batch dimension"
-    return dbl_buf_to_tensor(config, coords_buf, {num_atoms, 3}).unsqueeze(0).requires_grad_(true);
+    return dblBufToTensor(config, coords_buf, {num_atoms, 3}).unsqueeze(0).requires_grad_(true);
 }
 
-torch::Tensor dbl_buf_to_shifts_tensor(
+torch::Tensor dblBufToShiftsTensor(
     const GlobalConfig& config,
     double shifts_buf[][3],
     long num_neighbors
 ) {
-    return dbl_buf_to_tensor(config, shifts_buf, {num_neighbors, 3}).requires_grad_(true);
+    return dblBufToTensor(config, shifts_buf, {num_neighbors, 3}).requires_grad_(true);
 }
 
-torch::Tensor dbl_buf_to_cell_tensor(
+torch::Tensor dblBufToCellTensor(
     const GlobalConfig& config,
     double cell_buf[][3]
 ) {
-    return dbl_buf_to_tensor(config, cell_buf, {3, 3});
+    return dblBufToTensor(config, cell_buf, {3, 3});
 }
 
-torch::Tensor int_buf_to_neighborlist_tensor(
+torch::Tensor intBufToNeighborlistTensor(
     const GlobalConfig& config,
     int neighborlist_buf[],
     long num_neighbors
 ) {
-    return int_buf_to_i64_tensor(config, neighborlist_buf, {2, num_neighbors});
+    return intBufToI64Tensor(config, neighborlist_buf, {2, num_neighbors});
 }
 
-torch::Tensor dbl_buf_to_tensor(
+torch::Tensor dblBufToTensor(
     const GlobalConfig& config,
     void* buf,
     const std::vector<long> shape_vec
@@ -56,10 +56,10 @@ torch::Tensor dbl_buf_to_tensor(
     torch::IntArrayRef shape{shape_vec.data(), shape_vec.size()};
     torch::TensorOptions options = torch::TensorOptions().dtype(torch::kDouble);
     torch::Tensor tensor = torch::from_blob(buf, shape, options);
-    return config.tensor_to_torchani_dtype_and_device(tensor);
+    return config.tensorToTorchaniDtypeAndDevice(tensor);
 }
 
-torch::Tensor int_buf_to_i64_tensor(
+torch::Tensor intBufToI64Tensor(
     const GlobalConfig& config,
     void* buf,
     const std::vector<long> shape_vec
@@ -67,5 +67,5 @@ torch::Tensor int_buf_to_i64_tensor(
     torch::IntArrayRef shape{shape_vec.data(), shape_vec.size()};
     torch::TensorOptions options = torch::TensorOptions().dtype(torch::kInt);
     torch::Tensor tensor = torch::from_blob(buf, shape, options).to(torch::kLong);
-    return config.tensor_to_torchani_device(tensor);
+    return config.tensorToTorchaniDevice(tensor);
 }
