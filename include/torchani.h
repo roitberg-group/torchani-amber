@@ -136,29 +136,6 @@ void torchani_calc_data_for_monitored_mlmm(
     double* potential_energy
 );
 
-// Backwards compat, remove when AmberTools26 is released
-void torchani_energy_force_with_coupling(
-    int num_atoms,
-    int num_env_charges,
-    double inv_pol_dielectric,
-    double coords[][3],  // Shape (num_atoms, 3)
-    double atomic_alphas[],  // Shape (num_atoms,)
-    double env_charge_coords[][3],  // Shape (num_env_charges, 3)
-    double env_charges[],  // Shape (num_env_charges,)
-    bool predict_charges,
-    bool use_simple_polarization_correction,
-    bool use_charge_derivatives,
-    /* outputs */
-    double forces_on_atoms[][3],  // Shape (num_atoms, 3)
-    double forces_on_env_charges[][3],  // Shape (num_env_charges, 3)
-    double atomic_charges[],  // Shape (num_atoms,)
-    double* ene_pot_invacuo,
-    double* ene_pot_embed_pol,
-    double* ene_pot_embed_dist,
-    double* ene_pot_embed_coulomb,
-    double* ene_pot_total
-);
-
 void torchani_calc_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
