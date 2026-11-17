@@ -9,6 +9,7 @@ function(Torchani_TorchScriptUtils_add_jit_compile_models_target)
         DISABLE_OPTIMIZATIONS
         FORCE_RECOMPILATION
         AIMNET2
+        EXTENSIONS_DIR
     )
     set(multiValueArgs "")
     cmake_parse_arguments(
@@ -19,7 +20,11 @@ function(Torchani_TorchScriptUtils_add_jit_compile_models_target)
         ${ARGN}
     )
     find_package(Python REQUIRED COMPONENTS Interpreter)
-    set(CMD "${Python_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/jit/jit.py")
+    set(
+        CMD
+        "${CMAKE_COMMAND}" -E env "TORCHANI_EXTENSIONS_INTERNAL_DIR=${_FN_EXTENSIONS_DIR}"
+        "${Python_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/jit/jit.py"
+    )
     if(_FN_DISABLE_OPTIMIZATIONS)
         list(APPEND CMD "--disable-optimizations")
     endif()

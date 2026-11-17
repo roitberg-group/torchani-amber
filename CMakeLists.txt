@@ -85,6 +85,10 @@ option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations whe
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
 
+if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
+    Torchani_Msg_error("'TORCHANI_JIT_COMPILE_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
+endif()
+
 if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
     if(TORCHANI_PREFER_CONDA_LIBS)
         Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
@@ -234,20 +238,12 @@ target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
 
 # The extensions are named as the TorchANI Python package expects them (cuaev.so,
-# cell_list.so). If they are built against PyTorch, they are placed inside the
-# TorchANI Python package, so that they are loaded by "import torchani", and they don't
-# need to be built a second time by pip or "ani build-extensions"
+# cell_list.so). After installation, the TorchANI Python package finds them in
+# <prefix>/lib/Torchani, so they don't need to be built a second time by pip or
+# "ani build-extensions"
 set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
 set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
-if(TORCHANI_LINK_TO_PYTORCH_LIBS)
-    set_target_properties(
-        torchani_cuaev
-        torchani_cell_list
-        PROPERTIES
-            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani"
-    )
-endif()
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
 add_library(torchani SHARED ${TORCHANI_SOURCES})
@@ -350,6 +346,7 @@ if(TORCHANI_JIT_COMPILE_MODELS)
         FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
         DISABLE_OPTIMIZATIONS ${TORCHANI_JIT_DISABLE_OPTIMIZATIONS}
         AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
+        EXTENSIONS_DIR $<TARGET_FILE_DIR:torchani_cuaev>
     )
     add_dependencies(torchani_jit_compile_models torchani_cuaev torchani_cell_list)
 else()
