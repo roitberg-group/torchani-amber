@@ -33,6 +33,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
+          conda-solver: rattler
           environment-file: environment.yaml
           activate-environment: ani-amber
           conda-remove-defaults: true
