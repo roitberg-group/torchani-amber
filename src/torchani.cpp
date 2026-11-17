@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -77,86 +78,51 @@ std::vector<std::string> torchani_builtin_models = {
 };
 }  // namespace
 
-std::vector<torch::jit::IValue> setup_inputs_pbc(
+std::vector<torch::jit::IValue> setup_inputs(
     torch::Tensor& coords,
-    torch::Tensor& cell,
     bool ensemble_values = false,
-    int net_charge = 0
-) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ cell,
-        /* pbc= */ config.enabled_pbc(),
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        torch::indexing::None
-    };
-}
-
-std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
-    torch::Tensor& coords,
-    torch::Tensor& cell,
-    torch::Tensor& molecule_idxs,
-    bool ensemble_values = false,
-    int net_charge = 0
-) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ cell,
-        /* pbc= */ config.enabled_pbc(),
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ molecule_idxs
-    };
-}
-
-std::vector<torch::jit::IValue> setup_inputs_only_bonded_nopbc(
-    torch::Tensor& coords,
-    torch::Tensor& molecule_idxs,
-    bool ensemble_values = false,
-    int net_charge = 0
-) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ torch::indexing::None,
-        /* pbc= */ torch::indexing::None,
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ molecule_idxs
-    };
-}
-
-std::vector<torch::jit::IValue> setup_inputs_nopbc(
-    torch::Tensor& coords, bool ensemble_values = false, int net_charge = 0
+    int net_charge = 0,
+    std::optional<torch::Tensor> cell = std::nullopt,
+    std::optional<torch::Tensor> molecule_idxs = std::nullopt
 ) {
     // uses one "global", torchani_atomic_numbers
     // Create a vector of input values, jit::script::Module
     // classes accept and return values of ONLY type torch::jit::IValue so
     // any tensor passed to them has to be wrapped in this
     // return by value is OK since inputs is locally created
+    std::optional<torch::Tensor> pbc;
+    if (cell.has_value()) {
+        pbc = config.enabled_pbc();
+    }
     return {
         std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ torch::indexing::None,
-        /* pbc= */ torch::indexing::None,
+        /* cell= */ cell,
+        /* pbc= */ pbc,
         /* charge= */ net_charge,
         /* atomic= */ false,
         /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ torch::indexing::None
+        /* molecule_idxs= */ molecule_idxs
+    };
+}
+
+std::vector<torch::jit::IValue> setup_inputs_external_neighbors(
+    torch::Tensor& coords,
+    torch::Tensor& neighborlist,
+    torch::Tensor& shifts,
+    bool ensemble_values = false,
+    int net_charge = 0,
+    std::optional<torch::Tensor> molecule_idxs = std::nullopt
+) {
+    return {
+        torchani_atomic_numbers,
+        coords,
+        neighborlist,
+        shifts,
+        /* charge= */ net_charge,
+        /* atomic= */ false,
+        /* ensemble_values= */ ensemble_values,
+        // An empty torch::jit::IValue() is equivalent to torch::indexing::None
+        /* molecule_idxs= */ molecule_idxs
     };
 }
 
@@ -164,26 +130,25 @@ std::vector<torch::jit::IValue> setup_inputs_custom_mlmm(
     torch::Tensor& ml_coords,
     torch::Tensor& mm_coords,
     torch::Tensor& mm_charges,
-    torch::Tensor& cell,
-    bool use_pbc,
-    torch::Tensor& molecule_idxs,
-    bool calc_only_bonded,
-    int ml_system_charge
+    bool ensemble_values = false,
+    int net_charge = 0,
+    std::optional<torch::Tensor> cell = std::nullopt,
+    std::optional<torch::Tensor> molecule_idxs = std::nullopt
 ) {
-    torch::jit::IValue cell_ival = use_pbc ? torch::jit::IValue(cell) : torch::jit::IValue();
-    torch::jit::IValue pbc_ival = use_pbc ? torch::jit::IValue(config.enabled_pbc()) : torch::jit::IValue();
-    torch::jit::IValue molecule_idxs_ival =
-        calc_only_bonded ? torch::jit::IValue(molecule_idxs) : torch::jit::IValue();
+    std::optional<torch::Tensor> pbc;
+    if (cell.has_value()) {
+        pbc = config.enabled_pbc();
+    }
     return {
         std::tuple{torchani_atomic_numbers, ml_coords},
         /* mm_coords= */ mm_coords,
         /* mm_charges= */ mm_charges,
-        /* cell= */ cell_ival,
-        /* pbc= */ pbc_ival,
-        /* charge= */ ml_system_charge,
+        /* cell= */ cell,
+        /* pbc= */ pbc,
+        /* charge= */ net_charge,
         /* atomic= */ false,
-        /* ensemble_values= */ false,
-        /* molecule_idxs= */ molecule_idxs_ival
+        /* ensemble_values= */ ensemble_values,
+        /* molecule_idxs= */ molecule_idxs
     };
 }
 
@@ -651,10 +616,9 @@ void torchani_calc_energy_force_from_external_neighbors(
         int_buf_to_neighborlist_tensor(config, neighborlist_buf, num_neighbors);
     torch::Tensor molecule_idxs =
         int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
-    std::vector<torch::jit::IValue> inputs;
 
     if (config.use_no_eval_atoms()) {
-        auto mask  = torchani_do_eval_atoms_mask.view({-1}).index({neighborlist.view(-1)}).view({2, -1});
+        auto mask = torchani_do_eval_atoms_mask.view({-1}).index({neighborlist.view(-1)}).view({2, -1});
         auto do_eval_pairs = (torch::all(mask, 0)).nonzero().flatten();
         neighborlist = neighborlist.index_select(1, {do_eval_pairs});
         shifts = shifts.index_select(0, {do_eval_pairs});
@@ -668,29 +632,18 @@ void torchani_calc_energy_force_from_external_neighbors(
         coords = coords.index_select(1, {torchani_do_eval_idxs});
     }
 
+    std::optional<torch::Tensor> maybe_molecule_idxs;
     if (calc_only_bonded or config.use_no_eval_atoms()) {
-        inputs = {
-            torchani_atomic_numbers,
-            coords,
-            neighborlist,
-            shifts,
-            /* charge= */ net_charge,
-            /* atomic= */ false,
-            /* ensemble_values= */ false,
-            /* molecule_idxs= */ molecule_idxs
-        };
-    } else {
-        inputs = {
-            torchani_atomic_numbers,
-            coords,
-            neighborlist,
-            shifts,
-            /* charge= */ net_charge,
-            /* atomic= */ false,
-            /* ensemble_values= */ false,
-            /* molecule_idxs= */ torch::indexing::None
-        };
+        maybe_molecule_idxs = molecule_idxs;
     }
+    std::vector<torch::jit::IValue> inputs = setup_inputs_external_neighbors(
+        coords,
+        neighborlist,
+        shifts,
+        /*ensemble values=*/false,
+        net_charge,
+        maybe_molecule_idxs
+    );
     if (model.has_method("compute_from_external_neighbors")) {
         torch::jit::IValue output =
             model.call_method("compute_from_external_neighbors", inputs);
@@ -729,27 +682,19 @@ void torchani_calc_energy_force(
         coords = coords.index_select(1, {torchani_do_eval_idxs});
     }
     // Inputs are setup with PBC
-    std::vector<torch::jit::IValue> inputs;
+    std::optional<torch::Tensor> maybe_cell;
+    if (use_pbc) {
+        maybe_cell = cell;
+    }
     // In the no_eval_atoms case, the energies will still be added, but the
     // atoms will feel no forces
-    if (not use_pbc) {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_nopbc(
-                coords, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs = setup_inputs_nopbc(coords, /*ensemble values=*/false, net_charge);
-        }
-    } else {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_pbc(
-                coords, cell, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs =
-                setup_inputs_pbc(coords, cell, /*ensemble values=*/false, net_charge);
-        }
+    std::optional<torch::Tensor> maybe_molecule_idxs;
+    if (calc_only_bonded or config.use_no_eval_atoms()) {
+        maybe_molecule_idxs = molecule_idxs;
     }
+    std::vector<torch::jit::IValue> inputs = setup_inputs(
+        coords, /*ensemble values=*/false, net_charge, maybe_cell, maybe_molecule_idxs
+    );
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
     torch::Tensor energy = fetch_energies_from_output(output);
@@ -767,7 +712,7 @@ void torchani_energy_force_atomic_charges(
 ) {
     exit_if_no_eval_atoms("torchani_energy_force_atomic_charges");
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
+    std::vector<torch::jit::IValue> inputs = setup_inputs(coords);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = fetch_energies_from_output(output);
@@ -817,7 +762,7 @@ void torchani_calc_energy_force_with_coupling(
     }
 
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
+        setup_inputs(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, predict_charges ? 3 : 2);
     torch::Tensor ene_pot_invacuo = fetch_energies_from_output(output);
@@ -968,15 +913,22 @@ void torchani_calc_energy_force_custom_mlmm(
     torch::Tensor molecule_idxs =
         int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
 
-    auto inputs = setup_inputs_custom_mlmm(
+    std::optional<torch::Tensor> maybe_cell;
+    if (use_pbc) {
+        maybe_cell = cell;
+    }
+    std::optional<torch::Tensor> maybe_molecule_idxs;
+    if (calc_only_bonded) {
+        maybe_molecule_idxs = molecule_idxs;
+    }
+    std::vector<torch::jit::IValue> inputs = setup_inputs_custom_mlmm(
         ml_coords,
         mm_coords,
         mm_charges,
-        cell,
-        use_pbc,
-        molecule_idxs,
-        calc_only_bonded,
-        ml_system_charge
+        /*ensemble values=*/false,
+        ml_system_charge,
+        maybe_cell,
+        maybe_molecule_idxs
     );
     torch::jit::IValue output = model.compute_mlmm(inputs);
     torch::Tensor energy = output.toTensor();
@@ -999,7 +951,7 @@ void torchani_energy_force_atomic_charges_with_derivatives(
 ) {
     exit_if_no_eval_atoms("torchani_energy_force_atomic_charges_with_derivatives");
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
+    std::vector<torch::jit::IValue> inputs = setup_inputs(coords);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = fetch_energies_from_output(output);
@@ -1029,7 +981,7 @@ void torchani_energy_atomic_charges_retain(
                                .clone()
                                .requires_grad_(true);
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/false, net_charge);
+        setup_inputs(coords, /*ensemble_values=*/false, net_charge);
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
     torch::Tensor energy = fetch_energies_from_output(output);
@@ -1096,7 +1048,7 @@ void torchani_calc_energy_force_qbc(
     exit_if_no_eval_atoms("torchani_calc_energy_force_qbc");
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
+        setup_inputs(coords, /*ensemble_values=*/true, net_charge);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 2);
@@ -1128,7 +1080,7 @@ void torchani_calc_data_for_monitored_mlmm(
     exit_if_no_eval_atoms("torchani_calc_data_for_monitored_mlmm");
     torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
     std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
+        setup_inputs(coords, /*ensemble_values=*/true, net_charge);
 
     torch::jit::IValue output = model.forward(inputs);
     validate_model_output(output, 3);
