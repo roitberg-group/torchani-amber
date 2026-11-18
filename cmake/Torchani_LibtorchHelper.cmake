@@ -51,13 +51,9 @@ function(Torchani_LibtorchHelper_download_and_install)
         endif()
 
         message(STATUS "LibTorch - Extracting into ${_LIBTORCH_ROOT}")
-        file(MAKE_DIRECTORY "${_FN_INSTALL_DIR}")
-        execute_process(
-            COMMAND ${CMAKE_COMMAND} -E tar xfz "${_LIBTORCH_TMP_FILE}"
-            WORKING_DIRECTORY "${_FN_INSTALL_DIR}"
-        )
+        file(ARCHIVE_EXTRACT INPUT "${_LIBTORCH_TMP_FILE}" DESTINATION "${_FN_INSTALL_DIR}")
         if(NOT EXISTS "${_FN_INSTALL_DIR}/libtorch")
-            Torchani_Msg_error("LibTorch - Extraction failed")
+            Torchani_Msg_error("LibTorch - Extracted archive has no top-level 'libtorch' dir")
         else()
             file(RENAME "${_FN_INSTALL_DIR}/libtorch" "${_LIBTORCH_ROOT}")
             message(STATUS "LibTorch - Downloaded and installed")

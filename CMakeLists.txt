@@ -34,6 +34,14 @@ Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 # TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
 
+# NOTE: Libtorch installs require extra libraries to be present, that are *not* in the
+# plain toolkit:
+# libcudnn.so, libnccl.so, libcusparseLt.so, libnvshmem_host.so
+# Without those installed, libtorch fails at runtime
+# The pytorch path is simpler, since the pytorch wheel pulls the required nvidia
+# wheels and toolkit libraries directly
+# Neigher of these includes nvcc or CUDA headers, these are needed separately
+
 # General: options and flags
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
 option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs ($ORIGIN is always added)" ON)
@@ -46,6 +54,8 @@ option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler dee
 option(TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
 
 # Exact major.minor versions must match for these
+# The libtorch patch version is required since the download url contains the patch
+# version. It is not checked afterwards
 set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of PyTorch/LibTorch")
 set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
 set(TORCHANI_REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
