@@ -1,5 +1,7 @@
 #pragma once
 
+namespace torchscript {
+
 void disableTorchscriptExecutorOptimizations();
 
-void disableTorchReducedFloatPrecisionOptimizations();
+}  // namespace torchscript

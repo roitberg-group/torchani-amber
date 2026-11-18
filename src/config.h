@@ -4,6 +4,7 @@
 #include <torch/all.h>
 #include <torch/types.h>
 
+namespace config {
 
 /**
  * Holds global TorchANI-Interface device and precision
@@ -59,3 +60,5 @@ class GlobalConfig {
         );
     }
 };
+
+}  // namespace config

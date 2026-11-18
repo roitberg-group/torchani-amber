@@ -1,10 +1,12 @@
-#include "build_tensors.h"
+#include "tensor_utils.h"
 
 #include <vector>
 
 #include <torch/script.h>
 
 #include "config.h"
+
+namespace tensor_utils {
 
 // Torch needs as an input a TensorDataContainer to the
 // torch::tensor constructor. The TensorDataContainer supports an initializer
@@ -17,7 +19,7 @@
 // coords must be set to require grad, since automatic differentiation is
 // used to get the forces
 torch::Tensor dblBufToCoordsTensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     double coords_buf[][3],
     long num_atoms
 ) {
@@ -26,7 +28,7 @@ torch::Tensor dblBufToCoordsTensor(
 }
 
 torch::Tensor dblBufToShiftsTensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     double shifts_buf[][3],
     long num_neighbors
 ) {
@@ -34,14 +36,14 @@ torch::Tensor dblBufToShiftsTensor(
 }
 
 torch::Tensor dblBufToCellTensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     double cell_buf[][3]
 ) {
     return dblBufToTensor(config, cell_buf, {3, 3});
 }
 
 torch::Tensor intBufToNeighborlistTensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     int neighborlist_buf[],
     long num_neighbors
 ) {
@@ -49,7 +51,7 @@ torch::Tensor intBufToNeighborlistTensor(
 }
 
 torch::Tensor dblBufToTensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     void* buf,
     const std::vector<long> shape_vec
 ) {
@@ -60,7 +62,7 @@ torch::Tensor dblBufToTensor(
 }
 
 torch::Tensor intBufToI64Tensor(
-    const GlobalConfig& config,
+    const config::GlobalConfig& config,
     void* buf,
     const std::vector<long> shape_vec
 ) {
@@ -69,3 +71,5 @@ torch::Tensor intBufToI64Tensor(
     torch::Tensor tensor = torch::from_blob(buf, shape, options).to(torch::kLong);
     return config.tensorToTorchaniDevice(tensor);
 }
+
+}  // namespace tensor_utils

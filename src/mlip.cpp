@@ -163,6 +163,8 @@ void validateModelOutput(
 }
 }  // namespace
 
+namespace mlip {
+
 MlipModel::MlipModel(
     const std::string& path, torch::Device device, torch::ScalarType dtype
 )
@@ -411,3 +413,5 @@ auto MlipModel::computeMlmm(
     }
     return output;
 }
+
+}  // namespace mlip

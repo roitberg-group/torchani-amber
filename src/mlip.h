@@ -9,6 +9,8 @@
 #include <torch/all.h>
 #include <torch/script.h>
 
+namespace mlip {
+
 // Keys: "energy", "forces", "atomic_charges", "atomic_charge_grads", "qbc",
 // "qbc_grads", "mm_forces". All values are in Hartree and Angstrom.
 using MlipOutput = std::unordered_map<std::string, torch::Tensor>;
@@ -68,3 +70,5 @@ class MlipModel {
         bool calc_forces = false
     ) -> MlipOutput;
 };
+
+}  // namespace mlip
