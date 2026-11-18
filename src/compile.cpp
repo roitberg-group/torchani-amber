@@ -175,7 +175,7 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
     const torch::Tensor& coords,
     const torch::Tensor& neighborlist,
     const torch::Tensor& shifts,
-    int /* net_charge */,
+    int net_charge,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
@@ -209,8 +209,13 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
     if (not m_external_neighbors_loader) {
         m_external_neighbors_loader = makeLoader("external_neighbors/");
     }
-    std::vector<torch::Tensor> raw_output =
-        m_external_neighbors_loader->run({atomic_numbers, coords, neighborlist, shifts});
+    std::vector<torch::Tensor> raw_output = m_external_neighbors_loader->run(
+        {atomic_numbers,
+         coords,
+         neighborlist,
+         shifts,
+         netChargeTensor(net_charge, coords.size(0))}
+    );
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
     if (calc_forces) {

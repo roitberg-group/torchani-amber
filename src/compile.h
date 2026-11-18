@@ -21,7 +21,8 @@ namespace compile {
  *     -> (energies, forces, atomic_charges)
  * "single_point_pbc/<device>/<dtype>": (species, coords, cell, pbc, net_charge)
  *     -> (energies, forces, atomic_charges)
- * "external_neighbors/<device>/<dtype>": (species, coords, neighbor_idxs, shifts)
+ * "external_neighbors/<device>/<dtype>":
+ *     (species, coords, neighbor_idxs, shifts, net_charge)
  *     -> (energies, forces, atomic_charges)
  * "custom_mlmm/<device>/<dtype>": (species, ml_coords, mm_coords, mm_charges, net_charge)
  *     -> (energies, forces, mm_forces, atomic_charges)

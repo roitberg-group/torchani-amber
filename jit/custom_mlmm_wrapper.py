@@ -56,6 +56,12 @@ class CustomMLMMANImbis(torch.nn.Module):
         self.register_buffer("_znum_to_alpha", alphas_ang3)
         self._inv_pol_dielectric = DEFAULT_INV_POL_DIELECTRIC
         self._angstrom_to_bohr = ANGSTROM_TO_BOHR
+        self.cutoff = self.model.cutoff
+
+    @property
+    @torch.jit.unused
+    def symbols(self) -> tuple[str, ...]:
+        return self.model.symbols
 
     @torch.jit.export
     def set_active_members(self, idxs: list[int]) -> None:
