@@ -6,10 +6,10 @@ include(Torchani_Msg)
 # - LIBTORCH_ROOT
 #
 # Download LibTorch from the pytorch website and extract it into
-# ./external/LIBTORCH_ROOT_NAME, if said dir doesn't exist
+# INSTALL_DIR/LIBTORCH_ROOT_NAME, if said dir doesn't exist
 function(Torchani_LibtorchHelper_download_and_install)
     set(options "")
-    set(oneValueArgs LIB_VERSION PATCH_VERSION CUDATK_VERSION)
+    set(oneValueArgs LIB_VERSION PATCH_VERSION CUDATK_VERSION INSTALL_DIR)
     set(multiValueArgs "")
     cmake_parse_arguments(
         _FN
@@ -25,7 +25,7 @@ function(Torchani_LibtorchHelper_download_and_install)
     # Parse the libtorch directory and download url from the options
     set(_LIBTORCH_ZIPFILE "libtorch-shared-with-deps-${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}%2Bcu${_CUDA_JOINT}.zip")
     set(_LIBTORCH_URL "https://download.pytorch.org/libtorch/cu${_CUDA_JOINT}/${_LIBTORCH_ZIPFILE}")
-    set(_LIBTORCH_ROOT "${PROJECT_SOURCE_DIR}/external/libtorch${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}-cuda${_FN_CUDATK_VERSION}")
+    set(_LIBTORCH_ROOT "${_FN_INSTALL_DIR}/libtorch${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}-cuda${_FN_CUDATK_VERSION}")
 
     if(EXISTS ${_LIBTORCH_ROOT})
         # Skip download if the requested libtorch version exists
@@ -51,14 +51,11 @@ function(Torchani_LibtorchHelper_download_and_install)
         endif()
 
         message(STATUS "LibTorch - Extracting into ${_LIBTORCH_ROOT}")
-        execute_process(
-            COMMAND ${CMAKE_COMMAND} -E tar xfz "${_LIBTORCH_TMP_FILE}"
-            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/external"
-        )
-        if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/libtorch")
-            Torchani_Msg_error("LibTorch - Extraction failed")
+        file(ARCHIVE_EXTRACT INPUT "${_LIBTORCH_TMP_FILE}" DESTINATION "${_FN_INSTALL_DIR}")
+        if(NOT EXISTS "${_FN_INSTALL_DIR}/libtorch")
+            Torchani_Msg_error("LibTorch - Extracted archive has no top-level 'libtorch' dir")
         else()
-            file(RENAME "${PROJECT_SOURCE_DIR}/external/libtorch" "${_LIBTORCH_ROOT}")
+            file(RENAME "${_FN_INSTALL_DIR}/libtorch" "${_LIBTORCH_ROOT}")
             message(STATUS "LibTorch - Downloaded and installed")
         endif()
         file(REMOVE "${_LIBTORCH_TMP_FILE}")

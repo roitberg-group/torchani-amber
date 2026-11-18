@@ -37,7 +37,7 @@ while getopts "TIBPCabghxy" o; do
             use_libtorch=ON
             use_pytorch_libs=OFF
             module purge
-            module load cuda/12.4 gcc/12.2 openmpi/4.1.6 conda cmake
+            module load cuda/13.0 gcc/12.2 openmpi/4.1.6 conda cmake
             export CFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
             export CXXFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
             export FFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
