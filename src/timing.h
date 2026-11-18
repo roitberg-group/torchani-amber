@@ -3,6 +3,8 @@
 #include <chrono>
 #include <string>
 
+namespace timing {
+
 /**
  * Logs the time elapsed between construction and destruction with LOG(INFO)
  * */
@@ -16,3 +18,5 @@ class ScopedTimer {
     auto operator=(const ScopedTimer&) -> ScopedTimer& = delete;
     ~ScopedTimer();
 };
+
+}  // namespace timing

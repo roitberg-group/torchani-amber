@@ -103,28 +103,6 @@ functions:
       - {name: charge_weights, dtype: double, shape: [num_atoms]}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
 
-  - name: torchani_energy_force_qbc
-    comment: Backwards compat, dummy fn, remove when AmberTools26 is released
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: qbc, dtype: double, intent: out}
-      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
-  - name: torchani_data_for_monitored_mlmm
-    comment: Backwards compat, dummy fn, remove when AmberTools26 is released
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
-      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
-      - {name: qbc, dtype: double, intent: out}
-      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
   - name: torchani_calc_energy_force_qbc
     args:
       - {name: num_atoms, dtype: int}
@@ -146,28 +124,6 @@ functions:
       - {name: qbc, dtype: double, intent: out}
       - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
-
-  - name: torchani_energy_force_with_coupling
-    comment: Backwards compat, remove when AmberTools26 is released
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: num_env_charges, dtype: int}
-      - {name: inv_pol_dielectric, dtype: double}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: atomic_alphas, dtype: double, shape: [num_atoms]}
-      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
-      - {name: env_charges, dtype: double, shape: [num_env_charges]}
-      - {name: predict_charges, dtype: bool}
-      - {name: use_simple_polarization_correction, dtype: bool}
-      - {name: use_charge_derivatives, dtype: bool}
-      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: inout}
-      - {name: ene_pot_invacuo, dtype: double, intent: out}
-      - {name: ene_pot_embed_pol, dtype: double, intent: out}
-      - {name: ene_pot_embed_dist, dtype: double, intent: out}
-      - {name: ene_pot_embed_coulomb, dtype: double, intent: out}
-      - {name: ene_pot_total, dtype: double, intent: out}
 
   - name: torchani_calc_energy_force_with_coupling
     args:

@@ -88,30 +88,6 @@ void torchani_energy_atomic_charges_vjp(
     double forces[][3]  // Shape (num_atoms, 3)
 );
 
-// Backwards compat, dummy fn, remove when AmberTools26 is released
-void torchani_energy_force_qbc(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* qbc,
-    double qbc_grad[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
-);
-
-// Backwards compat, dummy fn, remove when AmberTools26 is released
-void torchani_data_for_monitored_mlmm(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double atomic_charges[],  // Shape (num_atoms,)
-    double* atomic_charges_grad,  // Shape (num_atoms, num_atoms, 3)
-    double* qbc,
-    double qbc_grad[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
-);
-
 void torchani_calc_energy_force_qbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -134,29 +110,6 @@ void torchani_calc_data_for_monitored_mlmm(
     double* qbc,
     double qbc_grad[][3],  // Shape (num_atoms, 3)
     double* potential_energy
-);
-
-// Backwards compat, remove when AmberTools26 is released
-void torchani_energy_force_with_coupling(
-    int num_atoms,
-    int num_env_charges,
-    double inv_pol_dielectric,
-    double coords[][3],  // Shape (num_atoms, 3)
-    double atomic_alphas[],  // Shape (num_atoms,)
-    double env_charge_coords[][3],  // Shape (num_env_charges, 3)
-    double env_charges[],  // Shape (num_env_charges,)
-    bool predict_charges,
-    bool use_simple_polarization_correction,
-    bool use_charge_derivatives,
-    /* outputs */
-    double forces_on_atoms[][3],  // Shape (num_atoms, 3)
-    double forces_on_env_charges[][3],  // Shape (num_env_charges, 3)
-    double atomic_charges[],  // Shape (num_atoms,)
-    double* ene_pot_invacuo,
-    double* ene_pot_embed_pol,
-    double* ene_pot_embed_dist,
-    double* ene_pot_embed_coulomb,
-    double* ene_pot_total
 );
 
 void torchani_calc_energy_force_with_coupling(

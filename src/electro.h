@@ -3,7 +3,7 @@
 #include <torch/all.h>
 
 namespace electro {
-auto polarizable_embedding_energy(
+auto polarizableEmbeddingEnergy(
     torch::Tensor coords,
     torch::Tensor atomic_alphas,
     torch::Tensor env_charge_coords,
@@ -11,7 +11,7 @@ auto polarizable_embedding_energy(
     torch::Tensor env_charges_to_atoms_distances,
     double inv_pol_dielectric
 ) -> torch::Tensor;
-auto coulombic_embedding_energy(
+auto coulombicEmbeddingEnergy(
     torch::Tensor atomic_charges,
     torch::Tensor env_charges,
     torch::Tensor env_charges_to_atoms_distances
