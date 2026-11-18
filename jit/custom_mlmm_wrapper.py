@@ -43,6 +43,8 @@ class CustomMLMMANImbis(torch.nn.Module):
     and polarization dielectric.
     """
 
+    _znum_to_alpha: Tensor
+
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self.model = torchani.models.ANImbis(**kwargs)
@@ -68,7 +70,7 @@ class CustomMLMMANImbis(torch.nn.Module):
         species_coordinates: tuple[Tensor, Tensor],
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         molecule_idxs: Tensor | None = None,
@@ -92,7 +94,7 @@ class CustomMLMMANImbis(torch.nn.Module):
         mm_charges: Tensor,
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         molecule_idxs: Tensor | None = None,

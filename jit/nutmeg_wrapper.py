@@ -108,7 +108,7 @@ class NutmegWrapper(torch.nn.Module):
         species_coords: tuple[Tensor, Tensor],
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         _molecule_idxs: Tensor | None = None,
