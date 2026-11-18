@@ -18,6 +18,8 @@ void disableTorchscriptExecutorOptimizations();
  * */
 class TorchScriptMlipModel : public mlip::MlipModel {
     torch::jit::Module m_module;
+    // Old models take 'charge: int', new ones 'charge: Optional[Tensor]' of shape (N,)
+    bool m_legacy_charge_type;
 
     auto castFloatTensors(torch::ScalarType dtype) -> void;
 

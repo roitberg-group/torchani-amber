@@ -77,6 +77,7 @@ conda env create --file ./environment.yaml
 conda activate ani-amber
 ./run-cmake
 # Build Amber adding the following flags: -DCMAKE_PREFIX_PATH=$HOME/.local/, -DCOMPILER=GNU
+# Make sure torchani appears in the list of enabled software when running cmake
 conda deactivate ani-amber
 ```
 
@@ -362,7 +363,7 @@ limitations will be lifted in the future:
 ## Support for custom models
 
 Custom models are supported by passing a full path to the jit-compiled file to
-`model_type`. Custom models have the following limitations:
+`model_type`. Custom models must fullfil some API requiremets.
 
 The easiest way to fullfil requirements needed for usage of custom models is for your
 model to be an instance of `ANI` or `ANIq`. This is flexible, since they are highly
@@ -373,6 +374,12 @@ is also supported. This is more complex. Consult the `TorchANI 2` source code fo
 reference implementation of `compute_from_neighbors`. `use_cuaev` and `network_index`
 may not be supported in this case, depending on your model.
 
+*ADVANCED*: AOTInductor-compiled, exported models (PyTorch 2 compilation method) are supported
+on an experimental basis. Support will improve as PyTorch's 2 support improves.
+The easiest way to generate a compliant AOTI package is to use
+`torchani.compile.compile_model(...)` on your model, passing the supported
+configurations as arguments. Consult the `torchani` documentation for more info.
+
 *ADVANCED*: The exact requirements are as follows. If the model outputs atomic energies,
 `forward` must have the following signature:
 
@@ -382,7 +389,7 @@ def forward(
     species_coords: tuple[Tensor, Tensor],
     cell: Tensor | None = None,
     pbc: Tensor | None = None,
-    charge: int = 0,
+    charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
@@ -400,6 +407,9 @@ def forward(
 If the model doesn't support atomic charges, the signature is the same, but with
 `tuple[Tensor, Tensor]` instead, omitting `atomic_charges`.
 
+`charge` is an `int64` tensor with one entry per molecule (the first dim of the
+coords).
+
 If you want to use the internal Amber neighborlists, your should additionally
 support the following method:
 
@@ -411,7 +421,7 @@ def compute_from_external_neighbors(
     coords: Tensor,
     neighbor_idxs: Tensor,  # External neighbors
     shifts: Tensor,  # External shifts that have to be applied to wrap PBC
-    charge: int = 0,
+    charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
     atomic: bool = False,
     ensemble_values: bool = False,
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
@@ -482,7 +492,7 @@ def compute_mlmm(
     mm_charges: Tensor,  # MM charges (shape: [1, mm-atoms])
     cell: Tensor | None = None,
     pbc: Tensor | None = None,
-    charge: int = 0,
+    charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,
@@ -492,9 +502,10 @@ def compute_mlmm(
     ...
     return energies
 ```
+
 If the model supports atomic charges, the signature is the same, but the output is
 the tuple `(energies, atomic_charges)` instead, with `atomic_charges` of shape
-`[1, atoms]`.
+`(1, atoms)` for a single molecule.
 
 Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
 energies. Currently Amber always calls `compute_mlmm` with `cell = None`,

@@ -26,8 +26,8 @@ namespace compile {
  * "custom_mlmm/<device>/<dtype>": (species, ml_coords, mm_coords, mm_charges, net_charge)
  *     -> (energies, forces, mm_forces, atomic_charges)
  *
- * where <device> is "cpu" or "cuda" and <dtype> is "f32" or "f64". Models are
- * loaded on first use.
+ * where <device> is "cpu" or "cuda" and <dtype> is "f32" or "f64", and net_charge
+ * is an int64 tensor of shape (molecules,). Models are loaded on first use.
  * */
 class CompiledMlipModel : public mlip::MlipModel {
     using Loader = torch::inductor::AOTIModelPackageLoader;
@@ -44,7 +44,7 @@ class CompiledMlipModel : public mlip::MlipModel {
 
     auto modelName(const std::string& prefix) const -> std::string;
     auto makeLoader(const std::string& prefix) const -> std::unique_ptr<Loader>;
-    auto netChargeTensor(int net_charge) const -> torch::Tensor;
+    auto netChargeTensor(int net_charge, std::int64_t num_molecules) const -> torch::Tensor;
 
     public:
     CompiledMlipModel(

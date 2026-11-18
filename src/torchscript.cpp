@@ -19,11 +19,29 @@
 #include "mlip.h"
 
 namespace {
+auto chargeArgIsInt(const torch::jit::Module& module) -> bool {
+    const c10::FunctionSchema& schema = module.get_method("forward").function().getSchema();
+    std::optional<int> charge_idx = schema.argumentIndexWithName("charge");
+    if (not charge_idx.has_value()) {
+        throw std::runtime_error("Model's 'forward' has no 'charge' argument");
+    }
+    return schema.arguments().at(*charge_idx).type()->kind() == c10::TypeKind::IntType;
+}
+
+auto chargeInput(int net_charge, const torch::Tensor& coords, bool legacy_charge_type)
+    -> torch::jit::IValue {
+    if (legacy_charge_type) {
+        return net_charge;
+    }
+    return torch::full({coords.size(0)}, net_charge, coords.options().dtype(torch::kLong));
+}
+
 auto setupInputs(
     const torch::Tensor& atomic_numbers,
     const torch::Tensor& coords,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
+    bool legacy_charge_type,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs
@@ -39,7 +57,7 @@ auto setupInputs(
         std::tuple{atomic_numbers, coords},
         /* cell= */ cell,
         /* pbc= */ pbc,
-        /* charge= */ net_charge,
+        /* charge= */ chargeInput(net_charge, coords, legacy_charge_type),
         /* atomic= */ atomic,
         /* ensemble_values= */ ensemble_values,
         /* molecule_idxs= */ molecule_idxs
@@ -53,6 +71,7 @@ auto setupInputsExternalNeighbors(
     const torch::Tensor& shifts,
     bool ensemble_values,
     int net_charge,
+    bool legacy_charge_type,
     const std::optional<torch::Tensor>& molecule_idxs
 ) -> std::vector<torch::jit::IValue> {
     return {
@@ -60,7 +79,7 @@ auto setupInputsExternalNeighbors(
         coords,
         neighborlist,
         shifts,
-        /* charge= */ net_charge,
+        /* charge= */ chargeInput(net_charge, coords, legacy_charge_type),
         /* atomic= */ false,
         /* ensemble_values= */ ensemble_values,
         // An empty torch::jit::IValue() is equivalent to torch::indexing::None
@@ -75,6 +94,7 @@ auto setupInputsCustomMlmm(
     const torch::Tensor& mm_charges,
     bool ensemble_values,
     int net_charge,
+    bool legacy_charge_type,
     const std::optional<torch::Tensor>& cell,
     const std::optional<torch::Tensor>& molecule_idxs
 ) -> std::vector<torch::jit::IValue> {
@@ -91,7 +111,7 @@ auto setupInputsCustomMlmm(
         /* mm_charges= */ mm_charges,
         /* cell= */ cell,
         /* pbc= */ pbc,
-        /* charge= */ net_charge,
+        /* charge= */ chargeInput(net_charge, ml_coords, legacy_charge_type),
         /* atomic= */ false,
         /* ensemble_values= */ ensemble_values,
         /* molecule_idxs= */ molecule_idxs
@@ -254,7 +274,8 @@ void disableTorchscriptExecutorOptimizations() {
 TorchScriptMlipModel::TorchScriptMlipModel(
     const std::string& path, torch::Device device, torch::ScalarType dtype
 )
-    : m_module{torch::jit::load(path, device)} {
+    : m_module{torch::jit::load(path, device)},
+      m_legacy_charge_type{chargeArgIsInt(m_module)} {
     castFloatTensors(dtype);
 }
 
@@ -353,6 +374,7 @@ auto TorchScriptMlipModel::computeSinglePoint(
         coords,
         cell,
         net_charge,
+        m_legacy_charge_type,
         /* atomic= */ false,
         /* ensemble_values= */ calc_qbc_and_qbc_grad,
         molecule_idxs
@@ -412,6 +434,7 @@ auto TorchScriptMlipModel::computeFromExternalNeighbors(
             shifts,
             /* ensemble_values= */ calc_qbc_and_qbc_grad,
             net_charge,
+            m_legacy_charge_type,
             molecule_idxs
         )
     );
@@ -465,6 +488,7 @@ auto TorchScriptMlipModel::computeMlmm(
             mm_charges,
             /* ensemble_values= */ calc_qbc_and_qbc_grad,
             net_charge,
+            m_legacy_charge_type,
             cell,
             molecule_idxs
         )

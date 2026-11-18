@@ -74,9 +74,12 @@ auto CompiledMlipModel::makeLoader(const std::string& prefix) const
     );
 }
 
-auto CompiledMlipModel::netChargeTensor(int net_charge) const -> torch::Tensor {
-    return torch::tensor(
-        net_charge, torch::TensorOptions().dtype(torch::kLong).device(m_device)
+auto CompiledMlipModel::netChargeTensor(int net_charge, std::int64_t num_molecules) const
+    -> torch::Tensor {
+    return torch::full(
+        {num_molecules},
+        net_charge,
+        torch::TensorOptions().dtype(torch::kLong).device(m_device)
     );
 }
 
@@ -139,14 +142,18 @@ auto CompiledMlipModel::computeSinglePoint(
             torch::TensorOptions().dtype(torch::kBool).device(cell->device())
         );
         raw_output = m_pbc_single_point_loader->run(
-            {atomic_numbers, coords, *cell, pbc, netChargeTensor(net_charge)}
+            {atomic_numbers,
+             coords,
+             *cell,
+             pbc,
+             netChargeTensor(net_charge, coords.size(0))}
         );
     } else {
         if (not m_single_point_loader) {
             m_single_point_loader = makeLoader("single_point/");
         }
         raw_output = m_single_point_loader->run(
-            {atomic_numbers, coords, netChargeTensor(net_charge)}
+            {atomic_numbers, coords, netChargeTensor(net_charge, coords.size(0))}
         );
     }
     mlip::MlipOutput output;
@@ -262,7 +269,11 @@ auto CompiledMlipModel::computeMlmm(
         m_custom_mlmm_loader = makeLoader("custom_mlmm/");
     }
     std::vector<torch::Tensor> raw_output = m_custom_mlmm_loader->run(
-        {atomic_numbers, ml_coords, mm_coords, mm_charges, netChargeTensor(net_charge)}
+        {atomic_numbers,
+         ml_coords,
+         mm_coords,
+         mm_charges,
+         netChargeTensor(net_charge, ml_coords.size(0))}
     );
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
