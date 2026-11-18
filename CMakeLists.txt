@@ -41,6 +41,7 @@ Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 # The pytorch path is simpler, since the pytorch wheel pulls the required nvidia
 # wheels and toolkit libraries directly
 # Neigher of these includes nvcc or CUDA headers, these are needed separately
+# This means using libtorch is a pain, and is probably best avoided
 
 # General: options and flags
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
