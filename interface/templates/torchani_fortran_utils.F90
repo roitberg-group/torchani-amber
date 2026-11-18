@@ -3,15 +3,14 @@
 !
 ! This is not a standalone file. interface/templates/torchani.F90.jinja includes
 ! it verbatim inside the "contains" section of module torchani, and the result
-! is interface/torchani.F90. Backwards-compat shims live in the template, this
-! file holds the rest of the hand-written code. Things to keep in mind:
+! is interface/torchani.F90. This file holds the hand-written code. Things to
+! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
 ! - torchani_initialize calls internal_initialize, the bind(c) interface
 !   generated from interface/interface.yaml. If the args of torchani_initialize
 !   change in the yaml, that call must be updated.
-! - The generated Fortran wrappers and the shims in the template call
-!   fbool_to_cbool, defined here.
+! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
