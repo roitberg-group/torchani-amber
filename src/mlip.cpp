@@ -8,7 +8,6 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 #include <c10/util/Logging.h>
@@ -95,7 +94,7 @@ auto setupInputsCustomMlmm(
         /* molecule_idxs= */ molecule_idxs
     };
 }
-torch::Tensor fetchEnergiesFromOutput(torch::jit::IValue output) {
+torch::Tensor fetchEnergiesFromOutput(const torch::jit::IValue& output) {
     // New signature for compute_from_neighbors
     if (!output.isTuple()) {
         return output.toGenericDict().at("energies").toTensor();
@@ -111,7 +110,7 @@ torch::Tensor fetchEnergiesFromOutput(torch::jit::IValue output) {
     return output.toTuple()->elements()[1].toTensor();
 }
 
-torch::Tensor fetchAtomicChargesFromOutput(torch::jit::IValue output) {
+torch::Tensor fetchAtomicChargesFromOutput(const torch::jit::IValue& output) {
     // New signature for compute_from_neighbors
     if (!output.isTuple()) {
         return output.toGenericDict().at("atomic_charges").toTensor();
@@ -123,7 +122,7 @@ torch::Tensor fetchAtomicChargesFromOutput(torch::jit::IValue output) {
     }
 
     // Standard signature, tuple form or tuple-dict form
-    auto scalars = output.toTuple()->elements()[2];
+    const auto& scalars = output.toTuple()->elements()[2];
     if (scalars.isTensor()) {
         return scalars.toTensor();
     }
