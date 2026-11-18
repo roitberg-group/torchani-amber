@@ -48,3 +48,4 @@ jit/nutmeg/
 *.mdcrd
 *.restart
 *mdout
+.vscode/
