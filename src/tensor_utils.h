@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <torch/script.h>
+#include <torch/all.h>
 
 #include "config.h"
 

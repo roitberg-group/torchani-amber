@@ -121,7 +121,7 @@ class AimNet2Wrapper(torch.nn.Module):
         species_coords: tuple[Tensor, Tensor],
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         _molecule_idxs: Tensor | None = None,
@@ -147,17 +147,19 @@ class AimNet2Wrapper(torch.nn.Module):
         neighbors_lr: Neighbors,
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergiesAtomicCharges:
 
         neigh = discard_outside_cutoff(neighbors_lr, self._cutoff)
         atoms_num = coords.shape[1]
+        if charge is None:
+            charge = coords.new_zeros(coords.size(0))
         data: dict[str, Tensor] = {
             "mol_idx": coords.new_zeros(atoms_num + 1),
             "numbers": self.pad_dim0(species.squeeze(0)).long(),
-            "charge": torch.tensor([charge], dtype=coords.dtype, device=coords.device),
+            "charge": charge.to(coords.dtype),
             "cutoff_lr": coords.new_full((1,), fill_value=self._cutoff_lr),
         }
         if pbc is None:
@@ -257,7 +259,9 @@ class ANIqAllowNonzeroCharge(ANIq):
     pass
 
     @staticmethod
-    def _check_inputs(elem_idxs: Tensor, coords: Tensor, charge: int = 0) -> None:
+    def _check_inputs(
+        elem_idxs: Tensor, coords: Tensor, charge: Tensor | None = None
+    ) -> None:
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
 
@@ -311,7 +315,7 @@ class AimNet2Mbis(AimNet2Wrapper):
         species_coords: tuple[Tensor, Tensor],
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         _molecule_idxs: Tensor | None = None,
@@ -334,7 +338,6 @@ class AimNet2Mbis(AimNet2Wrapper):
             nop=False,
         )
         # Run charge model only
-        # TODO currently charge model only supports 0 charge
         atomic_charges = self._charge_model.compute_from_neighbors(
             elem_idxs,
             coords,

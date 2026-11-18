@@ -43,6 +43,8 @@ class CustomMLMMANImbis(torch.nn.Module):
     and polarization dielectric.
     """
 
+    _znum_to_alpha: Tensor
+
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self.model = torchani.models.ANImbis(**kwargs)
@@ -54,6 +56,12 @@ class CustomMLMMANImbis(torch.nn.Module):
         self.register_buffer("_znum_to_alpha", alphas_ang3)
         self._inv_pol_dielectric = DEFAULT_INV_POL_DIELECTRIC
         self._angstrom_to_bohr = ANGSTROM_TO_BOHR
+        self.cutoff = self.model.cutoff
+
+    @property
+    @torch.jit.unused
+    def symbols(self) -> tuple[str, ...]:
+        return self.model.symbols
 
     @torch.jit.export
     def set_active_members(self, idxs: list[int]) -> None:
@@ -68,7 +76,7 @@ class CustomMLMMANImbis(torch.nn.Module):
         species_coordinates: tuple[Tensor, Tensor],
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         molecule_idxs: Tensor | None = None,
@@ -92,7 +100,7 @@ class CustomMLMMANImbis(torch.nn.Module):
         mm_charges: Tensor,
         cell: Tensor | None = None,
         pbc: Tensor | None = None,
-        charge: int = 0,
+        charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         molecule_idxs: Tensor | None = None,

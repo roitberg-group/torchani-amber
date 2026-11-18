@@ -12,6 +12,7 @@ namespace config {
 class GlobalConfig {
     torch::TensorOptions m_opts;
     bool m_use_no_eval_atoms;
+    bool m_torchani_is_init = false;
 
     public:
     GlobalConfig(torch::DeviceType device = torch::kCPU, torch::DeviceIndex device_idx = -1, torch::ScalarType dtype = torch::kFloat, bool use_no_eval_atoms = false):
@@ -33,6 +34,14 @@ class GlobalConfig {
 
     auto setNoEvalAtoms(bool use_no_eval_atoms) -> void {
         m_use_no_eval_atoms = use_no_eval_atoms;
+    }
+
+    auto torchaniIsInit() const -> bool {
+        return m_torchani_is_init;
+    }
+
+    auto setTorchaniIsInit(bool torchani_is_init) -> void {
+        m_torchani_is_init = torchani_is_init;
     }
 
     auto setDeviceAndPrecision(bool use_cuda_device, torch::DeviceIndex device_idx, bool use_double_precision) -> void {
