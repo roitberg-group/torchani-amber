@@ -4,7 +4,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <torch/all.h>
 #include <torch/script.h>
@@ -22,7 +21,6 @@ class MlipModel {
     torch::jit::Module m_module;
 
     auto castFloatTensors(torch::ScalarType dtype) -> void;
-    auto forward(std::vector<torch::jit::IValue> inputs) -> torch::jit::IValue;
 
     public:
     MlipModel() = default;
@@ -30,11 +28,9 @@ class MlipModel {
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void;
     auto readExtraFeaturesFromFile(const std::string& fpath) -> void;
-    auto hasMethod(const std::string& name) const -> bool;
+    auto setStrategy(const std::string& strat) -> void;
     auto supportsCustomMlmm() const -> bool;
     auto supportsComputeFromExternalNeighbors() const -> bool;
-    auto callMethod(const std::string& name, std::vector<torch::jit::IValue> inputs) const
-        -> torch::jit::IValue;
     auto computeSinglePoint(
         const torch::Tensor& atomic_numbers,
         const torch::Tensor& coords,

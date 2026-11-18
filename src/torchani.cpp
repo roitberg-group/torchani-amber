@@ -340,26 +340,19 @@ void torchani_initialize(
             std::exit(2);
         }
     }
-    if (use_cuaev) {
-        if (model.hasMethod("set_strategy")) {
-            model.callMethod("set_strategy", {"cuaev"});
-        } else {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << " The selected model doesn't export"
-                      << " a method 'set_strategy(str) -> None'"
-                      << " that accepts the string 'cuaev'.\n"
-                      << "The cuAEV extension will be disabled.\n"
-                      << " If you are not using a traditional ANI model with AEVs,"
-                      << " you can safely disregard this warning."
-                      << std::endl;
-        }
-    } else {
-        // It is not required that models support this
-        try {
-            model.callMethod("set_strategy", {"pyaev"});
-        } catch (const c10::Error& e) {
-        }
+    std::string strat = use_cuaev ? "cuaev" : "pyaev";
+    try {
+        model.setStrategy(strat);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "WARNING (libtorchani)\n"
+                  << e.what() << "\n"
+                  << "The passed strategy was " << strat
+                  << ". The cuAEV extension will be disabled.\n"
+                  << " If you are not using a traditional ANI model with AEVs,"
+                  << " you can safely disregard this warning."
+                  << std::endl;
     }
+
     // Models can read arbitrary features from a newline separated
     // file with floats (e.g. Nutmeg potentials use this)
     if (not extra_features_fpath.empty()) {

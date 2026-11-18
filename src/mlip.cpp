@@ -191,16 +191,16 @@ auto MlipModel::castFloatTensors(torch::ScalarType dtype) -> void {
 }
 
 auto MlipModel::useOnlyEnsembleMember(std::int64_t member_idx) -> void {
-    if (not hasMethod("set_active_members")) {
+    if (not m_module.find_method("set_active_members").has_value()) {
         throw std::runtime_error(
             "Model doesn't export a method 'set_active_members(list[int]) -> None'"
         );
     }
-    callMethod("set_active_members", {torch::List<std::int64_t>{member_idx}});
+    m_module.get_method("set_active_members")({torch::List<std::int64_t>{member_idx}});
 }
 
 auto MlipModel::readExtraFeaturesFromFile(const std::string& fpath) -> void {
-    if (not hasMethod("set_extra_features")) {
+    if (not m_module.find_method("set_extra_features").has_value()) {
         throw std::runtime_error(
             "Model doesn't export a method 'set_extra_features(list[float]) -> None'"
         );
@@ -213,26 +213,31 @@ auto MlipModel::readExtraFeaturesFromFile(const std::string& fpath) -> void {
     while (features_file >> val) {
         features.push_back(val);
     }
-    callMethod("set_extra_features", {features});
+    m_module.get_method("set_extra_features")({features});
 }
 
-auto MlipModel::hasMethod(const std::string& name) const -> bool {
-    return m_module.find_method(name).has_value();
+auto MlipModel::supportsCustomMlmm() const -> bool {
+    return m_module.find_method("compute_mlmm").has_value();
 }
-
-auto MlipModel::supportsCustomMlmm() const -> bool { return hasMethod("compute_mlmm"); }
 
 auto MlipModel::supportsComputeFromExternalNeighbors() const -> bool {
-    return hasMethod("compute_from_external_neighbors");
+    return m_module.find_method("compute_from_external_neighbors").has_value();
 }
 
-auto MlipModel::callMethod(const std::string& name, std::vector<torch::jit::IValue> inputs) const
-    -> torch::jit::IValue {
-    return m_module.get_method(name)(std::move(inputs));
-}
-
-auto MlipModel::forward(std::vector<torch::jit::IValue> inputs) -> torch::jit::IValue {
-    return m_module.forward(std::move(inputs));
+auto MlipModel::setStrategy(const std::string& strat) -> void {
+    // If the model doesn't export set_strategy, then this is just a no-op. It is not
+    // required that models export set_strategy
+    if (not m_module.find_method("set_strategy").has_value()) {
+        return;
+    }
+    try {
+        m_module.get_method("set_strategy")({strat});
+    } catch (const c10::Error& e) {
+        throw std::runtime_error(
+            "The selected model exports 'set_strategy(str) -> None'"
+            " but it doesn't accept the specified strategy"
+        );
+    }
 }
 
 auto MlipModel::computeSinglePoint(
@@ -257,7 +262,7 @@ auto MlipModel::computeSinglePoint(
     if (calc_charges_grad and not calc_charges) {
         throw std::runtime_error("calc_charges_grad=true requires calc_charges=true");
     }
-    torch::jit::IValue raw_output = forward(setupInputs(
+    torch::jit::IValue raw_output = m_module.forward(setupInputs(
         atomic_numbers,
         coords,
         cell,
@@ -342,8 +347,7 @@ auto MlipModel::computeFromExternalNeighbors(
             "computeFromExternalNeighbors doesn't support ensemble_values=true"
         );
     }
-    torch::jit::IValue raw_output = callMethod(
-        "compute_from_external_neighbors",
+    torch::jit::IValue raw_output = m_module.get_method("compute_from_external_neighbors")(
         setupInputsExternalNeighbors(
             atomic_numbers,
             coords,
@@ -385,8 +389,7 @@ auto MlipModel::computeMlmm(
     if (ensemble_values) {
         throw std::runtime_error("computeMlmm doesn't support ensemble_values=true");
     }
-    torch::jit::IValue raw_output = callMethod(
-        "compute_mlmm",
+    torch::jit::IValue raw_output = m_module.get_method("compute_mlmm")(
         setupInputsCustomMlmm(
             atomic_numbers,
             ml_coords,
