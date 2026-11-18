@@ -19,7 +19,7 @@ where intermolecular non-bonded interactions are calculated by the force field. 
 simulations are also possible. Both `sander` and `pmemd` are supported.
 
 TorchANI-Amber has been tested with the latest `AmberTools` and `pmemd` versions (2026).
-Apply all patches with `update_amber` before installation.
+Apply all patches with `update_amber` before building Amber.
 
 If you find this work useful please cite the following articles:
 - *TorchANI-Amber: Bridging neural network potentials and classical biomolecular simulations* <br>
@@ -67,6 +67,20 @@ Useful links:
 The main supported way to build and install the TorchANI-Amber interface is with
 `cmake`, from within a `conda` (or `mamba`) environment. The necessary steps are
 described next. Other procedures may work, but are untested. GCC >= 12.2 is required.
+
+TL;DR installation instructions:
+
+```bash
+git clone --recurse-submodules git@github.com:roitberg-group/torchani-amber.git
+cd torchani-amber
+conda env create --file ./environment.yaml
+conda activate ani-amber
+./run-cmake
+# Build Amber adding the following flags: -DCMAKE_PREFIX_PATH=$HOME/.local/, -DCOMPILER=GNU
+conda deactivate ani-amber
+```
+
+More detailed installation instructions:
 
 1. Clone this repo and cd into it
     ```bash
@@ -365,15 +379,16 @@ may not be supported in this case, depending on your model.
 ```python
 def forward(
     self,
-    species_coords: tuple[Tensor, Tensor]
-    cell: Tensor | None,
-    pbc: Tensor | None,
-    charge: int,
-    atomic: bool,  # Controls atomic energy decomposition
-    ensemble_values: bool,  # Controls whether the model outputs ensemble values
+    species_coords: tuple[Tensor, Tensor],
+    cell: Tensor | None = None,
+    pbc: Tensor | None = None,
+    charge: int = 0,
+    atomic: bool = False,  # Controls atomic energy decomposition
+    ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
+    molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
 ) -> tuple[Tensor, Tensor, Tensor]:
     # Where the output is a tuple:
-    #     - species (shape: [1, atoms]), energies, atomic_numbers
+    #     - species (shape: [1, atoms])
     #     - energies (shape: [1,])
     #     - atomic_charges (shape: [1, atoms])
     # For more information about the signature consult the `TorchANI 2` docs
@@ -399,6 +414,7 @@ def compute_from_external_neighbors(
     charge: int = 0,
     atomic: bool = False,
     ensemble_values: bool = False,
+    molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
 ) -> tuple[Tensor, Tensor | None]:
     # Where the output is a tuple:
     #     - energies (shape: [1,])
@@ -464,18 +480,21 @@ def compute_mlmm(
     species_coords: tuple[Tensor, Tensor],
     mm_coords: Tensor,  # MM coordinates (shape: [1, mm-atoms, 3])
     mm_charges: Tensor,  # MM charges (shape: [1, mm-atoms])
-    cell: Tensor | None,
-    pbc: Tensor | None,
-    charge: int,
-    atomic: bool,  # Controls atomic energy decomposition
-    ensemble_values: bool,  # Controls whether the model outputs ensemble values
-    molecule_idxs: Tensor | None,
+    cell: Tensor | None = None,
+    pbc: Tensor | None = None,
+    charge: int = 0,
+    atomic: bool = False,  # Controls atomic energy decomposition
+    ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
+    molecule_idxs: Tensor | None = None,
 ) -> Tensor:
     # Where the output is:
     #     - energies, in-vacuo + ML/MM coupling (shape: [1,])
     ...
     return energies
 ```
+If the model supports atomic charges, the signature is the same, but the output is
+the tuple `(energies, atomic_charges)` instead, with `atomic_charges` of shape
+`[1, atoms]`.
 
 Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
 energies. Currently Amber always calls `compute_mlmm` with `cell = None`,

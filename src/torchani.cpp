@@ -322,8 +322,8 @@ void torchani_initialize(
 
     // The model is loaded from a pytorch file.
     try {
-        model = mlip::MlipModel::from_jit_model_path(model_path, global_config.device(), global_config.dtype());
-    } catch (const c10::Error& e) {
+        model = mlip::MlipModel::from_model_path(model_path, global_config.device(), global_config.dtype());
+    } catch (const std::exception& e) {
         std::cerr
             << "ERROR (libtorchani)\n"
             << "Could not load model correctly from path: " << model_path << "\n"
@@ -429,8 +429,9 @@ void torchani_calc_energy_force_from_external_neighbors(
         coords,
         neighborlist,
         shifts,
-        /*ensemble values=*/false,
         net_charge,
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
         maybe_molecule_idxs,
         /*calc_forces=*/true
     );
@@ -685,9 +686,10 @@ void torchani_calc_energy_force_custom_mlmm(
         ml_coords,
         mm_coords,
         mm_charges,
-        /*ensemble values=*/false,
-        ml_system_charge,
         maybe_cell,
+        ml_system_charge,
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
         maybe_molecule_idxs,
         /*calc_forces=*/true
     );

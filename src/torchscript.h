@@ -49,21 +49,29 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& coords,
         const torch::Tensor& neighborlist,
         const torch::Tensor& shifts,
-        bool ensemble_values,
         int net_charge,
+        bool atomic,
+        bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
-        bool calc_forces
+        bool calc_forces,
+        bool calc_charges,
+        bool calc_charges_grad,
+        bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMlmm(
         const torch::Tensor& atomic_numbers,
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        bool ensemble_values,
-        int net_charge,
         const std::optional<torch::Tensor>& cell,
+        int net_charge,
+        bool atomic,
+        bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
-        bool calc_forces
+        bool calc_forces,
+        bool calc_charges,
+        bool calc_charges_grad,
+        bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
 };
 
