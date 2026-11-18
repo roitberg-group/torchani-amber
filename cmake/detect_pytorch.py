@@ -1,7 +1,7 @@
 import torch
 from pathlib import Path
 
-torch_maj, torch_min, torch_patch = torch.__version__.split(".")
+torch_maj, torch_min = torch.__version__.split(".")[:2]
 cuda_version = torch.version.cuda
 assert cuda_version is not None
 cuda_maj, cuda_min = cuda_version.split(".")

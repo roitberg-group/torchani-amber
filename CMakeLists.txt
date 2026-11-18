@@ -36,31 +36,49 @@ Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 
 # General: options and flags
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
-option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs" ON)
-option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract locally to ./external/libtorch<version>-cuda<version>" OFF)
+option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs ($ORIGIN is always added)" ON)
+option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract to TORCHANI_LIBTORCH_INSTALL_DIR/libtorch<version>-cuda<version>" OFF)
+set(TORCHANI_LIBTORCH_INSTALL_DIR "${CMAKE_CURRENT_LIST_DIR}/external" CACHE PATH "Dir where LibTorch is downloaded and extracted, if a download is requested")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
 option(TORCHANI_USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
-option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under ./usr/local/cuda-<version> if needed" OFF)
+option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under /usr/local/cuda-<version> if needed" OFF)
 option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
 option(TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
 
 # Exact major.minor versions must match for these
 set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of PyTorch/LibTorch")
-set(TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION "0" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
 set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
 set(TORCHANI_REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
+set(TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION "0" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     Torchani_Msg_error("'TORCHANI_LINK_TO_PYTORCH_LIBS' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
 endif()
 
-if(TORCHANI_PREFER_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
-    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
+if("$ENV{CONDA_DEFAULT_ENV}" STREQUAL "base")
+    Torchani_Msg_warn("You are building from the conda 'base' env")
 endif()
 
-if(TORCHANI_PREFER_CONDA_LIBS AND "$ENV{CONDA_PREFIX}" STREQUAL "")
-    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' requires an active conda env, activate one or reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
+set(USE_CONDA_LIBS OFF)
+if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
+    if(TORCHANI_PREFER_CONDA_LIBS)
+        Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
+        Torchani_Msg_info("Libs will be searched first under this prefix")
+        Torchani_Msg_info("If you don't want this, reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
+        list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+        # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
+        # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
+        set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
+        set(USE_CONDA_LIBS ON)
+    else()
+        Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
+        Torchani_Msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
+    endif()
+endif()
+
+if(USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
+    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
 # Validate compilers
@@ -89,28 +107,6 @@ if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_error("'TORCHANI_JIT_COMPILE_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
 endif()
 
-if(NOT $ENV{CONDA_PREFIX} STREQUAL "")
-    if(TORCHANI_PREFER_CONDA_LIBS)
-        Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
-        Torchani_Msg_info("Libs will be searched first under this prefix")
-        Torchani_Msg_info("If you don't want this, reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
-        list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-        # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
-        # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
-        set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
-        set(USE_CONDA_CUDNN ON)
-        set(USE_CONDA_CUDATK ON)
-    else()
-        Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
-        Torchani_Msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
-        set(USE_CONDA_CUDNN OFF)
-        set(USE_CONDA_CUDATK OFF)
-    endif()
-else()
-    set(USE_CONDA_CUDNN OFF)
-    set(USE_CONDA_CUDATK OFF)
-endif()
-
 # PyTorch/LibTorch setup
 if(TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_info("Will try to find and link to an existing PyTorch installation")
@@ -130,12 +126,13 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
         PATCH_VERSION ${TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
+        INSTALL_DIR "${TORCHANI_LIBTORCH_INSTALL_DIR}"
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
 
 # cuDNN setup
-if(USE_CONDA_CUDNN)
+if(USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     Torchani_CudnnHelper_set_conda_paths()
@@ -156,7 +153,7 @@ else()
 endif()
 
 # CUDA Toolkit setup
-if(USE_CONDA_CUDATK)
+if(USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
     Torchani_CudaToolkitHelper_set_conda_paths()
@@ -199,7 +196,7 @@ add_library(
     "${CELL_ROOT}/cell_list.cpp"
 )
 target_compile_features(torchani_cell_list PRIVATE cxx_std_17)
-if(TORCHANI_PREFER_CONDA_LIBS)
+if(USE_CONDA_LIBS)
     target_link_directories(torchani_cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cell_list PRIVATE ${TORCH_LIBRARIES})
@@ -231,7 +228,7 @@ target_compile_definitions(
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
 target_compile_options(torchani_cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
-if(TORCHANI_PREFER_CONDA_LIBS)
+if(USE_CONDA_LIBS)
     target_link_directories(torchani_cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
@@ -277,7 +274,7 @@ set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED
     "LINKER:--pop-state"
 )
 set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED_SUPPORTED TRUE)
-if(TORCHANI_PREFER_CONDA_LIBS)
+if(USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(
@@ -309,30 +306,29 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # (LIBTORCH_LIBRARY_DIR and the Torchani installation dir, which is $ORIGIN).
 # NOTE: INSTALL_RPATH_USE_LINK_PATH also adds /lib/intel64, /lib/intel64_win and
 # /lib/win-x64, derived from TORCH_LIBRARIES. These don't exist, but this is harmless
+# NOTE: INSTALL_RPATH_USE_LINK_PATH skips CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES, which
+# contain the linked cudart and nvrtc, so their dirs are also baked in manually
+# NOTE: CUDA_cudart_LIBRARY and CUDA_nvrtc_LIBRARY are internal cache vars of
+# FindCUDAToolkit (called by Torch), and they may change in the future
+set(TORCHANI_LIBRARIES_INSTALL_RPATH "$ORIGIN")
 if(TORCHANI_SET_LIBRARIES_INSTALL_RPATH)
-    set(TORCHANI_LIBRARIES_INSTALL_RPATH
+    get_filename_component(CUDART_LIBRARY_DIR "${CUDA_cudart_LIBRARY}" DIRECTORY)
+    get_filename_component(NVRTC_LIBRARY_DIR "${CUDA_nvrtc_LIBRARY}" DIRECTORY)
+    list(PREPEND TORCHANI_LIBRARIES_INSTALL_RPATH
         ${LIBTORCH_LIBRARY_DIR}
-        "$ORIGIN"
+        ${CUDART_LIBRARY_DIR}
+        ${NVRTC_LIBRARY_DIR}
     )
-    set_target_properties(
-        torchani_cuaev
-        PROPERTIES
-            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
-            INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
-    set_target_properties(
-        torchani_cell_list
-        PROPERTIES
-            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
-            INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
-    set_target_properties(
-        torchani
-        PROPERTIES
-            INSTALL_RPATH  "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
-            INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
+    list(REMOVE_DUPLICATES TORCHANI_LIBRARIES_INSTALL_RPATH)
 endif()
+set_target_properties(
+    torchani_cuaev
+    torchani_cell_list
+    torchani
+    PROPERTIES
+        INSTALL_RPATH "${TORCHANI_LIBRARIES_INSTALL_RPATH}"
+        INSTALL_RPATH_USE_LINK_PATH ${TORCHANI_SET_LIBRARIES_INSTALL_RPATH}
+)
 
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
