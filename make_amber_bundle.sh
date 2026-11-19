@@ -60,7 +60,9 @@ cd "${repo_root}"
         -o -path ./run-cmake \
         -o -path ./environment.yaml \
         -o -path ./CMakeLists.txt \
+        -o -path ./build \
         -o -path ./inputs \
+        -o -path './jit/*.csv' \
         -o -path ./tests/expect \
         -o -path ./external \
         -o -path ./jit/aimnet2 \
