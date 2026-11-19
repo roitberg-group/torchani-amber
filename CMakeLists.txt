@@ -48,6 +48,7 @@ include(Torchani_LibtorchHelper)
 include(Torchani_PytorchHelper)
 include(Torchani_CudnnHelper)
 include(Torchani_CudaToolkitHelper)
+include(Torchani_AmberHelper)
 include(Torchani_TorchScriptUtils)
 
 Torchani_OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
@@ -66,6 +67,7 @@ Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 # This means using libtorch is a pain, and is probably best avoided
 
 # General: options and flags
+option(TORCHANI_BUILD_CUDA "Build with CUDA support. If OFF, a CPU-only PyTorch/LibTorch is required" ON)
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
 option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs ($ORIGIN is always added)" ON)
 option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract to TORCHANI_LIBTORCH_INSTALL_DIR/libtorch<version>-cuda<version>" OFF)
@@ -114,6 +116,10 @@ if(TORCHANI_USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM
     Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
+if(NOT TORCHANI_BUILD_CUDA AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
+    Torchani_Msg_error("'TORCHANI_BUILD_CUDA=OFF' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
+endif()
+
 # Validate compilers
 if(NOT TORCHANI_ALLOW_UNSUPPORTED_COMPILERS)
     set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
@@ -145,6 +151,7 @@ if(TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_info("Will try to find and link to an existing PyTorch installation")
     # Set var PYTORCH_ROOT
     Torchani_PytorchHelper_detect(
+        USE_CUDA ${TORCHANI_BUILD_CUDA}
         CHECK_VERSIONS ${TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS}
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
@@ -156,6 +163,7 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     # NOTE: If the requested version already exists it is *not* extracted
     # Set vars LIBTORCH_ROOT, LIBTORCH_LIBRARY_DIR
     Torchani_LibtorchHelper_download_and_install(
+        USE_CUDA ${TORCHANI_BUILD_CUDA}
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
         PATCH_VERSION ${TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
@@ -164,95 +172,63 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
 
-# cuDNN setup
-if(TORCHANI_USE_CONDA_LIBS)
-    Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
-    # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    Torchani_CudnnHelper_set_conda_paths()
-    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
-elseif(TORCHANI_USE_CUSTOM_CUDNN)
-    Torchani_Msg_info("Will manually set variables that point to cuDNN")
-    Torchani_Msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
-    # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-    Torchani_CudnnHelper_set_custom_paths(
-        LIB_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
-        CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
-    )
-    list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
-else()
-    # cuDNN may be directly extracted into the CUDA Toolkit dir,
-    # if a user has done this then they don't need to specify an external version
-    Torchani_Msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
-endif()
-
-# CUDA Toolkit setup
-if(TORCHANI_USE_CONDA_LIBS)
-    Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
-    # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    Torchani_CudaToolkitHelper_set_conda_paths()
-    Torchani_Msg_banner(
-        "The TorchANI-Amber MLIP Interface requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
-        At this stage of the configuration, we don't check whether all necessary CUDA
-        Toolkit features are present.
-        Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
-        ensure this, for example, use the provided conda env, which has all
-        dependencies, or directly download and install the CUDA Toolkit
-        ${TORCHANI_REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
-        after this point may indicate you are missing a required part of the Toolkit."
-    )
-elseif(TORCHANI_USE_CUSTOM_CUDATK)
-    Torchani_Msg_info("Will manually set variables that point to the CUDA Toolkit")
-    Torchani_Msg_info("assuming it is located in /usr/local/cuda-<version>")
-    # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
-    Torchani_CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION})
-else()
-    Torchani_Msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
-    set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-endif()
-enable_language(CUDA)
-
-if(INSIDE_AMBER)
-    # Amber finds its own CUDA Toolkit, and both must match to avoid loading two
-    # different CUDA runtimes into the same process
-    file(REAL_PATH "${CMAKE_CUDA_COMPILER}" TORCHANI_NVCC_REALPATH)
-    file(REAL_PATH "${CUDA_NVCC_EXECUTABLE}" AMBER_NVCC_REALPATH)
-    if(NOT TORCHANI_NVCC_REALPATH STREQUAL AMBER_NVCC_REALPATH)
-        set(NVCC_MISMATCH_MSG "The CUDA compiler used by the MLIP interface (${TORCHANI_NVCC_REALPATH})")
-        set(NVCC_MISMATCH_MSG "${NVCC_MISMATCH_MSG} differs from the one used by Amber (${AMBER_NVCC_REALPATH})")
-        Torchani_Msg_error("${NVCC_MISMATCH_MSG}")
+if(TORCHANI_BUILD_CUDA)
+    # cuDNN setup
+    if(TORCHANI_USE_CONDA_LIBS)
+        Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
+        # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
+        Torchani_CudnnHelper_set_conda_paths()
+        list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
+    elseif(TORCHANI_USE_CUSTOM_CUDNN)
+        Torchani_Msg_info("Will manually set variables that point to cuDNN")
+        Torchani_Msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
+        # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
+        Torchani_CudnnHelper_set_custom_paths(
+            LIB_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
+            CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
+        )
+        list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
+    else()
+        # cuDNN may be directly extracted into the CUDA Toolkit dir,
+        # if a user has done this then they don't need to specify an external version
+        Torchani_Msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
     endif()
 
-    # NOTE: Very Very Ugly workaround: Amber compiles its .cu files with FindCUDA and
-    # never calls enable_language(CUDA). Enabling CUDA here (and in Torch's config)
-    # makes CMake also try to compile Amber's .cu files which fails. This modifies
-    # properties of Amber's sources: marking them HEADER_FILE_ONLY after Amber has
-    # created its targets disables this compilation and keeps the old FindCUDA commands.
-    # New Amber FindCUDA targets must be added manually to AMBER_FINDCUDA_TARGETS.
-    function(torchani_hide_amber_cuda_sources)
-        set(AMBER_FINDCUDA_TARGETS
-            pbsa.cuda
-            rism_cuda
-            rism_cuda_double
-            mdgx.cuda
-            gpuP2PCheck
-            pmemd_xray_cuda
-            pmemd_cuda_SPFP
-            pmemd_cuda_DPFP
-            pmemd_cuda_SPFP_mpi
-            pmemd_cuda_DPFP_mpi
+    # CUDA Toolkit setup
+    if(TORCHANI_USE_CONDA_LIBS)
+        Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
+        # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
+        Torchani_CudaToolkitHelper_set_conda_paths()
+        Torchani_Msg_banner(
+            "The TorchANI-Amber MLIP Interface requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
+            At this stage of the configuration, we don't check whether all necessary CUDA
+            Toolkit features are present.
+            Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
+            ensure this, for example, use the provided conda env, which has all
+            dependencies, or directly download and install the CUDA Toolkit
+            ${TORCHANI_REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
+            after this point may indicate you are missing a required part of the Toolkit."
         )
-        foreach(target IN LISTS AMBER_FINDCUDA_TARGETS)
-            if(NOT TARGET ${target})
-                continue()
-            endif()
-            get_target_property(target_dir ${target} SOURCE_DIR)
-            get_target_property(cu_sources ${target} SOURCES)
-            list(FILTER cu_sources INCLUDE REGEX "\\.cu$")
-            list(TRANSFORM cu_sources PREPEND "${target_dir}/" REGEX "^[^/]")
-            set_source_files_properties(${cu_sources} DIRECTORY "${target_dir}" PROPERTIES HEADER_FILE_ONLY TRUE)
-        endforeach()
-    endfunction()
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL torchani_hide_amber_cuda_sources)
+    elseif(TORCHANI_USE_CUSTOM_CUDATK)
+        Torchani_Msg_info("Will manually set variables that point to the CUDA Toolkit")
+        Torchani_Msg_info("assuming it is located in /usr/local/cuda-<version>")
+        # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
+        Torchani_CudaToolkitHelper_set_custom_paths(CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION})
+    else()
+        Torchani_Msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
+        set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+    endif()
+    enable_language(CUDA)
+
+    if(INSIDE_AMBER)
+        Torchani_AmberHelper_check_nvcc_matches(
+            TORCHANI_NVCC "${CMAKE_CUDA_COMPILER}"
+            AMBER_NVCC "${CUDA_NVCC_EXECUTABLE}"
+        )
+        Torchani_AmberHelper_hide_amber_cuda_sources(AMBER_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
+    endif()
+else()
+    Torchani_Msg_info("CUDA support is disabled, building CPU-only")
 endif()
 
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
@@ -264,10 +240,8 @@ Torchani_Msg_banner(
     incompatible with pytorch' are safe to ignore. Other warnings should not be ignored."
 )
 
-# NOTE: Ugly Workaround: Torch's and Amber's MKL CMake configs both have issues and interact
-# badly when MKL is not found. An empty caffe2::mkl makes Torch skip its MKL setup.
-if(INSIDE_AMBER AND NOT MKL_FOUND AND NOT TARGET caffe2::mkl)
-    add_library(caffe2::mkl INTERFACE IMPORTED)
+if(INSIDE_AMBER)
+    Torchani_AmberHelper_disable_torch_mkl_if_not_found(MKL_FOUND "${MKL_FOUND}")
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
@@ -289,12 +263,19 @@ set(CUAEV_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
 add_library(
     torchani_cuaev
     SHARED
-    "${CUAEV_ROOT}/cuaev.cpp"
-    "${CUAEV_ROOT}/aev.cu"
+    "${CUAEV_ROOT}/cuaev_schema.cpp"
     "${CUAEV_ROOT}/aev_cpu.cpp"
-    "${CUAEV_ROOT}/aev.h"
-    "${CUAEV_ROOT}/cuaev_cub.cuh"
 )
+if(TORCHANI_BUILD_CUDA)
+    target_sources(
+        torchani_cuaev
+        PRIVATE
+            "${CUAEV_ROOT}/cuaev.cpp"
+            "${CUAEV_ROOT}/aev.cu"
+            "${CUAEV_ROOT}/aev.h"
+            "${CUAEV_ROOT}/cuaev_cub.cuh"
+    )
+endif()
 target_compile_features(torchani_cuaev PRIVATE cxx_std_17)
 # TORCHANI_OPT and "-use_fast_math" make calculations faster in libcuaev.so.
 # TORCHANI_OPT commands libcuaev to use cuda intrinsics for cos, sin, etc.

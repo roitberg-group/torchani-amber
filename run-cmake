@@ -9,6 +9,7 @@ usage() { echo "Usage: [OPTION]...
     -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch
     -C Don't use Conda libraries
+    -c Build CPU-only (requires a CPU-only PyTorch, no CUDA Toolkit or cuDNN needed)
     -a Builds for archs 7.0, 7.5, 8.0, 8.9, 10.0 (auto detect by default)
     -b Build for the B200 and L4 archs (8.9;10.0)
     (archs can also be set with the TORCH_CUDA_ARCH_LIST env var)
@@ -16,6 +17,7 @@ usage() { echo "Usage: [OPTION]...
     -h Print this message" 1>&2; }
 
 use_conda_libs=ON
+build_cuda=ON
 use_libtorch=OFF
 use_pytorch_libs=ON
 run_tests=1
@@ -24,7 +26,7 @@ cmake_install=1
 torch_cuda_archs="${TORCH_CUDA_ARCH_LIST:-}"
 cmake_build_type="Release"
 prefix="$HOME/.local/"
-while getopts "TIBPCabghxy" o; do
+while getopts "TIBPCcabghxy" o; do
     case "${o}" in
         x)
             use_conda_libs=ON
@@ -49,6 +51,9 @@ while getopts "TIBPCabghxy" o; do
         C)
             use_conda_libs=OFF
             use_libtorch=ON
+            ;;
+        c)
+            build_cuda=OFF
             ;;
         T)
             run_tests=0
@@ -101,6 +106,7 @@ cmake \
     -B"$bld_dir" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
+    -DTORCHANI_BUILD_CUDA=$build_cuda \
     -DTORCHANI_LINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
     -DTORCHANI_JIT_COMPILE_MODELS=$use_pytorch_libs \
     -DTORCHANI_PREFER_CONDA_LIBS=$use_conda_libs \
@@ -115,6 +121,9 @@ if [ "$cmake_build" -eq 1 ] && [ $CFG_EXITCODE -eq 0 ]; then
 
     if [ "$run_tests" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
         echo "Starting to run tests ..."
+        if [ "$build_cuda" = "OFF" ]; then
+            export TORCHANI_SKIP_CUDA_TESTS=1
+        fi
         if ! ./build/torchani_tests; then
             echo "Tests failed!!"
             # Skip install step if the tests fail
