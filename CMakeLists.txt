@@ -7,7 +7,7 @@ project(
     Torchani
     LANGUAGES C CXX
     VERSION 0.7
-    DESCRIPTION "Fortran, C and C++ interface to execute ANI-Style models built using the TorchANI library"
+    DESCRIPTION "Fortran, C and C++ interface to execute general MLIPs, with special support for the TorchANI library"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
 
@@ -119,22 +119,22 @@ if(NOT TORCHANI_ALLOW_UNSUPPORTED_COMPILERS)
     set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
     foreach(COMPILER_ID ${COMPILER_IDS})
         if(NOT (COMPILER_ID STREQUAL GNU))
-            Torchani_Msg_error("TorchANI-Interface requires GNU compilers (g++, gcc, gfortran)")
+            Torchani_Msg_error("The TorchANI-Amber MLIP Interface requires GNU compilers (g++, gcc, gfortran)")
         endif()
     endforeach()
     set(COMPILER_VERSIONS ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_Fortran_COMPILER_VERSION})
     foreach(COMPILER_VERSION ${COMPILER_VERSIONS})
         if(COMPILER_VERSION VERSION_LESS 11.0 OR COMPILER_VERSION VERSION_GREATER_EQUAL 16.0)
-            Torchani_Msg_error("TorchANI-Interface requires GNU compilers with version >=11 and <16")
+            Torchani_Msg_error("The TorchANI-Amber MLIP Interface requires GNU compilers with version >=11 and <16")
         endif()
     endforeach()
 endif()
 
 # JIT: Options and flags
-option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" ON)
+option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
 option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
-option(TORCHANI_JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
 
 if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_error("'TORCHANI_JIT_COMPILE_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
@@ -191,7 +191,7 @@ if(TORCHANI_USE_CONDA_LIBS)
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
     Torchani_CudaToolkitHelper_set_conda_paths()
     Torchani_Msg_banner(
-        "TorchANI requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
+        "The TorchANI-Amber MLIP Interface requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
         At this stage of the configuration, we don't check whether all necessary CUDA
         Toolkit features are present.
         Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
