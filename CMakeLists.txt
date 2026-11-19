@@ -71,7 +71,7 @@ if("$ENV{CONDA_DEFAULT_ENV}" STREQUAL "base")
     Torchani_Msg_warn("You are building from the conda 'base' env")
 endif()
 
-set(USE_CONDA_LIBS OFF)
+set(TORCHANI_USE_CONDA_LIBS OFF)
 if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
     if(TORCHANI_PREFER_CONDA_LIBS)
         Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
@@ -81,14 +81,14 @@ if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
         # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
         # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
         set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
-        set(USE_CONDA_LIBS ON)
+        set(TORCHANI_USE_CONDA_LIBS ON)
     else()
         Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
         Torchani_Msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
     endif()
 endif()
 
-if(USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
+if(TORCHANI_USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
     Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
@@ -143,7 +143,7 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
 endif()
 
 # cuDNN setup
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     Torchani_CudnnHelper_set_conda_paths()
@@ -164,7 +164,7 @@ else()
 endif()
 
 # CUDA Toolkit setup
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
     Torchani_CudaToolkitHelper_set_conda_paths()
@@ -207,7 +207,7 @@ add_library(
     "${CELL_ROOT}/cell_list.cpp"
 )
 target_compile_features(torchani_cell_list PRIVATE cxx_std_17)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani_cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cell_list PRIVATE ${TORCH_LIBRARIES})
@@ -239,7 +239,7 @@ target_compile_definitions(
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
 target_compile_options(torchani_cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani_cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
@@ -285,7 +285,7 @@ set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED
     "LINKER:--pop-state"
 )
 set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED_SUPPORTED TRUE)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(
