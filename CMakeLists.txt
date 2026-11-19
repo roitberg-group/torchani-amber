@@ -7,9 +7,31 @@ project(
     Torchani
     LANGUAGES C CXX
     VERSION 0.7
-    DESCRIPTION "Fortran, C and C++ interface to execute ANI-Style models built using the TorchANI library"
+    DESCRIPTION "Fortran, C and C++ interface to execute general MLIPs, with special support for the TorchANI library"
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
+
+# Amber sets global compile definitions, flags, and other settings that would otherwise
+# be inherited by this project. Unset them to expose the user's cached values
+if(INSIDE_AMBER)
+    set_directory_properties(PROPERTIES COMPILE_DEFINITIONS "")
+    foreach(
+        VAR_NAME
+        CMAKE_C_FLAGS
+        CMAKE_CXX_FLAGS
+        CMAKE_C_FLAGS_DEBUG
+        CMAKE_CXX_FLAGS_DEBUG
+        CMAKE_C_FLAGS_RELEASE
+        CMAKE_CXX_FLAGS_RELEASE
+        CMAKE_SHARED_LINKER_FLAGS
+        CMAKE_C_STANDARD
+        CMAKE_CXX_STANDARD
+        CMAKE_NO_SYSTEM_FROM_IMPORTED
+        CMAKE_MODULE_PATH
+    )
+        unset(${VAR_NAME})
+    endforeach()
+endif()
 
 # Necessary CMake built-in modules
 include(CMakePackageConfigHelpers)
@@ -71,7 +93,7 @@ if("$ENV{CONDA_DEFAULT_ENV}" STREQUAL "base")
     Torchani_Msg_warn("You are building from the conda 'base' env")
 endif()
 
-set(USE_CONDA_LIBS OFF)
+set(TORCHANI_USE_CONDA_LIBS OFF)
 if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
     if(TORCHANI_PREFER_CONDA_LIBS)
         Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
@@ -81,14 +103,14 @@ if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
         # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
         # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
         set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
-        set(USE_CONDA_LIBS ON)
+        set(TORCHANI_USE_CONDA_LIBS ON)
     else()
         Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
         Torchani_Msg_warn("This is probably not what you want, and it is *HIGHLY RECOMMENDED* to avoid this")
     endif()
 endif()
 
-if(USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
+if(TORCHANI_USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
     Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
@@ -97,22 +119,22 @@ if(NOT TORCHANI_ALLOW_UNSUPPORTED_COMPILERS)
     set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
     foreach(COMPILER_ID ${COMPILER_IDS})
         if(NOT (COMPILER_ID STREQUAL GNU))
-            Torchani_Msg_error("TorchANI-Interface requires GNU compilers (g++, gcc, gfortran)")
+            Torchani_Msg_error("The TorchANI-Amber MLIP Interface requires GNU compilers (g++, gcc, gfortran)")
         endif()
     endforeach()
     set(COMPILER_VERSIONS ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_Fortran_COMPILER_VERSION})
     foreach(COMPILER_VERSION ${COMPILER_VERSIONS})
         if(COMPILER_VERSION VERSION_LESS 11.0 OR COMPILER_VERSION VERSION_GREATER_EQUAL 16.0)
-            Torchani_Msg_error("TorchANI-Interface requires GNU compilers with version >=11 and <16")
+            Torchani_Msg_error("The TorchANI-Amber MLIP Interface requires GNU compilers with version >=11 and <16")
         endif()
     endforeach()
 endif()
 
 # JIT: Options and flags
-option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile all the TorchANI models" ON)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" ON)
+option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
 option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
-option(TORCHANI_JIT_COMPILE_AIMNET2 "Also generate the AimNet2 models (jit/aimnet2) from the bundled weights, if not already there" ON)
 
 if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_error("'TORCHANI_JIT_COMPILE_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
@@ -143,7 +165,7 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
 endif()
 
 # cuDNN setup
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
     # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
     Torchani_CudnnHelper_set_conda_paths()
@@ -164,12 +186,12 @@ else()
 endif()
 
 # CUDA Toolkit setup
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
     # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
     Torchani_CudaToolkitHelper_set_conda_paths()
     Torchani_Msg_banner(
-        "TorchANI requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
+        "The TorchANI-Amber MLIP Interface requires CUDA Toolkit dev version, which is *not* bundled with PyTorch.
         At this stage of the configuration, we don't check whether all necessary CUDA
         Toolkit features are present.
         Make sure you have the required headers, NVCC, and *all* CUDA Toolkit libs. To
@@ -189,6 +211,50 @@ else()
 endif()
 enable_language(CUDA)
 
+if(INSIDE_AMBER)
+    # Amber finds its own CUDA Toolkit, and both must match to avoid loading two
+    # different CUDA runtimes into the same process
+    file(REAL_PATH "${CMAKE_CUDA_COMPILER}" TORCHANI_NVCC_REALPATH)
+    file(REAL_PATH "${CUDA_NVCC_EXECUTABLE}" AMBER_NVCC_REALPATH)
+    if(NOT TORCHANI_NVCC_REALPATH STREQUAL AMBER_NVCC_REALPATH)
+        set(NVCC_MISMATCH_MSG "The CUDA compiler used by the MLIP interface (${TORCHANI_NVCC_REALPATH})")
+        set(NVCC_MISMATCH_MSG "${NVCC_MISMATCH_MSG} differs from the one used by Amber (${AMBER_NVCC_REALPATH})")
+        Torchani_Msg_error("${NVCC_MISMATCH_MSG}")
+    endif()
+
+    # NOTE: Very Very Ugly workaround: Amber compiles its .cu files with FindCUDA and
+    # never calls enable_language(CUDA). Enabling CUDA here (and in Torch's config)
+    # makes CMake also try to compile Amber's .cu files which fails. This modifies
+    # properties of Amber's sources: marking them HEADER_FILE_ONLY after Amber has
+    # created its targets disables this compilation and keeps the old FindCUDA commands.
+    # New Amber FindCUDA targets must be added manually to AMBER_FINDCUDA_TARGETS.
+    function(torchani_hide_amber_cuda_sources)
+        set(AMBER_FINDCUDA_TARGETS
+            pbsa.cuda
+            rism_cuda
+            rism_cuda_double
+            mdgx.cuda
+            gpuP2PCheck
+            pmemd_xray_cuda
+            pmemd_cuda_SPFP
+            pmemd_cuda_DPFP
+            pmemd_cuda_SPFP_mpi
+            pmemd_cuda_DPFP_mpi
+        )
+        foreach(target IN LISTS AMBER_FINDCUDA_TARGETS)
+            if(NOT TARGET ${target})
+                continue()
+            endif()
+            get_target_property(target_dir ${target} SOURCE_DIR)
+            get_target_property(cu_sources ${target} SOURCES)
+            list(FILTER cu_sources INCLUDE REGEX "\\.cu$")
+            list(TRANSFORM cu_sources PREPEND "${target_dir}/" REGEX "^[^/]")
+            set_source_files_properties(${cu_sources} DIRECTORY "${target_dir}" PROPERTIES HEADER_FILE_ONLY TRUE)
+        endforeach()
+    endfunction()
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL torchani_hide_amber_cuda_sources)
+endif()
+
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
 # LibTorch is a required dep
@@ -197,6 +263,12 @@ Torchani_Msg_banner(
     "CMake warnings about 'kineto not being found', or 'CMAKE_CUDA_ARCHITECTURES being
     incompatible with pytorch' are safe to ignore. Other warnings should not be ignored."
 )
+
+# NOTE: Ugly Workaround: Torch's and Amber's MKL CMake configs both have issues and interact
+# badly when MKL is not found. An empty caffe2::mkl makes Torch skip its MKL setup.
+if(INSIDE_AMBER AND NOT MKL_FOUND AND NOT TARGET caffe2::mkl)
+    add_library(caffe2::mkl INTERFACE IMPORTED)
+endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
 # Build both libcuaev, libcell_list, and libtorchani
@@ -207,7 +279,7 @@ add_library(
     "${CELL_ROOT}/cell_list.cpp"
 )
 target_compile_features(torchani_cell_list PRIVATE cxx_std_17)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani_cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cell_list PRIVATE ${TORCH_LIBRARIES})
@@ -239,7 +311,7 @@ target_compile_definitions(
         $<$<COMPILE_LANGUAGE:CUDA>:${CUAEV_CUB_NAMESPACE_DEFS}>
 )
 target_compile_options(torchani_cuaev PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math>)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani_cuaev PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
@@ -285,7 +357,7 @@ set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED
     "LINKER:--pop-state"
 )
 set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED_SUPPORTED TRUE)
-if(USE_CONDA_LIBS)
+if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(
@@ -361,18 +433,21 @@ else()
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
-include(CTest)
-if(BUILD_TESTING)
-    set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
-    add_subdirectory(${CATCH2_ROOT})
-    # Make Catch2 provided cmake-modules available
-    list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
-    include(Catch)
+# TODO: Reinstate internal mlip-interface tests inside Amber if possible in the future
+if(NOT INSIDE_AMBER)
+    include(CTest)
+    if(BUILD_TESTING)
+        set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
+        add_subdirectory(${CATCH2_ROOT})
+        # Make Catch2 provided cmake-modules available
+        list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
+        include(Catch)
 
-    add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-    target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-    target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
-    catch_discover_tests(torchani_tests)
+        add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
+        target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
+        catch_discover_tests(torchani_tests)
+    endif()
 endif()
 
 # Same names as the exported targets, for consumers that use add_subdirectory
@@ -380,50 +455,10 @@ add_library(${PROJECT_NAME}::torchani ALIAS torchani)
 add_library(${PROJECT_NAME}::cuaev ALIAS torchani_cuaev)
 add_library(${PROJECT_NAME}::cell_list ALIAS torchani_cell_list)
 
-# Create and install files for discovery and config by downstream pkgs
-# - pkg-config-file: <Pkg>Config.cmake
-# - pkg-ver-file: <Pkg>ConfigVersion.cmake
-set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
-write_basic_package_version_file(
-    "${PKG_VERSION_FILE_BLDTREE_PATH}"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
-
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
-set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
-set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}")
-set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
-set(LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
-set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
-configure_package_config_file(
-    "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-    "${PKG_CONFIG_FILE_BLDTREE_PATH}"
-    INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
-    PATH_VARS
-        INCLUDE_INSTALL_DIR
-        DATA_INSTALL_DIR
-        LIBRARY_INSTALL_DIR
-        FORTRAN_INTERFACE_INSTALL_SRC_FILE
-)
-# Install CMake config-file and config-ver-file for downstream usage:
-install(
-    FILES
-        "${PKG_CONFIG_FILE_BLDTREE_PATH}"
-        "${PKG_VERSION_FILE_BLDTREE_PATH}"
-    DESTINATION "${PKGDATA_INSTALL_DIR}"
-)
-
-# Install CMake targets for downstream usage:
-# pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
+set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
+set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
 set(PKG_EXPORT_FILESET_NAME "${PROJECT_NAME}Targets")
-install(
-    EXPORT ${PKG_EXPORT_FILESET_NAME}
-    FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
-    NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
-    DESTINATION "${PKGDATA_INSTALL_DIR}"
-)
 
 # Install corresponding targets
 install(
@@ -433,19 +468,64 @@ install(
         torchani_cell_list
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
-        DESTINATION "${LIBRARY_INSTALL_DIR}"
+        DESTINATION "${TORCHANI_LIBRARY_INSTALL_DIR}"
 )
 # Install C-interface include file
 install(
     FILES
         "${CMAKE_CURRENT_LIST_DIR}/include/torchani.h"
-    DESTINATION "${INCLUDE_INSTALL_DIR}"
+    DESTINATION "${TORCHANI_INCLUDE_INSTALL_DIR}"
 )
 
-# Install module file necessary for a portable fortran interface
-install(
-    FILES
-        "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
-    DESTINATION "${DATA_INSTALL_DIR}/Fortran"
-)
+# Amber's CMake setup doesn't support exported targets, so the files for discovery and
+# config by downstream pkgs are only installed if not building as an Amber subproject
+if(NOT INSIDE_AMBER)
+    # Create and install files for discovery and config by downstream pkgs
+    # - pkg-config-file: <Pkg>Config.cmake
+    # - pkg-ver-file: <Pkg>ConfigVersion.cmake
+    set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
+    write_basic_package_version_file(
+        "${PKG_VERSION_FILE_BLDTREE_PATH}"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+    set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+
+    set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
+    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
+    configure_package_config_file(
+        "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+        "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+        INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
+        PATH_VARS
+            TORCHANI_INCLUDE_INSTALL_DIR
+            DATA_INSTALL_DIR
+            TORCHANI_LIBRARY_INSTALL_DIR
+            FORTRAN_INTERFACE_INSTALL_SRC_FILE
+    )
+    # Install CMake config-file and config-ver-file for downstream usage:
+    install(
+        FILES
+            "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+            "${PKG_VERSION_FILE_BLDTREE_PATH}"
+        DESTINATION "${PKGDATA_INSTALL_DIR}"
+    )
+
+    # Install CMake targets for downstream usage:
+    # pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
+    install(
+        EXPORT ${PKG_EXPORT_FILESET_NAME}
+        FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
+        NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
+        DESTINATION "${PKGDATA_INSTALL_DIR}"
+    )
+
+    # Install module file necessary for a portable fortran interface
+    install(
+        FILES
+            "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
+        DESTINATION "${DATA_INSTALL_DIR}/Fortran"
+    )
+endif()
 # TODO Add model.jit.pt files

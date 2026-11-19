@@ -14,6 +14,7 @@ Interface enabling molecular dynamics or minimizations with ANI-style NN-IPs (ne
 network interatomic potentials) *and other general NN-IPs*, in the Amber software suite.
 Energies and forces are calculated with the deep NNs at each step of the simulation,
 and propagated by the MD engine.
+
 Different modes are available, allowing for both "full ML" simulations, and simulations
 where intermolecular non-bonded interactions are calculated by the force field. ML/MM
 simulations are also possible. Both `sander` and `pmemd` are supported.
@@ -439,7 +440,7 @@ an extra dim prepended in this case, which indexes the models in the network.
 
 ## Tests
 
-To run the `Amber` integration tests do `pytest -v ./tests/test_sander.py` (a working Sander
+To run the `Amber` integration tests run `pytest -v ./tests/test_sander.py` (a working Sander
 binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
 and Full-ML Amber integrations.
 
@@ -448,22 +449,22 @@ and Full-ML Amber integrations.
 The C++ library logs debugging information (model path, atomic numbers, initialization
 steps, and the wall time of each energy and force calculation) using LibTorch's
 built-in logging. These messages are hidden by default. To print
-them to `stderr`, set the `TORCH_CPP_LOG_LEVEL` environment variable when running Amber:
+them set `TORCH_CPP_LOG_LEVEL` environment variable when running Amber:
 
 ```bash
 TORCH_CPP_LOG_LEVEL=INFO sander -O -i md.in ...
 ```
 
-Valid values are `INFO`, `WARNING` (default), `ERROR` and `FATAL`. Note that this also
-enables LibTorch's own messages at the chosen level.
+Valid values are `INFO`, `WARNING` (default), `ERROR` and `FATAL`. This also
+enables LibTorch's own messages.
 
-## Notes on LibTorch (C++) and PyTorch (Python) compatibility
+## Notes on LibTorch (C++) and PyTorch (Python) compatibility when using TorchScript
 
 **NOTE**: This is a non-issue if you use the normal installation instructions,
-but it may be an issue if you use your own custom models.
+but it may be an issue if you use your own custom approach or models.
 
-Its important that the models used are JIT-compiled using the same PyTorch
-version as the LibTorch version linked to the libraries. For example, if
+If using TorchScript, it is important that the models used are JIT-compiled using the
+same PyTorch version as the LibTorch version linked to the libraries. For example, if
 `torch.__version__ == 2.13` when compiling JIT'ed models, then the linked LibTorch must
 also be 2.13, otherwise LibTorch may fail to load the models, or load them incorrectly.
 
@@ -471,17 +472,12 @@ also be 2.13, otherwise LibTorch may fail to load the models, or load them incor
 
 This functionality was added with the help of Kirill Zinovjev. For usage
 examples see the [EMLE-engine repository](https://github.com/chemle/emle-engine)
-And the corresponding [EMLE-engine article](https://pubs.acs.org/jctcce/article/20/11/4514/169286/emle-engine-A-Flexible-Electrostatic-Machine).
+and the corresponding [EMLE-engine article](https://pubs.acs.org/jctcce/article/20/11/4514/169286/emle-engine-A-Flexible-Electrostatic-Machine).
 
 Custom ML/MM models, which calculate both the in-vacuo energy and the ML/MM coupling
 internally, are supported by setting `mlmm_coupling = 2`. Forces on the ML and MM
-regions are calculated by autograd from the returned energy. `animbis-custom-mlmm` is
-a reference implementation (see `jit/custom_mlmm_wrapper.py`), which calculates the
-same energy as `mlmm_coupling = 1` with `use_torchani_charges = .true.`.
-
-*ADVANCED*: The exact requirements are as follows. The model must support the following
-method, which has the same signature as `forward`, with the MM region inputs added after
-`species_coords`:
+regions are calculated by autograd from the returned energy. The model must support the
+following method:
 
 ```python
 @torch.jit.export
@@ -493,6 +489,8 @@ def compute_mlmm(
     cell: Tensor | None = None,
     pbc: Tensor | None = None,
     charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
+    spin_mult: Tensor | None = None,  # Spin multiplicity per molec, shape: (1,)
+    mm_cutoff: Tensor | None = None,  # MM cutoff per molec, shape: (1,)
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,
@@ -506,7 +504,10 @@ def compute_mlmm(
 If the model supports atomic charges, the signature is the same, but the output is
 the tuple `(energies, atomic_charges)` instead, with `atomic_charges` of shape
 `(1, atoms)` for a single molecule.
+`spin_mult`: `int64` tensor with the spin multiplicity of each molecule (default 1).
+`mm_cutoff`: float tensor with the MM cutoff of each molecule (default 0).
 
 Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
 energies. Currently Amber always calls `compute_mlmm` with `cell = None`,
-`pbc = None`, `atomic = False` and `ensemble_values = False`.
+`pbc = None`, `spin_mult = 1`, `mm_cutoff = 0`, `atomic = False` and
+`ensemble_values = False`.

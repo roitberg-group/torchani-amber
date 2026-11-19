@@ -681,13 +681,19 @@ void torchani_calc_energy_force_custom_mlmm(
     if (calc_only_bonded) {
         maybe_molecule_idxs = molecule_idxs;
     }
+    torch::Tensor empty_pairs = torch::empty({2, 0}, ml_coords.options().dtype(torch::kLong));
     mlip::MlipOutput output = model->computeMlmm(
         torchani_atomic_numbers,
         ml_coords,
         mm_coords,
         mm_charges,
+        /*pairs_12=*/empty_pairs,
+        /*pairs_13=*/empty_pairs,
+        /*pairs_14=*/empty_pairs,
         maybe_cell,
         ml_system_charge,
+        /*spin_mult=*/1,
+        /*mm_cutoff=*/0.0,
         /*atomic=*/false,
         /*ensemble_values=*/false,
         maybe_molecule_idxs,

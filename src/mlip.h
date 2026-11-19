@@ -43,6 +43,7 @@ class MlipModel {
     virtual auto readExtraFeaturesFromFile(const std::string& fpath) -> void = 0;
     virtual auto setStrategy(const std::string& strat) -> void = 0;
     virtual auto supportsCustomMlmm() const -> bool = 0;
+    virtual auto supportsMultipoleMlmm() const -> bool = 0;
     virtual auto supportsComputeFromExternalNeighbors() const -> bool = 0;
     virtual auto computeSinglePoint(
         const torch::Tensor& atomic_numbers,
@@ -76,8 +77,35 @@ class MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
+        const torch::Tensor& pairs_12,
+        const torch::Tensor& pairs_13,
+        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell = std::nullopt,
         int net_charge = 0,
+        int spin_mult = 1,
+        double mm_cutoff = 0.0,
+        bool atomic = false,
+        bool ensemble_values = false,
+        const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
+        bool calc_forces = false,
+        bool calc_charges = false,
+        bool calc_charges_grad = false,
+        bool calc_qbc_and_qbc_grad = false
+    ) -> MlipOutput = 0;
+    virtual auto computeMultipoleMlmm(
+        const torch::Tensor& atomic_numbers,
+        const torch::Tensor& ml_coords,
+        const torch::Tensor& mm_coords,
+        const torch::Tensor& mm_charges,
+        const torch::Tensor& mm_dipoles,
+        const torch::Tensor& mm_quads,
+        const torch::Tensor& pairs_12,
+        const torch::Tensor& pairs_13,
+        const torch::Tensor& pairs_14,
+        const std::optional<torch::Tensor>& cell = std::nullopt,
+        int net_charge = 0,
+        int spin_mult = 1,
+        double mm_cutoff = 0.0,
         bool atomic = false,
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
