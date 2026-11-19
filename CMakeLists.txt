@@ -393,18 +393,18 @@ set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NA
 
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
 set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
-set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}")
+set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
 set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
-set(LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}")
+set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
 set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
 configure_package_config_file(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
     "${PKG_CONFIG_FILE_BLDTREE_PATH}"
     INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
     PATH_VARS
-        INCLUDE_INSTALL_DIR
+        TORCHANI_INCLUDE_INSTALL_DIR
         DATA_INSTALL_DIR
-        LIBRARY_INSTALL_DIR
+        TORCHANI_LIBRARY_INSTALL_DIR
         FORTRAN_INTERFACE_INSTALL_SRC_FILE
 )
 # Install CMake config-file and config-ver-file for downstream usage:
@@ -433,13 +433,13 @@ install(
         torchani_cell_list
     EXPORT ${PKG_EXPORT_FILESET_NAME}  # Add ref to targs in the pkg-export-fileset
     LIBRARY
-        DESTINATION "${LIBRARY_INSTALL_DIR}"
+        DESTINATION "${TORCHANI_LIBRARY_INSTALL_DIR}"
 )
 # Install C-interface include file
 install(
     FILES
         "${CMAKE_CURRENT_LIST_DIR}/include/torchani.h"
-    DESTINATION "${INCLUDE_INSTALL_DIR}"
+    DESTINATION "${TORCHANI_INCLUDE_INSTALL_DIR}"
 )
 
 # Install module file necessary for a portable fortran interface
