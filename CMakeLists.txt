@@ -380,50 +380,10 @@ add_library(${PROJECT_NAME}::torchani ALIAS torchani)
 add_library(${PROJECT_NAME}::cuaev ALIAS torchani_cuaev)
 add_library(${PROJECT_NAME}::cell_list ALIAS torchani_cell_list)
 
-# Create and install files for discovery and config by downstream pkgs
-# - pkg-config-file: <Pkg>Config.cmake
-# - pkg-ver-file: <Pkg>ConfigVersion.cmake
-set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
-write_basic_package_version_file(
-    "${PKG_VERSION_FILE_BLDTREE_PATH}"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
-
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
-set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
 set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
-set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
 set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
-set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
-configure_package_config_file(
-    "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-    "${PKG_CONFIG_FILE_BLDTREE_PATH}"
-    INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
-    PATH_VARS
-        TORCHANI_INCLUDE_INSTALL_DIR
-        DATA_INSTALL_DIR
-        TORCHANI_LIBRARY_INSTALL_DIR
-        FORTRAN_INTERFACE_INSTALL_SRC_FILE
-)
-# Install CMake config-file and config-ver-file for downstream usage:
-install(
-    FILES
-        "${PKG_CONFIG_FILE_BLDTREE_PATH}"
-        "${PKG_VERSION_FILE_BLDTREE_PATH}"
-    DESTINATION "${PKGDATA_INSTALL_DIR}"
-)
-
-# Install CMake targets for downstream usage:
-# pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
 set(PKG_EXPORT_FILESET_NAME "${PROJECT_NAME}Targets")
-install(
-    EXPORT ${PKG_EXPORT_FILESET_NAME}
-    FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
-    NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
-    DESTINATION "${PKGDATA_INSTALL_DIR}"
-)
 
 # Install corresponding targets
 install(
@@ -442,10 +402,55 @@ install(
     DESTINATION "${TORCHANI_INCLUDE_INSTALL_DIR}"
 )
 
-# Install module file necessary for a portable fortran interface
-install(
-    FILES
-        "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
-    DESTINATION "${DATA_INSTALL_DIR}/Fortran"
-)
+# Amber's CMake setup doesn't support exported targets, so the files for discovery and
+# config by downstream pkgs are only installed if not building as an Amber subproject
+if(NOT INSIDE_AMBER)
+    # Create and install files for discovery and config by downstream pkgs
+    # - pkg-config-file: <Pkg>Config.cmake
+    # - pkg-ver-file: <Pkg>ConfigVersion.cmake
+    set(PKG_VERSION_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake")
+    write_basic_package_version_file(
+        "${PKG_VERSION_FILE_BLDTREE_PATH}"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+    set(PKG_CONFIG_FILE_BLDTREE_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+
+    set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
+    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
+    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
+    configure_package_config_file(
+        "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+        "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+        INSTALL_DESTINATION "${PKGDATA_INSTALL_DIR}"
+        PATH_VARS
+            TORCHANI_INCLUDE_INSTALL_DIR
+            DATA_INSTALL_DIR
+            TORCHANI_LIBRARY_INSTALL_DIR
+            FORTRAN_INTERFACE_INSTALL_SRC_FILE
+    )
+    # Install CMake config-file and config-ver-file for downstream usage:
+    install(
+        FILES
+            "${PKG_CONFIG_FILE_BLDTREE_PATH}"
+            "${PKG_VERSION_FILE_BLDTREE_PATH}"
+        DESTINATION "${PKGDATA_INSTALL_DIR}"
+    )
+
+    # Install CMake targets for downstream usage:
+    # pkg-export-fileset: {<Pkg>Targets.cmake, <Pkg>Targets-*.cmake}
+    install(
+        EXPORT ${PKG_EXPORT_FILESET_NAME}
+        FILE "${PROJECT_NAME}Targets.cmake"  # Primary filename in the pkg-export-fileset
+        NAMESPACE "${PROJECT_NAME}::"  # Exported targets namespace
+        DESTINATION "${PKGDATA_INSTALL_DIR}"
+    )
+
+    # Install module file necessary for a portable fortran interface
+    install(
+        FILES
+            "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
+        DESTINATION "${DATA_INSTALL_DIR}/Fortran"
+    )
+endif()
 # TODO Add model.jit.pt files
