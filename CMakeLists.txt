@@ -296,6 +296,16 @@ target_link_libraries(
 )
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
+# The Amber CMake machinery sets CMAKE_CXX_FLAGS_RELEASE to an empty string. Each Amber
+# subproject must opt into Amber's optimization flags, which are stored in OPT_CXXFLAGS
+# variable
+if(INSIDE_AMBER)
+    foreach(TARGET_NAME torchani torchani_cuaev torchani_cell_list)
+        target_compile_options(${TARGET_NAME} PRIVATE "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:${OPT_CXXFLAGS}>")
+        target_compile_definitions(${TARGET_NAME} PRIVATE $<$<CONFIG:Release>:NDEBUG>)
+    endforeach()
+endif()
+
 # For cuaev, cell_list and libtorchani, the install RPATH is set by default to be
 # the same as the link path to avoid issues if the correct CUDA is not
 # installed system-wide. If this is not done then CMake tries to re-link the
@@ -361,18 +371,21 @@ else()
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
-include(CTest)
-if(BUILD_TESTING)
-    set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
-    add_subdirectory(${CATCH2_ROOT})
-    # Make Catch2 provided cmake-modules available
-    list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
-    include(Catch)
+# TODO: Reinstate internal mlip-interface tests inside Amber if possible in the future
+if(NOT INSIDE_AMBER)
+    include(CTest)
+    if(BUILD_TESTING)
+        set(CATCH2_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/Catch2")
+        add_subdirectory(${CATCH2_ROOT})
+        # Make Catch2 provided cmake-modules available
+        list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
+        include(Catch)
 
-    add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-    target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-    target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
-    catch_discover_tests(torchani_tests)
+        add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
+        target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
+        catch_discover_tests(torchani_tests)
+    endif()
 endif()
 
 # Same names as the exported targets, for consumers that use add_subdirectory
