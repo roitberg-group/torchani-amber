@@ -17,11 +17,7 @@ function(Torchani_CudnnHelper_set_custom_paths)
         ${ARGN}
     )
     message(STATUS "cuDNN - Setting custom paths")
-    if(_FN_CONDA_CUDNN)
-        set(_CUDNN_ROOT $ENV{CONDA_PREFIX})
-    else()
-        set(_CUDNN_ROOT "${PROJECT_SOURCE_DIR}/external/cudnn${_FN_LIB_VERSION}-cuda${_FN_CUDATK_VERSION}")
-    endif()
+    set(_CUDNN_ROOT "${PROJECT_SOURCE_DIR}/external/cudnn${_FN_LIB_VERSION}-cuda${_FN_CUDATK_VERSION}")
 
     set(_CUDNN_LIBRARY "${_CUDNN_ROOT}/lib")
     set(_CUDNN_INCLUDE_DIR "${_CUDNN_ROOT}/include")

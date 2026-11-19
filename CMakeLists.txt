@@ -27,6 +27,7 @@ if(INSIDE_AMBER)
         CMAKE_C_STANDARD
         CMAKE_CXX_STANDARD
         CMAKE_NO_SYSTEM_FROM_IMPORTED
+        CMAKE_MODULE_PATH
     )
         unset(${VAR_NAME})
     endforeach()
@@ -209,6 +210,18 @@ else()
     set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 endif()
 enable_language(CUDA)
+
+# Amber finds its own CUDA Toolkit, and both must match to avoid loading two different
+# CUDA runtimes into the same process
+if(INSIDE_AMBER)
+    file(REAL_PATH "${CMAKE_CUDA_COMPILER}" TORCHANI_NVCC_REALPATH)
+    file(REAL_PATH "${CUDA_NVCC_EXECUTABLE}" AMBER_NVCC_REALPATH)
+    if(NOT TORCHANI_NVCC_REALPATH STREQUAL AMBER_NVCC_REALPATH)
+        set(NVCC_MISMATCH_MSG "The CUDA compiler used by the MLIP interface (${TORCHANI_NVCC_REALPATH})")
+        set(NVCC_MISMATCH_MSG "${NVCC_MISMATCH_MSG} differs from the one used by Amber (${AMBER_NVCC_REALPATH})")
+        Torchani_Msg_error("${NVCC_MISMATCH_MSG}")
+    endif()
+endif()
 
 message(STATUS "The modified CMake prefix path is: ${CMAKE_PREFIX_PATH}")
 
