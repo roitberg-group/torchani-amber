@@ -11,6 +11,27 @@ project(
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
 )
 
+# Amber sets global compile definitions, flags, and other settings that would otherwise
+# be inherited by this project. Unsetting the variables exposes the user's cached values
+if(INSIDE_AMBER)
+    set_directory_properties(PROPERTIES COMPILE_DEFINITIONS "")
+    foreach(
+        VAR_NAME
+        CMAKE_C_FLAGS
+        CMAKE_CXX_FLAGS
+        CMAKE_C_FLAGS_DEBUG
+        CMAKE_CXX_FLAGS_DEBUG
+        CMAKE_C_FLAGS_RELEASE
+        CMAKE_CXX_FLAGS_RELEASE
+        CMAKE_SHARED_LINKER_FLAGS
+        CMAKE_C_STANDARD
+        CMAKE_CXX_STANDARD
+        CMAKE_NO_SYSTEM_FROM_IMPORTED
+    )
+        unset(${VAR_NAME})
+    endforeach()
+endif()
+
 # Necessary CMake built-in modules
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -295,16 +316,6 @@ target_link_libraries(
         "$<LINK_LIBRARY:NO_AS_NEEDED,torchani_cuaev,torchani_cell_list>"
 )
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
-
-# The Amber CMake machinery sets CMAKE_CXX_FLAGS_RELEASE to an empty string. Each Amber
-# subproject must opt into Amber's optimization flags, which are stored in OPT_CXXFLAGS
-# variable
-if(INSIDE_AMBER)
-    foreach(TARGET_NAME torchani torchani_cuaev torchani_cell_list)
-        target_compile_options(${TARGET_NAME} PRIVATE "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:${OPT_CXXFLAGS}>")
-        target_compile_definitions(${TARGET_NAME} PRIVATE $<$<CONFIG:Release>:NDEBUG>)
-    endforeach()
-endif()
 
 # For cuaev, cell_list and libtorchani, the install RPATH is set by default to be
 # the same as the link path to avoid issues if the correct CUDA is not
