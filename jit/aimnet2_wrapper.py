@@ -345,8 +345,7 @@ class AimNet2Mbis(AimNet2Wrapper):
             charge,
             atomic,
             ensemble_values,
-        ).scalars
-        assert atomic_charges is not None  # mypy
+        )["atomic_charges"]
         return SpeciesEnergiesAtomicCharges(species, energies, atomic_charges)
 
 
