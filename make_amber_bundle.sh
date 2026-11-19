@@ -31,6 +31,7 @@ cd "${repo_root}"
         \( "${skipped_names[@]}" \
         -o -path ./AmberTools-patch \
         -o -path ./make_amber_bundle.sh \
+        -o -path ./run-cmake \
         -o -path ./inputs \
         -o -path ./tests/expect \
         -o -path ./external \
