@@ -22,6 +22,7 @@ torchani_csrc="./submodules/torchani/torchani/csrc"
 patched_dir="$(mktemp -d)"
 trap 'rm -rf "${patched_dir}"' EXIT
 sed \
+    -e "s,^name: ani-amber$,name: amber-mlip," \
     -e "s,nvidia::cuda-toolkit=.*,nvidia::cuda-toolkit=${cuda_version}," \
     -e "s,download.pytorch.org/whl/cu[0-9]*,download.pytorch.org/whl/cu${cuda_version//./}," \
     -e "s,torch==.*,torch==${torch_version}.*," \
