@@ -57,7 +57,8 @@ CompiledMlipModel::CompiledMlipModel(
       m_supports_external_neighbors{
           packageHasModel(path, modelName("external_neighbors/"))
       },
-      m_supports_custom_mlmm{packageHasModel(path, modelName("custom_mlmm/"))} {}
+      m_supports_custom_mlmm{packageHasModel(path, modelName("custom_mlmm/"))},
+      m_supports_multipole_mlmm{packageHasModel(path, modelName("multipole_mlmm/"))} {}
 
 auto CompiledMlipModel::modelName(const std::string& prefix) const -> std::string {
     return prefix + deviceAndDtypeName(m_device, m_dtype);
@@ -74,11 +75,11 @@ auto CompiledMlipModel::makeLoader(const std::string& prefix) const
     );
 }
 
-auto CompiledMlipModel::netChargeTensor(int net_charge, std::int64_t num_molecules) const
+auto CompiledMlipModel::perMoleculeTensor(int value, std::int64_t num_molecules) const
     -> torch::Tensor {
     return torch::full(
         {num_molecules},
-        net_charge,
+        value,
         torch::TensorOptions().dtype(torch::kLong).device(m_device)
     );
 }
@@ -96,6 +97,10 @@ auto CompiledMlipModel::setStrategy(const std::string& /* strat */) -> void {}
 
 auto CompiledMlipModel::supportsCustomMlmm() const -> bool {
     return m_supports_custom_mlmm;
+}
+
+auto CompiledMlipModel::supportsMultipoleMlmm() const -> bool {
+    return m_supports_multipole_mlmm;
 }
 
 auto CompiledMlipModel::supportsComputeFromExternalNeighbors() const -> bool {
@@ -146,14 +151,14 @@ auto CompiledMlipModel::computeSinglePoint(
              coords,
              *cell,
              pbc,
-             netChargeTensor(net_charge, coords.size(0))}
+             perMoleculeTensor(net_charge, coords.size(0))}
         );
     } else {
         if (not m_single_point_loader) {
             m_single_point_loader = makeLoader("single_point/");
         }
         raw_output = m_single_point_loader->run(
-            {atomic_numbers, coords, netChargeTensor(net_charge, coords.size(0))}
+            {atomic_numbers, coords, perMoleculeTensor(net_charge, coords.size(0))}
         );
     }
     mlip::MlipOutput output;
@@ -214,7 +219,7 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
          coords,
          neighborlist,
          shifts,
-         netChargeTensor(net_charge, coords.size(0))}
+         perMoleculeTensor(net_charge, coords.size(0))}
     );
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
@@ -235,8 +240,13 @@ auto CompiledMlipModel::computeMlmm(
     const torch::Tensor& ml_coords,
     const torch::Tensor& mm_coords,
     const torch::Tensor& mm_charges,
+    const torch::Tensor& pairs_12,
+    const torch::Tensor& pairs_13,
+    const torch::Tensor& pairs_14,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
+    int spin_mult,
+    double mm_cutoff,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
@@ -245,10 +255,102 @@ auto CompiledMlipModel::computeMlmm(
     bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
-    if (not m_supports_custom_mlmm) {
-        throw std::runtime_error(
-            "Package doesn't have a model '" + modelName("custom_mlmm/") + "'"
-        );
+    std::vector<torch::Tensor> inputs = {
+        atomic_numbers,
+        ml_coords,
+        mm_coords,
+        mm_charges,
+        perMoleculeTensor(net_charge, ml_coords.size(0)),
+        perMoleculeTensor(spin_mult, ml_coords.size(0)),
+        torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
+        pairs_12,
+        pairs_13,
+        pairs_14
+    };
+    return runMlmmLoader(
+        m_custom_mlmm_loader,
+        "custom_mlmm/",
+        m_supports_custom_mlmm,
+        inputs,
+        cell,
+        atomic,
+        ensemble_values,
+        molecule_idxs,
+        calc_forces,
+        calc_charges,
+        calc_charges_grad,
+        calc_qbc_and_qbc_grad
+    );
+}
+
+auto CompiledMlipModel::computeMultipoleMlmm(
+    const torch::Tensor& atomic_numbers,
+    const torch::Tensor& ml_coords,
+    const torch::Tensor& mm_coords,
+    const torch::Tensor& mm_charges,
+    const torch::Tensor& mm_dipoles,
+    const torch::Tensor& mm_quads,
+    const torch::Tensor& pairs_12,
+    const torch::Tensor& pairs_13,
+    const torch::Tensor& pairs_14,
+    const std::optional<torch::Tensor>& cell,
+    int net_charge,
+    int spin_mult,
+    double mm_cutoff,
+    bool atomic,
+    bool ensemble_values,
+    const std::optional<torch::Tensor>& molecule_idxs,
+    bool calc_forces,
+    bool calc_charges,
+    bool calc_charges_grad,
+    bool calc_qbc_and_qbc_grad
+) -> mlip::MlipOutput {
+    std::vector<torch::Tensor> inputs = {
+        atomic_numbers,
+        ml_coords,
+        mm_coords,
+        mm_charges,
+        mm_dipoles,
+        mm_quads,
+        perMoleculeTensor(net_charge, ml_coords.size(0)),
+        perMoleculeTensor(spin_mult, ml_coords.size(0)),
+        torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
+        pairs_12,
+        pairs_13,
+        pairs_14
+    };
+    return runMlmmLoader(
+        m_multipole_mlmm_loader,
+        "multipole_mlmm/",
+        m_supports_multipole_mlmm,
+        inputs,
+        cell,
+        atomic,
+        ensemble_values,
+        molecule_idxs,
+        calc_forces,
+        calc_charges,
+        calc_charges_grad,
+        calc_qbc_and_qbc_grad
+    );
+}
+
+auto CompiledMlipModel::runMlmmLoader(
+    std::unique_ptr<Loader>& loader,
+    const std::string& prefix,
+    bool package_has_model,
+    const std::vector<torch::Tensor>& inputs,
+    const std::optional<torch::Tensor>& cell,
+    bool atomic,
+    bool ensemble_values,
+    const std::optional<torch::Tensor>& molecule_idxs,
+    bool calc_forces,
+    bool calc_charges,
+    bool calc_charges_grad,
+    bool calc_qbc_and_qbc_grad
+) -> mlip::MlipOutput {
+    if (not package_has_model) {
+        throw std::runtime_error("Package doesn't have a model '" + modelName(prefix) + "'");
     }
     if (atomic) {
         throw std::runtime_error("Compiled models don't support atomic=true");
@@ -257,7 +359,7 @@ auto CompiledMlipModel::computeMlmm(
         throw std::runtime_error("Compiled models don't support ensemble_values=true");
     }
     if (cell.has_value()) {
-        throw std::runtime_error("Compiled models don't support PBC in computeMlmm");
+        throw std::runtime_error("Compiled models don't support PBC in ML/MM computations");
     }
     if (molecule_idxs.has_value()) {
         throw std::runtime_error("Compiled models don't support molecule_idxs");
@@ -270,16 +372,10 @@ auto CompiledMlipModel::computeMlmm(
             "Compiled models don't support calc_qbc_and_qbc_grad=true"
         );
     }
-    if (not m_custom_mlmm_loader) {
-        m_custom_mlmm_loader = makeLoader("custom_mlmm/");
+    if (not loader) {
+        loader = makeLoader(prefix);
     }
-    std::vector<torch::Tensor> raw_output = m_custom_mlmm_loader->run(
-        {atomic_numbers,
-         ml_coords,
-         mm_coords,
-         mm_charges,
-         netChargeTensor(net_charge, ml_coords.size(0))}
-    );
+    std::vector<torch::Tensor> raw_output = loader->run(inputs);
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
     if (calc_forces) {
