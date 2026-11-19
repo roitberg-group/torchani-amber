@@ -33,6 +33,7 @@ class PolModel(torch.nn.Module):
             "charges_eq_projected": atomic_charges,
         }
 
+
 # Coulomb constant in V*A/e, same value used internally by PolModel
 COULOMB_CONST_V_ANG = 14.3996
 

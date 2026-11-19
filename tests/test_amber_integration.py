@@ -335,7 +335,9 @@ class AmberIntegration(unittest.TestCase):
     def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
         if suffix == ".xyz":
             lines = text.split("\n")
-            non_comment = [line for line in lines if "ML/MM" not in line and "TORCHANI" not in line]
+            non_comment = [
+                line for line in lines if "ML/MM" not in line and "TORCHANI" not in line
+            ]
             text = " ".join(non_comment)
         if suffix == ".mdcrd":
             text = " ".join(text.split("\n")[1:])  # Get rid of file name
