@@ -336,8 +336,18 @@ void torchani_initialize(
     // Disable TF32 and FP16 for accuracy
     disableTorchReducedFloatPrecisionOptimizations();
 
-    loadTorchaniExtension("cuaev.so");
-    loadTorchaniExtension("cell_list.so");
+    std::vector<std::string> extension_names = {"cuaev.so", "cell_list.so"};
+    for (const std::string& lib_name : extension_names) {
+        try {
+            loadTorchaniExtension(lib_name);
+        } catch (const std::runtime_error& e) {
+            std::cerr << "WARNING (libtorchani)\n"
+                      << e.what() << "\n"
+                      << "Models that support this extension will fail to load,\n"
+                      << "even if the extension is not called during execution"
+                      << std::endl;
+        }
+    }
 
     // The model is loaded from a pytorch file.
     try {
