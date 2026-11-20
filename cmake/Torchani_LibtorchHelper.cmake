@@ -6,10 +6,11 @@ include(Torchani_Msg)
 # - LIBTORCH_ROOT
 #
 # Download LibTorch from the pytorch website and extract it into
-# INSTALL_DIR/LIBTORCH_ROOT_NAME, if said dir doesn't exist
+# INSTALL_DIR/LIBTORCH_ROOT_NAME, if said dir doesn't exist. If USE_CUDA is false, the
+# CPU-only LibTorch is downloaded and CUDATK_VERSION is ignored
 function(Torchani_LibtorchHelper_download_and_install)
     set(options "")
-    set(oneValueArgs LIB_VERSION PATCH_VERSION CUDATK_VERSION INSTALL_DIR)
+    set(oneValueArgs USE_CUDA LIB_VERSION PATCH_VERSION CUDATK_VERSION INSTALL_DIR)
     set(multiValueArgs "")
     cmake_parse_arguments(
         _FN
@@ -20,12 +21,19 @@ function(Torchani_LibtorchHelper_download_and_install)
     )
 
     message(STATUS "LibTorch - Downloading and installing prebuilt binaries")
-    string(REPLACE "." "" _CUDA_JOINT ${_FN_CUDATK_VERSION})
+    if(_FN_USE_CUDA)
+        string(REPLACE "." "" _CUDA_JOINT ${_FN_CUDATK_VERSION})
+        set(_BACKEND "cu${_CUDA_JOINT}")
+        set(_ROOT_SUFFIX "cuda${_FN_CUDATK_VERSION}")
+    else()
+        set(_BACKEND "cpu")
+        set(_ROOT_SUFFIX "cpu")
+    endif()
 
     # Parse the libtorch directory and download url from the options
-    set(_LIBTORCH_ZIPFILE "libtorch-shared-with-deps-${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}%2Bcu${_CUDA_JOINT}.zip")
-    set(_LIBTORCH_URL "https://download.pytorch.org/libtorch/cu${_CUDA_JOINT}/${_LIBTORCH_ZIPFILE}")
-    set(_LIBTORCH_ROOT "${_FN_INSTALL_DIR}/libtorch${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}-cuda${_FN_CUDATK_VERSION}")
+    set(_LIBTORCH_ZIPFILE "libtorch-shared-with-deps-${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}%2B${_BACKEND}.zip")
+    set(_LIBTORCH_URL "https://download.pytorch.org/libtorch/${_BACKEND}/${_LIBTORCH_ZIPFILE}")
+    set(_LIBTORCH_ROOT "${_FN_INSTALL_DIR}/libtorch${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}-${_ROOT_SUFFIX}")
 
     if(EXISTS ${_LIBTORCH_ROOT})
         # Skip download if the requested libtorch version exists
@@ -64,7 +72,11 @@ function(Torchani_LibtorchHelper_download_and_install)
     set(LIBTORCH_ROOT "${_LIBTORCH_ROOT}" PARENT_SCOPE)
     set(LIBTORCH_LIBRARY_DIR "${_LIBTORCH_LIBRARY_DIR}" PARENT_SCOPE)
     message(STATUS "LibTorch - Version: ${_FN_LIB_VERSION}.${_FN_PATCH_VERSION}")
-    message(STATUS "LibTorch - Compiled for CUDA Toolkit version: ${_FN_CUDATK_VERSION}")
+    if(_FN_USE_CUDA)
+        message(STATUS "LibTorch - Compiled for CUDA Toolkit version: ${_FN_CUDATK_VERSION}")
+    else()
+        message(STATUS "LibTorch - CPU-only")
+    endif()
     message(STATUS "LibTorch - Manually set root to: ${_LIBTORCH_ROOT}")
     message(STATUS "LibTorch - Manually set lib dir to: ${_LIBTORCH_LIBRARY_DIR}")
     Torchani_Msg_success("LibTorch - Done")

@@ -151,8 +151,14 @@ Amber prints when installing.
 
 ## CPU-only support
 
-TorchANI-Amber can run CPU-only, but even in this case it depends on the the CUDA
-Toolkit, cuDNN and LibTorch.
+TorchANI-Amber can run CPU-only. By default it is built with CUDA support, and in this
+case it depends on the CUDA Toolkit, cuDNN and LibTorch even when running on CPU.
+
+To build without any CUDA dependency use `./run-cmake -c` (or configure with
+`-DTORCHANI_BUILD_CUDA=OFF`). This requires a CPU-only PyTorch (or LibTorch), e.g.
+installed with `pip install torch --index-url https://download.pytorch.org/whl/cpu`,
+and the `nvidia::cuda-toolkit` dependency in `environment.yaml` is not needed. The
+resulting build can't use CUDA devices or the cuAEV CUDA kernels.
 
 ## Usage
 
