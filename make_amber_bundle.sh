@@ -1,13 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-usage="Usage: $0 [-v cuda_version] [-p torch_version] [output]"
-cuda_version="12.8"
-torch_version="2.11"
-while getopts "v:p:h" opt; do
+usage="Usage: $0 [output]"
+while getopts "h" opt; do
     case "${opt}" in
-        v) cuda_version="${OPTARG}" ;;
-        p) torch_version="${OPTARG}" ;;
         h) echo "${usage}"; exit 0 ;;
         *) echo "${usage}" >&2; exit 1 ;;
     esac
@@ -18,19 +14,6 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bundle_name="mlip-interface"
 output="$(realpath "${1:-${PWD}/${bundle_name}.tar.gz}")"
 torchani_csrc="./submodules/torchani/torchani/csrc"
-
-patched_dir="$(mktemp -d)"
-trap 'rm -rf "${patched_dir}"' EXIT
-sed \
-    -e "s,^name: ani-amber$,name: amber-mlip," \
-    -e "s,nvidia::cuda-toolkit=.*,nvidia::cuda-toolkit=${cuda_version}," \
-    -e "s,download.pytorch.org/whl/cu[0-9]*,download.pytorch.org/whl/cu${cuda_version//./}," \
-    -e "s,torch==.*,torch==${torch_version}.*," \
-    "${repo_root}/environment.yaml" > "${patched_dir}/environment.yaml"
-sed \
-    -e "s,^set(TORCHANI_REQUIRED_TORCH_VERSION \"[^\"]*\",set(TORCHANI_REQUIRED_TORCH_VERSION \"${torch_version}\"," \
-    -e "s,^set(TORCHANI_REQUIRED_CUDATK_VERSION \"[^\"]*\",set(TORCHANI_REQUIRED_CUDATK_VERSION \"${cuda_version}\"," \
-    "${repo_root}/CMakeLists.txt" > "${patched_dir}/CMakeLists.txt"
 
 skipped_names=(
     -name .git
@@ -59,12 +42,10 @@ cd "${repo_root}"
         -o -path ./make_amber_bundle.sh \
         -o -path ./run-cmake \
         -o -path ./environment.yaml \
-        -o -path ./CMakeLists.txt \
         -o -path ./build \
         -o -path ./inputs \
         -o -path './jit/*.csv' \
         -o -path ./tests/expect \
-        -o -path ./external \
         -o -path ./jit/aimnet2 \
         -o -path ./jit/nutmeg \
         -o -path ./submodules/Catch2 \
@@ -74,13 +55,10 @@ cd "${repo_root}"
     echo ./submodules/torchani
     echo ./submodules/torchani/torchani
     find "${torchani_csrc}" \( "${skipped_names[@]}" \) -prune -o -print
-    echo "-C ${patched_dir}"
-    echo ./environment.yaml
-    echo ./CMakeLists.txt
 } | tar -czf "${output}" \
     --no-recursion \
     --transform "s,^\.,${bundle_name}," \
     -T -
 
 echo "WARNING: tests/expect/ and inputs/ are not packed" >&2
-echo "Created ${output} (CUDA Toolkit ${cuda_version}, PyTorch ${torch_version})"
+echo "Created ${output}"

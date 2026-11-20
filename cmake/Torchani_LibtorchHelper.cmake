@@ -1,6 +1,64 @@
 include_guard()
 include(Torchani_Msg)
 
+# Download URL into FILE, showing a progress bar. curl is used if found, since CMake's
+# progress output prints one line per percent. If SHA256 is given, the download is
+# skipped if FILE already exists with that hash, and the hash of the downloaded FILE is
+# checked. OUT_ERROR is set in the PARENT scope to an error message, or to "" on success
+function(_Torchani_LibtorchHelper_download_with_progress)
+    set(options "")
+    set(oneValueArgs URL FILE SHA256 OUT_ERROR)
+    set(multiValueArgs "")
+    cmake_parse_arguments(
+        _FN
+        "${options}"
+        "${oneValueArgs}"
+        "${multiValueArgs}"
+        ${ARGN}
+    )
+
+    set(${_FN_OUT_ERROR} "" PARENT_SCOPE)
+    if(_FN_SHA256 AND EXISTS "${_FN_FILE}")
+        file(SHA256 "${_FN_FILE}" _EXISTING_SHA256)
+        if(_EXISTING_SHA256 STREQUAL _FN_SHA256)
+            return()
+        endif()
+    endif()
+
+    find_program(TORCHANI_CURL_EXECUTABLE curl)
+    if(TORCHANI_CURL_EXECUTABLE)
+        execute_process(
+            COMMAND
+                "${TORCHANI_CURL_EXECUTABLE}"
+                --fail --location --progress-bar
+                --output "${_FN_FILE}"
+                "${_FN_URL}"
+            RESULT_VARIABLE _CURL_CODE
+        )
+        if(NOT _CURL_CODE EQUAL 0)
+            file(REMOVE "${_FN_FILE}")
+            set(${_FN_OUT_ERROR} "curl exited with code ${_CURL_CODE}" PARENT_SCOPE)
+            return()
+        endif()
+    else()
+        file(DOWNLOAD "${_FN_URL}" "${_FN_FILE}" SHOW_PROGRESS STATUS _DOWNLOAD_STATUS)
+        list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
+        list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
+        if(NOT _DOWNLOAD_CODE EQUAL 0)
+            set(${_FN_OUT_ERROR} "${_DOWNLOAD_MSG}" PARENT_SCOPE)
+            return()
+        endif()
+    endif()
+
+    if(_FN_SHA256)
+        file(SHA256 "${_FN_FILE}" _DOWNLOADED_SHA256)
+        if(NOT _DOWNLOADED_SHA256 STREQUAL _FN_SHA256)
+            file(REMOVE "${_FN_FILE}")
+            set(${_FN_OUT_ERROR} "SHA256 mismatch, expected ${_FN_SHA256}, got ${_DOWNLOADED_SHA256}" PARENT_SCOPE)
+        endif()
+    endif()
+endfunction()
+
 # Find the linux x86_64 wheel PACKAGE==VERSION in PyPI, and set its url and sha256 in the
 # PARENT scope, as OUT_URL and OUT_SHA256
 function(_Torchani_LibtorchHelper_find_nvidia_wheel)
@@ -46,12 +104,13 @@ function(_Torchani_LibtorchHelper_find_nvidia_wheel)
     set(${_FN_OUT_SHA256} "${_WHEEL_SHA256}" PARENT_SCOPE)
 endfunction()
 
-# Download the wheel at URL, and copy the libs and headers under nvidia/SUBDIR into
-# LIBTORCH_DIR/lib and LIBTORCH_DIR/include.
+# Download the wheel at URL into CACHE_DIR (skipped if already there with the expected
+# SHA256), and copy the libs and headers under nvidia/SUBDIR into LIBTORCH_DIR/lib and
+# LIBTORCH_DIR/include.
 # Unversioned symlinks (e.g. libcudnn.so -> libcudnn.so.9) are created for the libs
 function(_Torchani_LibtorchHelper_add_nvidia_wheel)
     set(options "")
-    set(oneValueArgs PACKAGE URL SHA256 SUBDIR LIBTORCH_DIR WORK_DIR)
+    set(oneValueArgs PACKAGE URL SHA256 SUBDIR LIBTORCH_DIR WORK_DIR CACHE_DIR)
     set(multiValueArgs "")
     cmake_parse_arguments(
         _FN
@@ -62,19 +121,16 @@ function(_Torchani_LibtorchHelper_add_nvidia_wheel)
     )
 
     message(STATUS "LibTorch - Adding ${_FN_PACKAGE}")
-    set(_WHEEL_FILE "${_FN_WORK_DIR}/${_FN_PACKAGE}.whl")
-    file(
-        DOWNLOAD
-            "${_FN_URL}"
-            "${_WHEEL_FILE}"
-        EXPECTED_HASH SHA256=${_FN_SHA256}
-        SHOW_PROGRESS
-        STATUS _DOWNLOAD_STATUS
+    get_filename_component(_WHEEL_NAME "${_FN_URL}" NAME)
+    set(_WHEEL_FILE "${_FN_CACHE_DIR}/${_WHEEL_NAME}")
+    _Torchani_LibtorchHelper_download_with_progress(
+        URL "${_FN_URL}"
+        FILE "${_WHEEL_FILE}"
+        SHA256 ${_FN_SHA256}
+        OUT_ERROR _DOWNLOAD_ERROR
     )
-    list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
-    list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
-    if(NOT _DOWNLOAD_CODE EQUAL 0)
-        Torchani_Msg_error("LibTorch - Download of ${_FN_URL} failed: ${_DOWNLOAD_MSG}")
+    if(NOT _DOWNLOAD_ERROR STREQUAL "")
+        Torchani_Msg_error("LibTorch - Download of ${_FN_URL} failed: ${_DOWNLOAD_ERROR}")
     endif()
 
     set(_WHEEL_ROOT "${_FN_WORK_DIR}/nvidia/${_FN_SUBDIR}")
@@ -84,7 +140,6 @@ function(_Torchani_LibtorchHelper_add_nvidia_wheel)
             DESTINATION "${_FN_WORK_DIR}"
             PATTERNS "nvidia/${_FN_SUBDIR}/lib/*.so*" "nvidia/${_FN_SUBDIR}/include"
     )
-    file(REMOVE "${_WHEEL_FILE}")
     if(NOT EXISTS "${_WHEEL_ROOT}/lib" OR NOT EXISTS "${_WHEEL_ROOT}/include")
         Torchani_Msg_error("LibTorch - Wheel ${_FN_PACKAGE} has no nvidia/${_FN_SUBDIR}/{lib,include} dirs")
     endif()
@@ -127,11 +182,12 @@ endfunction()
 # - LIBTORCH_ROOT
 #
 # Download LibTorch from the pytorch website and extract it into
-# INSTALL_DIR/libtorch<M.m.p>-<cuda<CUDATK_VERSION>|cpu>, if said dir doesn't exist. If
-# USE_CUDA is false, the CPU-only LibTorch is downloaded and CUDATK_VERSION is ignored
+# EXTRACT_DIR/libtorch<M.m.p>-<cuda<CUDATK_VERSION>|cpu>, if said dir doesn't exist. If
+# USE_CUDA is false, the CPU-only LibTorch is downloaded and CUDATK_VERSION is ignored.
+# The downloaded archives are kept in CACHE_DIR, and are not downloaded again if found there
 #
 # If LIB_VERSION is M.m.p, that exact version is used. If it is M.m, the latest patch
-# version already in INSTALL_DIR is used, and if there is none, the latest patch version
+# version already in EXTRACT_DIR is used, and if there is none, the latest patch version
 # listed in the LibTorch index is downloaded
 #
 # If USE_CUDA is true, the libs and headers of cuDNN, NCCL, cuSPARSELt and NVSHMEM,
@@ -146,7 +202,8 @@ function(Torchani_LibtorchHelper_download_and_install)
         USE_CUDA
         LIB_VERSION
         CUDATK_VERSION
-        INSTALL_DIR
+        EXTRACT_DIR
+        CACHE_DIR
     )
     set(multiValueArgs "")
     cmake_parse_arguments(
@@ -170,9 +227,9 @@ function(Torchani_LibtorchHelper_download_and_install)
     if(_FN_LIB_VERSION MATCHES "^[0-9]+\\.[0-9]+$")
         file(
             GLOB _ROOT_NAMES
-            RELATIVE "${_FN_INSTALL_DIR}"
+            RELATIVE "${_FN_EXTRACT_DIR}"
             LIST_DIRECTORIES TRUE
-            "${_FN_INSTALL_DIR}/libtorch${_FN_LIB_VERSION}.*-${_ROOT_SUFFIX}"
+            "${_FN_EXTRACT_DIR}/libtorch${_FN_LIB_VERSION}.*-${_ROOT_SUFFIX}"
         )
         _Torchani_LibtorchHelper_find_latest_patch(
             ITEMS ${_ROOT_NAMES}
@@ -187,13 +244,14 @@ function(Torchani_LibtorchHelper_download_and_install)
     else()
         set(_FULL_VERSION "${_FN_LIB_VERSION}")
     endif()
-    set(_LIBTORCH_ROOT "${_FN_INSTALL_DIR}/libtorch${_FULL_VERSION}-${_ROOT_SUFFIX}")
+    set(_LIBTORCH_ROOT "${_FN_EXTRACT_DIR}/libtorch${_FULL_VERSION}-${_ROOT_SUFFIX}")
     set(_LIBTORCH_INDEX_URL "https://download.pytorch.org/libtorch/${_BACKEND}/")
 
     if(NOT _FULL_VERSION STREQUAL "" AND EXISTS "${_LIBTORCH_ROOT}")
         # Skip download if the requested libtorch version exists
         message(STATUS "LibTorch - Download was skipped because ${_LIBTORCH_ROOT} already exists")
-        message(STATUS "LibTorch - If you want to download LibTorch again delete ${_LIBTORCH_ROOT} and reconfigure")
+        message(STATUS "LibTorch - If you want to extract LibTorch again delete ${_LIBTORCH_ROOT} and reconfigure")
+        message(STATUS "LibTorch - If you want to download LibTorch again also delete its archive in ${_FN_CACHE_DIR}")
     else()
         # All metadata is fetched and all urls are resolved before any large download
         set(_WORK_DIR "${PROJECT_BINARY_DIR}/libtorch-download")
@@ -223,7 +281,7 @@ function(Torchani_LibtorchHelper_download_and_install)
                 Torchani_Msg_error("LibTorch - No ${_FN_LIB_VERSION}.* version is listed in ${_LIBTORCH_INDEX_URL}")
             endif()
             set(_FULL_VERSION "${_FN_LIB_VERSION}.${_PATCH}")
-            set(_LIBTORCH_ROOT "${_FN_INSTALL_DIR}/libtorch${_FULL_VERSION}-${_ROOT_SUFFIX}")
+            set(_LIBTORCH_ROOT "${_FN_EXTRACT_DIR}/libtorch${_FULL_VERSION}-${_ROOT_SUFFIX}")
             message(STATUS "LibTorch - Latest ${_FN_LIB_VERSION}.* version in the index is ${_FULL_VERSION}")
         endif()
         set(_LIBTORCH_ZIPFILE "libtorch-shared-with-deps-${_FULL_VERSION}%2B${_BACKEND}.zip")
@@ -264,28 +322,33 @@ function(Torchani_LibtorchHelper_download_and_install)
             endforeach()
         endif()
 
-        # Download libtorch to a temporary file _LIBTORCH_TMP_FILE
-        # and extract it into _LIBTORCH_ROOT
-        set(_LIBTORCH_TMP_FILE "${_WORK_DIR}/libtorch.zip")
-        message(STATUS "LibTorch - Downloading")
-        file(
-            DOWNLOAD
-                "${_LIBTORCH_URL}"
-                "${_LIBTORCH_TMP_FILE}"
-            SHOW_PROGRESS
-            STATUS _DOWNLOAD_STATUS
-        )
-        list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
-        list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
-        if(NOT _DOWNLOAD_CODE EQUAL 0)
-            file(REMOVE_RECURSE "${_WORK_DIR}")
-            Torchani_Msg_error("LibTorch - Download of ${_LIBTORCH_URL} failed: ${_DOWNLOAD_MSG}")
+        # The archive is downloaded to a partial file first, so that an interrupted
+        # download is never mistaken for a cached archive
+        file(MAKE_DIRECTORY "${_FN_CACHE_DIR}")
+        string(REPLACE "%2B" "+" _LIBTORCH_CACHED_NAME "${_LIBTORCH_ZIPFILE}")
+        set(_LIBTORCH_CACHED_FILE "${_FN_CACHE_DIR}/${_LIBTORCH_CACHED_NAME}")
+        if(EXISTS "${_LIBTORCH_CACHED_FILE}")
+            message(STATUS "LibTorch - Using cached ${_LIBTORCH_CACHED_FILE}")
+        else()
+            set(_LIBTORCH_PARTIAL_FILE "${_LIBTORCH_CACHED_FILE}.part")
+            message(STATUS "LibTorch - Downloading into ${_FN_CACHE_DIR}")
+            _Torchani_LibtorchHelper_download_with_progress(
+                URL "${_LIBTORCH_URL}"
+                FILE "${_LIBTORCH_PARTIAL_FILE}"
+                OUT_ERROR _DOWNLOAD_ERROR
+            )
+            if(NOT _DOWNLOAD_ERROR STREQUAL "")
+                file(REMOVE_RECURSE "${_WORK_DIR}")
+                file(REMOVE "${_LIBTORCH_PARTIAL_FILE}")
+                Torchani_Msg_error("LibTorch - Download of ${_LIBTORCH_URL} failed: ${_DOWNLOAD_ERROR}")
+            endif()
+            file(RENAME "${_LIBTORCH_PARTIAL_FILE}" "${_LIBTORCH_CACHED_FILE}")
         endif()
 
         message(STATUS "LibTorch - Extracting into ${_LIBTORCH_ROOT}")
-        file(ARCHIVE_EXTRACT INPUT "${_LIBTORCH_TMP_FILE}" DESTINATION "${_FN_INSTALL_DIR}")
-        file(REMOVE "${_LIBTORCH_TMP_FILE}")
-        if(NOT EXISTS "${_FN_INSTALL_DIR}/libtorch")
+        file(REMOVE_RECURSE "${_FN_EXTRACT_DIR}/libtorch")
+        file(ARCHIVE_EXTRACT INPUT "${_LIBTORCH_CACHED_FILE}" DESTINATION "${_FN_EXTRACT_DIR}")
+        if(NOT EXISTS "${_FN_EXTRACT_DIR}/libtorch")
             Torchani_Msg_error("LibTorch - Extracted archive has no top-level 'libtorch' dir")
         endif()
         if(_FN_USE_CUDA)
@@ -295,14 +358,15 @@ function(Torchani_LibtorchHelper_download_and_install)
                     URL "${_WHEEL_URL_${_NAME}}"
                     SHA256 "${_WHEEL_SHA256_${_NAME}}"
                     SUBDIR ${_NAME}
-                    LIBTORCH_DIR "${_FN_INSTALL_DIR}/libtorch"
+                    LIBTORCH_DIR "${_FN_EXTRACT_DIR}/libtorch"
                     WORK_DIR "${_WORK_DIR}"
+                    CACHE_DIR "${_FN_CACHE_DIR}"
                 )
             endforeach()
         endif()
-        file(RENAME "${_FN_INSTALL_DIR}/libtorch" "${_LIBTORCH_ROOT}")
+        file(RENAME "${_FN_EXTRACT_DIR}/libtorch" "${_LIBTORCH_ROOT}")
         file(REMOVE_RECURSE "${_WORK_DIR}")
-        message(STATUS "LibTorch - Downloaded and installed")
+        message(STATUS "LibTorch - Downloaded and extracted")
     endif()
     set(_LIBTORCH_LIBRARY_DIR "${_LIBTORCH_ROOT}/lib")
     set(LIBTORCH_ROOT "${_LIBTORCH_ROOT}" PARENT_SCOPE)
@@ -316,4 +380,48 @@ function(Torchani_LibtorchHelper_download_and_install)
     message(STATUS "LibTorch - Manually set root to: ${_LIBTORCH_ROOT}")
     message(STATUS "LibTorch - Manually set lib dir to: ${_LIBTORCH_LIBRARY_DIR}")
     Torchani_Msg_success("LibTorch - Done")
+endfunction()
+
+# Fail if the existing LibTorch at ROOT doesn't match LIB_VERSION (M.m or M.m.p), or if
+# it isn't CPU-only when USE_CUDA is false, or compiled against CUDATK_VERSION when
+# USE_CUDA is true. The versions are read from ROOT/build-version (<M.m.p>+<cu<XY>|cpu>)
+function(Torchani_LibtorchHelper_check_external)
+    set(options "")
+    set(oneValueArgs ROOT USE_CUDA LIB_VERSION CUDATK_VERSION)
+    set(multiValueArgs "")
+    cmake_parse_arguments(
+        _FN
+        "${options}"
+        "${oneValueArgs}"
+        "${multiValueArgs}"
+        ${ARGN}
+    )
+
+    set(_VERSION_FILE "${_FN_ROOT}/build-version")
+    if(NOT EXISTS "${_VERSION_FILE}")
+        Torchani_Msg_error("LibTorch - ${_VERSION_FILE} doesn't exist, can't validate the LibTorch at ${_FN_ROOT}")
+    endif()
+    file(STRINGS "${_VERSION_FILE}" _BUILD_VERSION LIMIT_COUNT 1)
+    if(NOT _BUILD_VERSION MATCHES "^([0-9]+\\.[0-9]+)\\.([0-9]+)\\+(.+)$")
+        Torchani_Msg_error("LibTorch - Unexpected format '${_BUILD_VERSION}' in ${_VERSION_FILE}")
+    endif()
+    set(_MINOR_VERSION "${CMAKE_MATCH_1}")
+    set(_FULL_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}")
+    set(_BACKEND "${CMAKE_MATCH_3}")
+
+    if(NOT _FN_LIB_VERSION STREQUAL _MINOR_VERSION AND NOT _FN_LIB_VERSION STREQUAL _FULL_VERSION)
+        Torchani_Msg_error("LibTorch - Version ${_FULL_VERSION} doesn't match required ${_FN_LIB_VERSION}")
+    endif()
+    if(_FN_USE_CUDA)
+        string(REPLACE "." "" _CUDA_JOINT ${_FN_CUDATK_VERSION})
+        set(_REQUIRED_BACKEND "cu${_CUDA_JOINT}")
+    else()
+        set(_REQUIRED_BACKEND "cpu")
+    endif()
+    if(NOT _BACKEND STREQUAL _REQUIRED_BACKEND)
+        Torchani_Msg_error("LibTorch - Backend ${_BACKEND} doesn't match required ${_REQUIRED_BACKEND}")
+    endif()
+    message(STATUS "LibTorch - Version: ${_FULL_VERSION}")
+    message(STATUS "LibTorch - Backend: ${_BACKEND}")
+    Torchani_Msg_success("LibTorch - Existing LibTorch at ${_FN_ROOT} is consistent with required")
 endfunction()
