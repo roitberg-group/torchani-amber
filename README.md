@@ -160,6 +160,10 @@ installed with `pip install torch --index-url https://download.pytorch.org/whl/c
 and the `nvidia::cuda-toolkit` dependency in `environment.yaml` is not needed. The
 resulting build can't use CUDA devices or the cuAEV CUDA kernels.
 
+When running on CPU, set `export OMP_NUM_THREADS=1` before calling Sander or Pmemd. By
+default LibTorch (and OpenBLAS, if Amber links against it) spawn one thread per core,
+and the resulting oversubscription can make dynamics more than 10x slower.
+
 ## Usage
 
 Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
