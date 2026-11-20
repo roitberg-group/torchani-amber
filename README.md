@@ -187,7 +187,7 @@ The `&ani` namelist supports the following basic options:
 
 There are also some advanced options:
 - `use_cuaev` (*bool*)
-   Whether to use the cuAEV cuda extension to accelerate potentials that support it.
+   Whether to use the cuAEV compiled extension to accelerate potentials that support it.
 - `use_amber_neighborlist` (*bool*)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
 - `use_all_amber_nonbond` (*bool*)
