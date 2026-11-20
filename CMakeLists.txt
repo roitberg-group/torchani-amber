@@ -49,6 +49,7 @@ include(Torchani_PytorchHelper)
 include(Torchani_CudaToolkitHelper)
 include(Torchani_AmberHelper)
 include(Torchani_TorchScriptUtils)
+include(Torchani_MlipsHelper)
 
 Torchani_OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
 Torchani_PlatformHelper_ensure_linux_x86_64()  # Fail with fatal error if not in x86_64 linux
@@ -80,7 +81,7 @@ if("$ENV{XDG_CACHE_HOME}" STREQUAL "")
 else()
     set(TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR "$ENV{XDG_CACHE_HOME}/Torchani")
 endif()
-set(TORCHANI_DOWNLOAD_CACHE_DIR "${TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR}" CACHE PATH "Dir where the downloaded LibTorch archive and nvidia wheels are kept, if a download is requested")
+set(TORCHANI_DOWNLOAD_CACHE_DIR "${TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR}" CACHE PATH "Dir where the downloaded LibTorch archive, nvidia wheels, and JIT-compiled MLIPs are kept, if a download is requested")
 set(TORCHANI_EXTERNAL_LIBTORCH_ROOT "" CACHE PATH "Existing LibTorch to link against. Must contain cuDNN, NCCL, cuSPARSELt, and NVSHMEM")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
 option(TORCHANI_FORCE_SYSTEM_CUDATK "Hardcode CUDA Toolkit to /usr/local/cuda-<version>" OFF)
@@ -156,10 +157,11 @@ if(NOT TORCHANI_ALLOW_UNTESTED_COMPILERS)
 endif()
 
 # JIT: Options and flags
-option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" ON)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
 option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
+option(TORCHANI_DOWNLOAD_JIT_MODELS "Download the JIT-compiled MLIPs that match the PyTorch/LibTorch version from Hugging Face, and install them into TORCHANI_MLIPS_INSTALL_DIR" ON)
 
 if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
     Torchani_Msg_error("'TORCHANI_JIT_COMPILE_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
@@ -261,6 +263,19 @@ if(INSIDE_AMBER)
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
+# *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
+set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
+set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
+set(TORCHANI_MLIPS_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mlips/jit" CACHE STRING "Install dir for the downloaded JIT-compiled MLIPs")
+if(IS_ABSOLUTE "${TORCHANI_LIBRARY_INSTALL_DIR}" OR IS_ABSOLUTE "${TORCHANI_MLIPS_INSTALL_DIR}")
+    Torchani_Msg_error("'TORCHANI_LIBRARY_INSTALL_DIR' and 'TORCHANI_MLIPS_INSTALL_DIR' must be relative to CMAKE_INSTALL_PREFIX")
+endif()
+# The build tree mirrors the install tree, so libtorchani finds the MLIPs at the same
+# path relative to itself in both
+set(TORCHANI_LIBRARY_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_LIBRARY_INSTALL_DIR}")
+set(TORCHANI_MLIPS_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_MLIPS_INSTALL_DIR}")
+file(RELATIVE_PATH TORCHANI_MLIPS_RELATIVE_DIR "/${TORCHANI_LIBRARY_INSTALL_DIR}" "/${TORCHANI_MLIPS_INSTALL_DIR}")
+
 # Build both libcuaev, libcell_list, and libtorchani
 set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
 add_library(
@@ -268,7 +283,7 @@ add_library(
     SHARED
     "${CELL_ROOT}/cell_list.cpp"
 )
-target_compile_features(torchani_cell_list PRIVATE cxx_std_17)
+target_compile_features(torchani_cell_list PRIVATE cxx_std_20)
 if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani_cell_list PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
@@ -292,7 +307,7 @@ if(TORCHANI_BUILD_CUDA)
             "${CUAEV_ROOT}/cuaev_cub.cuh"
     )
 endif()
-target_compile_features(torchani_cuaev PRIVATE cxx_std_17)
+target_compile_features(torchani_cuaev PRIVATE cxx_std_20)
 # TORCHANI_OPT and "-use_fast_math" make calculations faster in libcuaev.so.
 # TORCHANI_OPT commands libcuaev to use cuda intrinsics for cos, sin, etc.
 # "-use_fast_math" commands nvcc to use the fast math library
@@ -339,11 +354,12 @@ target_compile_options(
         -Wredundant-decls
         -Wshadow
 )
-target_compile_features(torchani PRIVATE cxx_std_17)
+target_compile_features(torchani PRIVATE cxx_std_20)
 target_compile_definitions(
     torchani
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
+        TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
 )
 # libtorchani references none of the symbols of cuaev and cell_list, but loading them is
 # what registers their Torch ops. libtorchani dlopens them at init from its own dir
@@ -352,6 +368,13 @@ if(TORCHANI_USE_CONDA_LIBS)
 endif()
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} ${CMAKE_DL_LIBS})
 add_dependencies(torchani torchani_cuaev torchani_cell_list)
+set_target_properties(
+    torchani
+    torchani_cuaev
+    torchani_cell_list
+    PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${TORCHANI_LIBRARY_BUILD_DIR}"
+)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # For cuaev, cell_list and libtorchani, the install RPATH is set by default to be
@@ -421,7 +444,7 @@ if(TORCHANI_JIT_COMPILE_MODELS)
     )
     add_dependencies(torchani_jit_compile_models torchani_cuaev torchani_cell_list)
 else()
-    Torchani_Msg_warn("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
+    Torchani_Msg_info("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
@@ -438,6 +461,7 @@ if(NOT INSIDE_AMBER)
         add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
         target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
         target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
+        target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
         catch_discover_tests(torchani_tests)
     endif()
 endif()
@@ -447,9 +471,6 @@ add_library(${PROJECT_NAME}::torchani ALIAS torchani)
 add_library(${PROJECT_NAME}::cuaev ALIAS torchani_cuaev)
 add_library(${PROJECT_NAME}::cell_list ALIAS torchani_cell_list)
 
-# *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
-set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
-set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
 set(PKG_EXPORT_FILESET_NAME "${PROJECT_NAME}Targets")
 
 # Install corresponding targets
@@ -467,6 +488,19 @@ if(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
         DIRECTORY "${LIBTORCH_LIBRARY_DIR}/"
         DESTINATION "${TORCHANI_LIBRARY_INSTALL_DIR}/libtorch"
         USE_SOURCE_PERMISSIONS
+    )
+endif()
+if(TORCHANI_DOWNLOAD_JIT_MODELS)
+    Torchani_MlipsHelper_fetch_jit_models(
+        REPO "roitberg-group/compiled-mlips"
+        REVISION "main"
+        TORCH_VERSION "${Torch_VERSION}"
+        CACHE_DIR "${TORCHANI_DOWNLOAD_CACHE_DIR}"
+        DESTINATION "${TORCHANI_MLIPS_BUILD_DIR}"
+    )
+    install(
+        DIRECTORY "${TORCHANI_MLIPS_BUILD_DIR}/"
+        DESTINATION "${TORCHANI_MLIPS_INSTALL_DIR}"
     )
 endif()
 # Install C-interface include file

@@ -1,5 +1,6 @@
 include_guard()
 include(Torchani_Msg)
+include(Torchani_DownloadHelper)
 
 # Download URL into FILE, showing a progress bar. curl is used if found, since CMake's
 # progress output prints one line per percent. If SHA256 is given, the download is
@@ -123,7 +124,7 @@ function(_Torchani_LibtorchHelper_add_nvidia_wheel)
     message(STATUS "LibTorch - Adding ${_FN_PACKAGE}")
     get_filename_component(_WHEEL_NAME "${_FN_URL}" NAME)
     set(_WHEEL_FILE "${_FN_CACHE_DIR}/${_WHEEL_NAME}")
-    _Torchani_LibtorchHelper_download_with_progress(
+    Torchani_DownloadHelper_download_with_progress(
         URL "${_FN_URL}"
         FILE "${_WHEEL_FILE}"
         SHA256 ${_FN_SHA256}
@@ -332,7 +333,7 @@ function(Torchani_LibtorchHelper_download_and_install)
         else()
             set(_LIBTORCH_PARTIAL_FILE "${_LIBTORCH_CACHED_FILE}.part")
             message(STATUS "LibTorch - Downloading into ${_FN_CACHE_DIR}")
-            _Torchani_LibtorchHelper_download_with_progress(
+            Torchani_DownloadHelper_download_with_progress(
                 URL "${_LIBTORCH_URL}"
                 FILE "${_LIBTORCH_PARTIAL_FILE}"
                 OUT_ERROR _DOWNLOAD_ERROR
