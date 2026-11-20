@@ -46,7 +46,6 @@ include(Torchani_PlatformHelper)
 include(Torchani_OutOfSourceBuild)
 include(Torchani_LibtorchHelper)
 include(Torchani_PytorchHelper)
-include(Torchani_CudnnHelper)
 include(Torchani_CudaToolkitHelper)
 include(Torchani_AmberHelper)
 include(Torchani_TorchScriptUtils)
@@ -83,7 +82,7 @@ else()
 endif()
 set(TORCHANI_DOWNLOAD_CACHE_DIR "${TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR}" CACHE PATH "Dir where the downloaded LibTorch archive and nvidia wheels are kept, if a download is requested")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
-option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under /usr/local/cuda-<version> if needed" OFF)
+option(TORCHANI_FORCE_SYSTEM_CUDATK "Hardcode CUDA Toolkit to /usr/local/cuda-<version>" OFF)
 option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with an untested compiler" OFF)
 option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require its version, and its CUDA version to match the ones in this CMake config" ON)
 
@@ -107,13 +106,15 @@ set(TORCHANI_USE_CONDA_LIBS OFF)
 if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
     if(TORCHANI_PREFER_CONDA_LIBS)
         Torchani_Msg_info("You are running inside a conda env with prefix $ENV{CONDA_PREFIX}")
-        Torchani_Msg_info("Libs will be searched first under this prefix")
-        Torchani_Msg_info("If you don't want this, reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
+        Torchani_Msg_info("Libs will be searched here before the system dirs")
+        Torchani_Msg_info("If you don't want this, deactivate your conda env before configuring")
+        Torchani_Msg_info("Or reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
         list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
-        # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
-        # NOTE: x86_64-linux is hardcoded. The MLIP interface rejects can't be built in
-        # other archs
-        set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
+        if(TORCHANI_BUILD_CUDA)
+            # Workaround since torch can't find cuda installed in a conda env otherwise
+            # Hardcode x86_64-linux, since the MLIP interface can only build there
+            set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
+        endif()
         set(TORCHANI_USE_CONDA_LIBS ON)
     else()
         Torchani_Msg_warn("You seem to be installing inside a conda env but with TORCHANI_PREFER_CONDA_LIBS=OFF")
@@ -121,12 +122,12 @@ if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
     endif()
 endif()
 
-if(TORCHANI_USE_CONDA_LIBS AND TORCHANI_USE_CUSTOM_CUDATK)
-    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDATK")
+if(TORCHANI_USE_CONDA_LIBS AND TORCHANI_FORCE_SYSTEM_CUDATK)
+    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_FORCE_SYSTEM_CUDATK")
 endif()
 
-if(NOT TORCHANI_BUILD_CUDA AND TORCHANI_USE_CUSTOM_CUDATK)
-    Torchani_Msg_error("'TORCHANI_BUILD_CUDA=OFF' is incompatible with TORCHANI_USE_CUSTOM_CUDATK")
+if(NOT TORCHANI_BUILD_CUDA AND TORCHANI_FORCE_SYSTEM_CUDATK)
+    Torchani_Msg_error("'TORCHANI_BUILD_CUDA=OFF' is incompatible with TORCHANI_FORCE_SYSTEM_CUDATK")
 endif()
 
 # Validate compilers
@@ -181,18 +182,6 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
 endif()
 
 if(TORCHANI_BUILD_CUDA)
-    # cuDNN setup
-    if(TORCHANI_USE_CONDA_LIBS)
-        Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
-        # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-        Torchani_CudnnHelper_set_conda_paths()
-        list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
-    else()
-        # cuDNN may be directly extracted into the CUDA Toolkit dir,
-        # if a user has done this then they don't need to specify an external version
-        Torchani_Msg_info("Will assume cuDNN, if needed, is located in the same dir as the CUDA Toolkit")
-    endif()
-
     # CUDA Toolkit setup
     if(TORCHANI_USE_CONDA_LIBS)
         Torchani_Msg_info("Will try to use CUDA Toolkit from the active Conda env")
@@ -208,7 +197,7 @@ if(TORCHANI_BUILD_CUDA)
             ${TORCHANI_REQUIRED_CUDATK_VERSION} from Nvidia's web page. Failures related to CUDA
             after this point may indicate you are missing a required part of the Toolkit."
         )
-    elseif(TORCHANI_USE_CUSTOM_CUDATK)
+    elseif(TORCHANI_FORCE_SYSTEM_CUDATK)
         Torchani_Msg_info("Will manually set variables that point to the CUDA Toolkit")
         Torchani_Msg_info("assuming it is located in /usr/local/cuda-<version>")
         # Set CUDA_TOOLKIT_ROOT_DIR and CMAKE_CUDA_COMPILER
@@ -217,7 +206,17 @@ if(TORCHANI_BUILD_CUDA)
         Torchani_Msg_info("Will follow LibTorch's default lookup procedure for the CUDA Toolkit")
         set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
     endif()
+    set(TORCHANI_REQUESTED_CUDA_COMPILER "${CMAKE_CUDA_COMPILER}")
     enable_language(CUDA)
+    # CMake keeps the CUDA compiler detected on the first configure of a build dir
+    if(
+        (TORCHANI_USE_CONDA_LIBS OR TORCHANI_FORCE_SYSTEM_CUDATK)
+        AND NOT CMAKE_CUDA_COMPILER STREQUAL TORCHANI_REQUESTED_CUDA_COMPILER
+    )
+        Torchani_Msg_error(
+            "Requested CUDA compiler ${TORCHANI_REQUESTED_CUDA_COMPILER}, but this build dir already uses ${CMAKE_CUDA_COMPILER}. If you need to change compiler, delete the build dir and reconfigure."
+        )
+    endif()
 
     if(INSIDE_AMBER)
         Torchani_AmberHelper_check_nvcc_matches(
