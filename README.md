@@ -93,7 +93,7 @@ More detailed installation instructions:
     file has a correct environment, tested to work correctly with TorchANI-Amber. It
     contains:
     - TorchANI's required dependencies, including PyTorch
-    - CUDA Toolkit and cuDNN libraries necessary to build the extensions and interface
+    - CUDA Toolkit libraries necessary to build the extensions and interface
     - GFortran and OpenMPI, which are needed to compile Sander and Pmemd (serial and MPI)
     ```bash
     conda env create --file ./environment.yaml
@@ -152,7 +152,7 @@ Amber prints when installing.
 ## CPU-only support
 
 TorchANI-Amber can run CPU-only. By default it is built with CUDA support, and in this
-case it depends on the CUDA Toolkit, cuDNN and LibTorch even when running on CPU.
+case it depends on the CUDA Toolkit and LibTorch even when running on CPU.
 
 To build without any CUDA dependency use `./run-cmake -c` (or configure with
 `-DTORCHANI_BUILD_CUDA=OFF`). This requires a CPU-only PyTorch (or LibTorch), e.g.

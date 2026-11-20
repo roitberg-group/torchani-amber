@@ -69,32 +69,25 @@ Torchani_PlatformHelper_ensure_linux_x86_64()  # Fail with fatal error if not in
 # wheels and toolkit libraries directly.
 
 # General: options and flags
+# Exact major.minor versions must match for these
+set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of PyTorch/LibTorch, M.m or M.m.p")
+set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
 option(TORCHANI_BUILD_CUDA "Build with CUDA support. If OFF, a CPU-only PyTorch/LibTorch is required" ON)
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
 option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs ($ORIGIN is always added)" ON)
 option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract to TORCHANI_LIBTORCH_INSTALL_DIR/libtorch<version>-cuda<version>" OFF)
 set(TORCHANI_LIBTORCH_INSTALL_DIR "${CMAKE_CURRENT_LIST_DIR}/external" CACHE PATH "Dir where LibTorch is downloaded and extracted, if a download is requested")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
-option(TORCHANI_USE_CUSTOM_CUDNN "Try to find cuDNN under ./external/cudnn<version>-cuda<version> if needed" OFF)
 option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under /usr/local/cuda-<version> if needed" OFF)
-option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with a compiler deemed not supported by nvcc" OFF)
-option(TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS "Check the required versions for Torch and CUDA" OFF)
+option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with an untested compiler" OFF)
+option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require its version, and its CUDA version to match the ones in this CMake config" ON)
 
-# Exact major.minor versions must match for these
-# The libtorch patch version is required since the download url contains the patch
-# version. It is not checked afterwards
-set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of PyTorch/LibTorch")
-set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
-set(TORCHANI_REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
-set(TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION "0" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
-
-# Versions of the nvidia-*-cu<cuda-major> wheels added to LibTorch. These must match the
-# ones required by the torch wheel with the same LibTorch and CUDA versions.
-# Only used if a CUDA LibTorch download is requested
-set(TORCHANI_LIBTORCH_CUDNN_WHEEL_VERSION "9.20.0.48" CACHE STRING "Version of the nvidia-cudnn wheel added to LibTorch")
-set(TORCHANI_LIBTORCH_NCCL_WHEEL_VERSION "2.29.7" CACHE STRING "Version of the nvidia-nccl wheel added to LibTorch")
-set(TORCHANI_LIBTORCH_CUSPARSELT_WHEEL_VERSION "0.8.1" CACHE STRING "Version of the nvidia-cusparselt wheel added to LibTorch")
-set(TORCHANI_LIBTORCH_NVSHMEM_WHEEL_VERSION "3.4.5" CACHE STRING "Version of the nvidia-nvshmem wheel added to LibTorch")
+# NOTE: Amber doesn't ship NCCL and the CUDA Toolkit doesn't include it, but there is a
+# -DNCCL flag, which if used makes Amber attempt to find NCCL according to NCCL_HOME
+# (system paths first, NCCL_HOME last)
+# It is very unlekely that loading both NCCL libs would cause any issue whatsoever, but
+# for safety it could be a good idea to always point pmemd to libtorch's NCCL if NCCL is
+# requested
 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
@@ -123,12 +116,12 @@ if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
     endif()
 endif()
 
-if(TORCHANI_USE_CONDA_LIBS AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
-    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
+if(TORCHANI_USE_CONDA_LIBS AND TORCHANI_USE_CUSTOM_CUDATK)
+    Torchani_Msg_error("'TORCHANI_PREFER_CONDA_LIBS' is incompatible with TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
-if(NOT TORCHANI_BUILD_CUDA AND (TORCHANI_USE_CUSTOM_CUDNN OR TORCHANI_USE_CUSTOM_CUDATK))
-    Torchani_Msg_error("'TORCHANI_BUILD_CUDA=OFF' is incompatible with TORCHANI_USE_CUSTOM_CUDNN or TORCHANI_USE_CUSTOM_CUDATK")
+if(NOT TORCHANI_BUILD_CUDA AND TORCHANI_USE_CUSTOM_CUDATK)
+    Torchani_Msg_error("'TORCHANI_BUILD_CUDA=OFF' is incompatible with TORCHANI_USE_CUSTOM_CUDATK")
 endif()
 
 # Validate compilers
@@ -163,10 +156,9 @@ if(TORCHANI_LINK_TO_PYTORCH_LIBS)
     # Set var PYTORCH_ROOT
     Torchani_PytorchHelper_detect(
         USE_CUDA ${TORCHANI_BUILD_CUDA}
-        CHECK_VERSIONS ${TORCHANI_CHECK_TORCH_AND_CUDA_VERSIONS}
+        CHECK_VERSIONS ${TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS}
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
-        CUDNN_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_ROOT})
 elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
@@ -176,13 +168,8 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     Torchani_LibtorchHelper_download_and_install(
         USE_CUDA ${TORCHANI_BUILD_CUDA}
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
-        PATCH_VERSION ${TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
         INSTALL_DIR "${TORCHANI_LIBTORCH_INSTALL_DIR}"
-        CUDNN_WHEEL_VERSION ${TORCHANI_LIBTORCH_CUDNN_WHEEL_VERSION}
-        NCCL_WHEEL_VERSION ${TORCHANI_LIBTORCH_NCCL_WHEEL_VERSION}
-        CUSPARSELT_WHEEL_VERSION ${TORCHANI_LIBTORCH_CUSPARSELT_WHEEL_VERSION}
-        NVSHMEM_WHEEL_VERSION ${TORCHANI_LIBTORCH_NVSHMEM_WHEEL_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
@@ -193,15 +180,6 @@ if(TORCHANI_BUILD_CUDA)
         Torchani_Msg_info("Will try to use cuDNN from active Conda env if needed")
         # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
         Torchani_CudnnHelper_set_conda_paths()
-        list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
-    elseif(TORCHANI_USE_CUSTOM_CUDNN)
-        Torchani_Msg_info("Will manually set variables that point to cuDNN")
-        Torchani_Msg_info("assuming it is located in ./external/cudnn<version>-cuda<version>")
-        # Set vars CUDNN_ROOT, CUDNN_LIBRARY, CUDNN_INCLUDE_DIR
-        Torchani_CudnnHelper_set_custom_paths(
-            LIB_VERSION ${TORCHANI_REQUIRED_CUDNN_VERSION}
-            CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
-        )
         list(APPEND CMAKE_PREFIX_PATH ${CUDNN_ROOT})
     else()
         # cuDNN may be directly extracted into the CUDA Toolkit dir,
