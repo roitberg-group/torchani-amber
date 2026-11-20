@@ -331,3 +331,47 @@ function(Torchani_LibtorchHelper_download_and_install)
     message(STATUS "LibTorch - Manually set lib dir to: ${_LIBTORCH_LIBRARY_DIR}")
     Torchani_Msg_success("LibTorch - Done")
 endfunction()
+
+# Fail if the existing LibTorch at ROOT doesn't match LIB_VERSION (M.m or M.m.p), or if
+# it isn't CPU-only when USE_CUDA is false, or compiled against CUDATK_VERSION when
+# USE_CUDA is true. The versions are read from ROOT/build-version (<M.m.p>+<cu<XY>|cpu>)
+function(Torchani_LibtorchHelper_check_external)
+    set(options "")
+    set(oneValueArgs ROOT USE_CUDA LIB_VERSION CUDATK_VERSION)
+    set(multiValueArgs "")
+    cmake_parse_arguments(
+        _FN
+        "${options}"
+        "${oneValueArgs}"
+        "${multiValueArgs}"
+        ${ARGN}
+    )
+
+    set(_VERSION_FILE "${_FN_ROOT}/build-version")
+    if(NOT EXISTS "${_VERSION_FILE}")
+        Torchani_Msg_error("LibTorch - ${_VERSION_FILE} doesn't exist, can't validate the LibTorch at ${_FN_ROOT}")
+    endif()
+    file(STRINGS "${_VERSION_FILE}" _BUILD_VERSION LIMIT_COUNT 1)
+    if(NOT _BUILD_VERSION MATCHES "^([0-9]+\\.[0-9]+)\\.([0-9]+)\\+(.+)$")
+        Torchani_Msg_error("LibTorch - Unexpected format '${_BUILD_VERSION}' in ${_VERSION_FILE}")
+    endif()
+    set(_MINOR_VERSION "${CMAKE_MATCH_1}")
+    set(_FULL_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}")
+    set(_BACKEND "${CMAKE_MATCH_3}")
+
+    if(NOT _FN_LIB_VERSION STREQUAL _MINOR_VERSION AND NOT _FN_LIB_VERSION STREQUAL _FULL_VERSION)
+        Torchani_Msg_error("LibTorch - Version ${_FULL_VERSION} doesn't match required ${_FN_LIB_VERSION}")
+    endif()
+    if(_FN_USE_CUDA)
+        string(REPLACE "." "" _CUDA_JOINT ${_FN_CUDATK_VERSION})
+        set(_REQUIRED_BACKEND "cu${_CUDA_JOINT}")
+    else()
+        set(_REQUIRED_BACKEND "cpu")
+    endif()
+    if(NOT _BACKEND STREQUAL _REQUIRED_BACKEND)
+        Torchani_Msg_error("LibTorch - Backend ${_BACKEND} doesn't match required ${_REQUIRED_BACKEND}")
+    endif()
+    message(STATUS "LibTorch - Version: ${_FULL_VERSION}")
+    message(STATUS "LibTorch - Backend: ${_BACKEND}")
+    Torchani_Msg_success("LibTorch - Existing LibTorch at ${_FN_ROOT} is consistent with required")
+endfunction()

@@ -81,9 +81,10 @@ else()
     set(TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR "$ENV{XDG_CACHE_HOME}/Torchani")
 endif()
 set(TORCHANI_DOWNLOAD_CACHE_DIR "${TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR}" CACHE PATH "Dir where the downloaded LibTorch archive and nvidia wheels are kept, if a download is requested")
+set(TORCHANI_EXTERNAL_LIBTORCH_ROOT "" CACHE PATH "Existing LibTorch to link against. Must contain cuDNN, NCCL, cuSPARSELt, and NVSHMEM")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
 option(TORCHANI_FORCE_SYSTEM_CUDATK "Hardcode CUDA Toolkit to /usr/local/cuda-<version>" OFF)
-option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with an untested compiler" OFF)
+option(TORCHANI_ALLOW_UNTESTED_COMPILERS "Allow compiling with an untested compiler" OFF)
 option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require its version, and its CUDA version to match the ones in this CMake config" ON)
 
 # NOTE: Amber doesn't ship NCCL and the CUDA Toolkit doesn't include it, but there is a
@@ -96,6 +97,14 @@ option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     Torchani_Msg_error("'TORCHANI_LINK_TO_PYTORCH_LIBS' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
+endif()
+if(NOT TORCHANI_EXTERNAL_LIBTORCH_ROOT STREQUAL "")
+    if(TORCHANI_LINK_TO_PYTORCH_LIBS)
+        Torchani_Msg_error("'TORCHANI_EXTERNAL_LIBTORCH_ROOT' is incompatible with 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
+    endif()
+    if(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
+        Torchani_Msg_error("'TORCHANI_EXTERNAL_LIBTORCH_ROOT' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
+    endif()
 endif()
 
 if("$ENV{CONDA_DEFAULT_ENV}" STREQUAL "base")
@@ -131,7 +140,7 @@ if(NOT TORCHANI_BUILD_CUDA AND TORCHANI_FORCE_SYSTEM_CUDATK)
 endif()
 
 # Validate compilers
-if(NOT TORCHANI_ALLOW_UNSUPPORTED_COMPILERS)
+if(NOT TORCHANI_ALLOW_UNTESTED_COMPILERS)
     set(COMPILER_IDS ${CMAKE_CXX_COMPILER_ID} ${CMAKE_C_COMPILER_ID} ${CMAKE_Fortran_COMPILER_ID})
     foreach(COMPILER_ID ${COMPILER_IDS})
         if(NOT (COMPILER_ID STREQUAL GNU))
@@ -179,6 +188,15 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
         CACHE_DIR "${TORCHANI_DOWNLOAD_CACHE_DIR}"
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
+elseif(NOT TORCHANI_EXTERNAL_LIBTORCH_ROOT STREQUAL "")
+    Torchani_Msg_info("Will use the existing LibTorch at ${TORCHANI_EXTERNAL_LIBTORCH_ROOT}")
+    Torchani_LibtorchHelper_check_external(
+        ROOT "${TORCHANI_EXTERNAL_LIBTORCH_ROOT}"
+        USE_CUDA ${TORCHANI_BUILD_CUDA}
+        LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
+        CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
+    )
+    list(PREPEND CMAKE_PREFIX_PATH ${TORCHANI_EXTERNAL_LIBTORCH_ROOT})
 endif()
 
 if(TORCHANI_BUILD_CUDA)
@@ -374,6 +392,9 @@ if(TORCHANI_SET_LIBRARIES_INSTALL_RPATH)
 endif()
 if(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     list(PREPEND TORCHANI_LIBRARIES_INSTALL_RPATH "$ORIGIN/libtorch")
+endif()
+if(NOT TORCHANI_EXTERNAL_LIBTORCH_ROOT STREQUAL "")
+    list(PREPEND TORCHANI_LIBRARIES_INSTALL_RPATH "${TORCHANI_EXTERNAL_LIBTORCH_ROOT}/lib")
 endif()
 set_target_properties(
     torchani_cuaev
