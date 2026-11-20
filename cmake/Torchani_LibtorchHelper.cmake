@@ -1,6 +1,64 @@
 include_guard()
 include(Torchani_Msg)
 
+# Download URL into FILE, showing a progress bar. curl is used if found, since CMake's
+# progress output prints one line per percent. If SHA256 is given, the download is
+# skipped if FILE already exists with that hash, and the hash of the downloaded FILE is
+# checked. OUT_ERROR is set in the PARENT scope to an error message, or to "" on success
+function(_Torchani_LibtorchHelper_download_with_progress)
+    set(options "")
+    set(oneValueArgs URL FILE SHA256 OUT_ERROR)
+    set(multiValueArgs "")
+    cmake_parse_arguments(
+        _FN
+        "${options}"
+        "${oneValueArgs}"
+        "${multiValueArgs}"
+        ${ARGN}
+    )
+
+    set(${_FN_OUT_ERROR} "" PARENT_SCOPE)
+    if(_FN_SHA256 AND EXISTS "${_FN_FILE}")
+        file(SHA256 "${_FN_FILE}" _EXISTING_SHA256)
+        if(_EXISTING_SHA256 STREQUAL _FN_SHA256)
+            return()
+        endif()
+    endif()
+
+    find_program(TORCHANI_CURL_EXECUTABLE curl)
+    if(TORCHANI_CURL_EXECUTABLE)
+        execute_process(
+            COMMAND
+                "${TORCHANI_CURL_EXECUTABLE}"
+                --fail --location --progress-bar
+                --output "${_FN_FILE}"
+                "${_FN_URL}"
+            RESULT_VARIABLE _CURL_CODE
+        )
+        if(NOT _CURL_CODE EQUAL 0)
+            file(REMOVE "${_FN_FILE}")
+            set(${_FN_OUT_ERROR} "curl exited with code ${_CURL_CODE}" PARENT_SCOPE)
+            return()
+        endif()
+    else()
+        file(DOWNLOAD "${_FN_URL}" "${_FN_FILE}" SHOW_PROGRESS STATUS _DOWNLOAD_STATUS)
+        list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
+        list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
+        if(NOT _DOWNLOAD_CODE EQUAL 0)
+            set(${_FN_OUT_ERROR} "${_DOWNLOAD_MSG}" PARENT_SCOPE)
+            return()
+        endif()
+    endif()
+
+    if(_FN_SHA256)
+        file(SHA256 "${_FN_FILE}" _DOWNLOADED_SHA256)
+        if(NOT _DOWNLOADED_SHA256 STREQUAL _FN_SHA256)
+            file(REMOVE "${_FN_FILE}")
+            set(${_FN_OUT_ERROR} "SHA256 mismatch, expected ${_FN_SHA256}, got ${_DOWNLOADED_SHA256}" PARENT_SCOPE)
+        endif()
+    endif()
+endfunction()
+
 # Find the linux x86_64 wheel PACKAGE==VERSION in PyPI, and set its url and sha256 in the
 # PARENT scope, as OUT_URL and OUT_SHA256
 function(_Torchani_LibtorchHelper_find_nvidia_wheel)
@@ -65,18 +123,14 @@ function(_Torchani_LibtorchHelper_add_nvidia_wheel)
     message(STATUS "LibTorch - Adding ${_FN_PACKAGE}")
     get_filename_component(_WHEEL_NAME "${_FN_URL}" NAME)
     set(_WHEEL_FILE "${_FN_CACHE_DIR}/${_WHEEL_NAME}")
-    file(
-        DOWNLOAD
-            "${_FN_URL}"
-            "${_WHEEL_FILE}"
-        EXPECTED_HASH SHA256=${_FN_SHA256}
-        SHOW_PROGRESS
-        STATUS _DOWNLOAD_STATUS
+    _Torchani_LibtorchHelper_download_with_progress(
+        URL "${_FN_URL}"
+        FILE "${_WHEEL_FILE}"
+        SHA256 ${_FN_SHA256}
+        OUT_ERROR _DOWNLOAD_ERROR
     )
-    list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
-    list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
-    if(NOT _DOWNLOAD_CODE EQUAL 0)
-        Torchani_Msg_error("LibTorch - Download of ${_FN_URL} failed: ${_DOWNLOAD_MSG}")
+    if(NOT _DOWNLOAD_ERROR STREQUAL "")
+        Torchani_Msg_error("LibTorch - Download of ${_FN_URL} failed: ${_DOWNLOAD_ERROR}")
     endif()
 
     set(_WHEEL_ROOT "${_FN_WORK_DIR}/nvidia/${_FN_SUBDIR}")
@@ -278,19 +332,15 @@ function(Torchani_LibtorchHelper_download_and_install)
         else()
             set(_LIBTORCH_PARTIAL_FILE "${_LIBTORCH_CACHED_FILE}.part")
             message(STATUS "LibTorch - Downloading into ${_FN_CACHE_DIR}")
-            file(
-                DOWNLOAD
-                    "${_LIBTORCH_URL}"
-                    "${_LIBTORCH_PARTIAL_FILE}"
-                SHOW_PROGRESS
-                STATUS _DOWNLOAD_STATUS
+            _Torchani_LibtorchHelper_download_with_progress(
+                URL "${_LIBTORCH_URL}"
+                FILE "${_LIBTORCH_PARTIAL_FILE}"
+                OUT_ERROR _DOWNLOAD_ERROR
             )
-            list(GET _DOWNLOAD_STATUS 0 _DOWNLOAD_CODE)
-            list(GET _DOWNLOAD_STATUS 1 _DOWNLOAD_MSG)
-            if(NOT _DOWNLOAD_CODE EQUAL 0)
+            if(NOT _DOWNLOAD_ERROR STREQUAL "")
                 file(REMOVE_RECURSE "${_WORK_DIR}")
                 file(REMOVE "${_LIBTORCH_PARTIAL_FILE}")
-                Torchani_Msg_error("LibTorch - Download of ${_LIBTORCH_URL} failed: ${_DOWNLOAD_MSG}")
+                Torchani_Msg_error("LibTorch - Download of ${_LIBTORCH_URL} failed: ${_DOWNLOAD_ERROR}")
             endif()
             file(RENAME "${_LIBTORCH_PARTIAL_FILE}" "${_LIBTORCH_CACHED_FILE}")
         endif()
