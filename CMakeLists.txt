@@ -1,5 +1,5 @@
 cmake_minimum_required(
-    VERSION 3.24
+    VERSION 3.19
     FATAL_ERROR
 )
 
@@ -42,7 +42,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Internal modules
 include(Torchani_Msg)
-include(Torchani_LinuxBuild)
+include(Torchani_PlatformHelper)
 include(Torchani_OutOfSourceBuild)
 include(Torchani_LibtorchHelper)
 include(Torchani_PytorchHelper)
@@ -52,21 +52,21 @@ include(Torchani_AmberHelper)
 include(Torchani_TorchScriptUtils)
 
 Torchani_OutOfSourceBuild_ensure()  # Fail with fatal error if out-of-source
-Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
+Torchani_PlatformHelper_ensure_linux_x86_64()  # Fail with fatal error if not in x86_64 linux
 
-# TODO: These options are still confusing, it is probably better to use CMakeDependentOptions
 # PyTorch/LibTorch and their backends: options and flags
 
-# NOTE: Libtorch installs require extra libraries to be present, that are *not* in the
-# plain toolkit:
+# NOTE: The pre-built libtorch zip requires extra cuda libraries to be present.
+# These libs are *not* in the plain toolkit:
 # libcudnn.so, libnccl.so, libcusparseLt.so, libnvshmem_host.so
 # Without those installed, libtorch fails at runtime
-# The pytorch path is simpler, since the pytorch wheel pulls the required nvidia
-# wheels and toolkit libraries directly
+#
 # When a CUDA libtorch download is requested, the libs and headers of these extra
 # libraries are also downloaded from their nvidia-*-cu<cuda-major> PyPI wheels
-# (no pip needed), and added to the libtorch lib and include dirs
-# Neither of these includes nvcc or CUDA headers, these are needed separately
+# (directly by fetching from the json API, no pip needed).
+#
+# The pytorch option is simpler, since the pytorch wheel pulls the required nvidia
+# wheels and toolkit libraries directly.
 
 # General: options and flags
 option(TORCHANI_BUILD_CUDA "Build with CUDA support. If OFF, a CPU-only PyTorch/LibTorch is required" ON)
@@ -113,7 +113,8 @@ if(NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
         Torchani_Msg_info("If you don't want this, reconfigure with -DTORCHANI_PREFER_CONDA_LIBS=OFF")
         list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
         # Workaround since torch 2.8 can't find cuda installed in a conda env otherwise
-        # TODO: x86_64-linux is hardcoded, on aarch64 conda uses targets/sbsa-linux
+        # NOTE: x86_64-linux is hardcoded. The MLIP interface rejects can't be built in
+        # other archs
         set(ENV{CUDA_INC_PATH} $ENV{CONDA_PREFIX}/targets/x86_64-linux/include)
         set(TORCHANI_USE_CONDA_LIBS ON)
     else()
@@ -343,24 +344,13 @@ target_compile_definitions(
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
 )
-# cuaev and cell_list must stay in DT_NEEDED even though libtorchani references none of
-# their symbols: loading them is what registers their Torch ops. --no-as-needed is
-# scoped to these two libs since conda's LDFLAGS append a global --as-needed
-set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED
-    "LINKER:--push-state,--no-as-needed"
-    "<LINK_ITEM>"
-    "LINKER:--pop-state"
-)
-set(CMAKE_LINK_LIBRARY_USING_NO_AS_NEEDED_SUPPORTED TRUE)
+# libtorchani references none of the symbols of cuaev and cell_list, but loading them is
+# what registers their Torch ops. libtorchani dlopens them at init from its own dir
 if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
-target_link_libraries(
-    torchani
-    PRIVATE
-        ${TORCH_LIBRARIES}
-        "$<LINK_LIBRARY:NO_AS_NEEDED,torchani_cuaev,torchani_cell_list>"
-)
+target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} ${CMAKE_DL_LIBS})
+add_dependencies(torchani torchani_cuaev torchani_cell_list)
 target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" ${TORCH_INCLUDE_DIRS})
 
 # For cuaev, cell_list and libtorchani, the install RPATH is set by default to be

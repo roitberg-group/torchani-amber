@@ -1,5 +1,7 @@
 #include <torchani.h>
 
+#include <dlfcn.h>
+
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -222,6 +224,20 @@ void disableTorchReducedFloatPrecisionOptimizations() {
     LOG(INFO) << "Disabled TF32 in cuBLAS and cuDNN, and FP16 reduction in cuBLAS";
 }
 
+void loadTorchaniExtension(const std::string& lib_name) {
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void*>(&loadTorchaniExtension), &info) == 0) {
+        throw std::runtime_error("Could not locate libtorchani");
+    }
+    std::string lib_dir = info.dli_fname;
+    lib_dir = lib_dir.substr(0, lib_dir.find_last_of("/"));
+    std::string lib_path = lib_dir + "/" + lib_name;
+    if (dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL) == nullptr) {
+        throw std::runtime_error("Could not load " + lib_path + ": " + dlerror());
+    }
+    LOG(INFO) << "Loaded extension: " << lib_path;
+}
+
 extern "C" {
 void torchani_initialize(
     int num_atoms,
@@ -319,6 +335,9 @@ void torchani_initialize(
 
     // Disable TF32 and FP16 for accuracy
     disableTorchReducedFloatPrecisionOptimizations();
+
+    loadTorchaniExtension("cuaev.so");
+    loadTorchaniExtension("cell_list.so");
 
     // The model is loaded from a pytorch file.
     try {
