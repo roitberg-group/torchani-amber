@@ -75,8 +75,13 @@ set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version o
 option(TORCHANI_BUILD_CUDA "Build with CUDA support. If OFF, a CPU-only PyTorch/LibTorch is required" ON)
 option(TORCHANI_LINK_TO_PYTORCH_LIBS "Try to find and link to a local PyTorch installation" ON)
 option(TORCHANI_SET_LIBRARIES_INSTALL_RPATH "Hardcode the RPATH used during build-time for the installed libs ($ORIGIN is always added)" ON)
-option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library and extract to TORCHANI_LIBTORCH_INSTALL_DIR/libtorch<version>-cuda<version>" OFF)
-set(TORCHANI_LIBTORCH_INSTALL_DIR "${CMAKE_CURRENT_LIST_DIR}/external" CACHE PATH "Dir where LibTorch is downloaded and extracted, if a download is requested")
+option(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH "Download LibTorch library, extract it into the build dir, and install its libs into TORCHANI_LIBRARY_INSTALL_DIR/libtorch" OFF)
+if("$ENV{XDG_CACHE_HOME}" STREQUAL "")
+    set(TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR "$ENV{HOME}/.cache/Torchani")
+else()
+    set(TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR "$ENV{XDG_CACHE_HOME}/Torchani")
+endif()
+set(TORCHANI_DOWNLOAD_CACHE_DIR "${TORCHANI_DEFAULT_DOWNLOAD_CACHE_DIR}" CACHE PATH "Dir where the downloaded LibTorch archive and nvidia wheels are kept, if a download is requested")
 option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the active conda env)" ON)
 option(TORCHANI_USE_CUSTOM_CUDATK "Try to find CUDA Toolkit under /usr/local/cuda-<version> if needed" OFF)
 option(TORCHANI_ALLOW_UNSUPPORTED_COMPILERS "Allow compiling with an untested compiler" OFF)
@@ -169,7 +174,8 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
         USE_CUDA ${TORCHANI_BUILD_CUDA}
         LIB_VERSION ${TORCHANI_REQUIRED_TORCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
-        INSTALL_DIR "${TORCHANI_LIBTORCH_INSTALL_DIR}"
+        EXTRACT_DIR "${PROJECT_BINARY_DIR}"
+        CACHE_DIR "${TORCHANI_DOWNLOAD_CACHE_DIR}"
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
@@ -349,7 +355,8 @@ target_include_directories(torchani PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include" 
 # INSTALL_RPATH_USE_LINK_PATH bakes the linked library paths from *outside* this project
 # into the install rpath of the targets (it doesn't bake the lib paths *inside* the
 # project). The link paths inside the project are baked in manually
-# (LIBTORCH_LIBRARY_DIR and the Torchani installation dir, which is $ORIGIN).
+# (the installed LibTorch dir, which is $ORIGIN/libtorch, and the Torchani installation
+# dir, which is $ORIGIN).
 # NOTE: INSTALL_RPATH_USE_LINK_PATH also adds /lib/intel64, /lib/intel64_win and
 # /lib/win-x64, derived from TORCH_LIBRARIES. These don't exist, but this is harmless
 # NOTE: INSTALL_RPATH_USE_LINK_PATH skips CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES, which
@@ -361,11 +368,13 @@ if(TORCHANI_SET_LIBRARIES_INSTALL_RPATH)
     get_filename_component(CUDART_LIBRARY_DIR "${CUDA_cudart_LIBRARY}" DIRECTORY)
     get_filename_component(NVRTC_LIBRARY_DIR "${CUDA_nvrtc_LIBRARY}" DIRECTORY)
     list(PREPEND TORCHANI_LIBRARIES_INSTALL_RPATH
-        ${LIBTORCH_LIBRARY_DIR}
         ${CUDART_LIBRARY_DIR}
         ${NVRTC_LIBRARY_DIR}
     )
     list(REMOVE_DUPLICATES TORCHANI_LIBRARIES_INSTALL_RPATH)
+endif()
+if(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
+    list(PREPEND TORCHANI_LIBRARIES_INSTALL_RPATH "$ORIGIN/libtorch")
 endif()
 set_target_properties(
     torchani_cuaev
@@ -433,6 +442,13 @@ install(
     LIBRARY
         DESTINATION "${TORCHANI_LIBRARY_INSTALL_DIR}"
 )
+if(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
+    install(
+        DIRECTORY "${LIBTORCH_LIBRARY_DIR}/"
+        DESTINATION "${TORCHANI_LIBRARY_INSTALL_DIR}/libtorch"
+        USE_SOURCE_PERMISSIONS
+    )
+endif()
 # Install C-interface include file
 install(
     FILES
