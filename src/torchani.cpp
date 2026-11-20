@@ -224,14 +224,17 @@ void disableTorchReducedFloatPrecisionOptimizations() {
     LOG(INFO) << "Disabled TF32 in cuBLAS and cuDNN, and FP16 reduction in cuBLAS";
 }
 
-void loadTorchaniExtension(const std::string& lib_name) {
+std::string libtorchaniDir() {
     Dl_info info;
-    if (dladdr(reinterpret_cast<void*>(&loadTorchaniExtension), &info) == 0) {
+    if (dladdr(reinterpret_cast<void*>(&libtorchaniDir), &info) == 0) {
         throw std::runtime_error("Could not locate libtorchani");
     }
-    std::string lib_dir = info.dli_fname;
-    lib_dir = lib_dir.substr(0, lib_dir.find_last_of("/"));
-    std::string lib_path = lib_dir + "/" + lib_name;
+    std::string lib_path = info.dli_fname;
+    return lib_path.substr(0, lib_path.find_last_of("/"));
+}
+
+void loadTorchaniExtension(const std::string& lib_name) {
+    std::string lib_path = libtorchaniDir() + "/" + lib_name;
     if (dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL) == nullptr) {
         throw std::runtime_error("Could not load " + lib_path + ": " + dlerror());
     }
@@ -258,11 +261,7 @@ void torchani_initialize(
                   << std::endl;
         use_cuaev = false;
     }
-    std::string jit_models_dir = __FILE__;
-    // The following is roughtly equivalent to dir.parent.parent
-    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
-    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
-    jit_models_dir = jit_models_dir + "/jit";
+    std::string jit_models_dir = libtorchaniDir() + "/" + TORCHANI_MLIPS_RELATIVE_DIR;
 
     std::string model_type_str = model_type;
     // Path to extra features may be inside model_type_str, separated by ::
