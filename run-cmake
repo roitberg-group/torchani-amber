@@ -1,20 +1,20 @@
 #!/bin/bash
 
 usage() { echo "Usage: [OPTION]...
-    Configure, Generate buildsystem, build, run tests, and install TorchANI-Interface.
+    Configure, Generate buildsystem, build, run tests, and install TorchANI MLIP Interface.
 
     All options are boolean flags.
     -B Don't build or install, only configure and generate
     -I Don't install, only configure, generate and build
     -T Don't run tests after build / installation
-    -P Don't auto detect and link to PyTorch
-    -C Don't use Conda libraries
-    -c Build CPU-only (requires a CPU-only PyTorch, no CUDA Toolkit or cuDNN needed)
-    -a Builds for archs 7.0, 7.5, 8.0, 8.9, 10.0 (auto detect by default)
-    -b Build for the B200 and L4 archs (8.9;10.0)
-    (archs can also be set with the TORCH_CUDA_ARCH_LIST env var)
+    -P Don't auto detect and link to PyTorch, download and install LibTorch instead
+    -N Don't use Conda libraries
+    -c Build CPU-only (requires a CPU-only PyTorch or LibTorch)
     -g Build in Debug configuration
-    -h Print this message" 1>&2; }
+    -h Print this message
+
+    CUDA archs are auto detected by default, set the TORCH_CUDA_ARCH_LIST env var
+    to override them (e.g. TORCH_CUDA_ARCH_LIST=\"8.9;10.0\")" 1>&2; }
 
 use_conda_libs=ON
 build_cuda=ON
@@ -26,31 +26,14 @@ cmake_install=1
 torch_cuda_archs="${TORCH_CUDA_ARCH_LIST:-}"
 cmake_build_type="Release"
 prefix="$HOME/.local/"
-while getopts "TIBPCcabghxy" o; do
+while getopts "TIBPNcgh" o; do
     case "${o}" in
-        x)
-            use_conda_libs=ON
-            use_libtorch=OFF
-            use_pytorch_libs=ON
-            prefix="/blue/roitberg/share/ani-libs"
-            ;;
-        y)
-            use_conda_libs=OFF
-            use_libtorch=ON
-            use_pytorch_libs=OFF
-            module purge
-            module load cuda/13.0 gcc/12.2 openmpi/4.1.6 conda cmake
-            export CFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
-            export CXXFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
-            export FFLAGS="-march=nocona -mtune=znver1 -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -ffunction-sections -pipe"
-            prefix="/blue/roitberg/share/ani-libs-linked-to-modules/"
-            ;;
         P)
             use_pytorch_libs=OFF
-            ;;
-        C)
-            use_conda_libs=OFF
             use_libtorch=ON
+            ;;
+        N)
+            use_conda_libs=OFF
             ;;
         c)
             build_cuda=OFF
@@ -68,12 +51,6 @@ while getopts "TIBPCcabghxy" o; do
             ;;
         g)
             cmake_build_type="Debug"
-            ;;
-        a)
-            torch_cuda_archs="7.0;7.5;8.0;8.9;10.0"
-            ;;
-        b)
-            torch_cuda_archs="8.9;10.0"
             ;;
         h)
             usage
@@ -94,10 +71,10 @@ done
 src_dir=$( cd -- "$(dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 bld_dir="$src_dir/build"
 
-if [ "$use_conda_libs" = "ON" ]; then
-    export CFLAGS="-isystem $CONDA_PREFIX/include"
-    export CXXFLAGS="-isystem $CONDA_PREFIX/include"
-    export FFLAGS="-isystem $CONDA_PREFIX/include"
+if [ "$use_conda_libs" = "ON" ] && [ -n "$CONDA_PREFIX" ]; then
+    export CFLAGS="$CFLAGS -isystem $CONDA_PREFIX/include"
+    export CXXFLAGS="$CXXFLAGS -isystem $CONDA_PREFIX/include"
+    export FFLAGS="$FFLAGS -isystem $CONDA_PREFIX/include"
 fi
 
 # Paths to conda compilers are automatically detected by CMake
@@ -111,33 +88,43 @@ cmake \
     -DTORCHANI_JIT_COMPILE_MODELS=$use_pytorch_libs \
     -DTORCHANI_PREFER_CONDA_LIBS=$use_conda_libs \
     -DTORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH=$use_libtorch \
-    -DTORCH_CUDA_ARCH_LIST=$torch_cuda_archs \
+    -DTORCH_CUDA_ARCH_LIST="$torch_cuda_archs" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 CFG_EXITCODE=$?
+if [ $CFG_EXITCODE -ne 0 ]; then
+    echo "Configuration failed!!"
+    exit 1
+fi
 
-if [ "$cmake_build" -eq 1 ] && [ $CFG_EXITCODE -eq 0 ]; then
-    cmake --build "$bld_dir"
-    BLD_EXITCODE=$?
+if [ "$cmake_build" -eq 0 ]; then
+    echo "Skipping build (and install) step"
+    exit 0
+fi
 
-    if [ "$run_tests" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
-        echo "Starting to run tests ..."
-        if [ "$build_cuda" = "OFF" ]; then
-            export TORCHANI_SKIP_CUDA_TESTS=1
-        fi
-        if ! ./build/torchani_tests; then
-            echo "Tests failed!!"
-            # Skip install step if the tests fail
-            cmake_install=0
-        fi
-    else
-        echo "Skipping test step"
+if ! cmake --build "$bld_dir"; then
+    echo "Build failed!!"
+    exit 1
+fi
+
+if [ "$run_tests" -eq 1 ]; then
+    echo "Starting to run tests ..."
+    if [ "$build_cuda" = "OFF" ]; then
+        export TORCHANI_SKIP_CUDA_TESTS=1
     fi
-
-    if [ "$cmake_install" -eq 1 ] && [ $BLD_EXITCODE -eq 0 ]; then
-        cmake --install "$bld_dir"
-    else
-        echo "Skipping install step"
+    if ! "$bld_dir/torchani_tests"; then
+        echo "Tests failed!! Skipping install step"
+        exit 1
     fi
 else
-    echo "Skipping build (and install) step"
+    echo "Skipping test step"
+fi
+
+if [ "$cmake_install" -eq 0 ]; then
+    echo "Skipping install step"
+    exit 0
+fi
+
+if ! cmake --install "$bld_dir"; then
+    echo "Install failed!!"
+    exit 1
 fi

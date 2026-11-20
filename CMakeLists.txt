@@ -63,8 +63,10 @@ Torchani_LinuxBuild_ensure()  # Fail with fatal error if non-linux
 # Without those installed, libtorch fails at runtime
 # The pytorch path is simpler, since the pytorch wheel pulls the required nvidia
 # wheels and toolkit libraries directly
-# Neigher of these includes nvcc or CUDA headers, these are needed separately
-# This means using libtorch is a pain, and is probably best avoided
+# When a CUDA libtorch download is requested, the libs and headers of these extra
+# libraries are also downloaded from their nvidia-*-cu<cuda-major> PyPI wheels
+# (no pip needed), and added to the libtorch lib and include dirs
+# Neither of these includes nvcc or CUDA headers, these are needed separately
 
 # General: options and flags
 option(TORCHANI_BUILD_CUDA "Build with CUDA support. If OFF, a CPU-only PyTorch/LibTorch is required" ON)
@@ -85,6 +87,14 @@ set(TORCHANI_REQUIRED_TORCH_VERSION "2.13" CACHE STRING "Require this version of
 set(TORCHANI_REQUIRED_CUDATK_VERSION "13.0" CACHE STRING "Require this version of the CUDA Toolkit")
 set(TORCHANI_REQUIRED_CUDNN_VERSION "9" CACHE STRING "Require this version of the cuDNN library")
 set(TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION "0" CACHE STRING "LibTorch patch version. Only used if a LibTorch download is requested")
+
+# Versions of the nvidia-*-cu<cuda-major> wheels added to LibTorch. These must match the
+# ones required by the torch wheel with the same LibTorch and CUDA versions.
+# Only used if a CUDA LibTorch download is requested
+set(TORCHANI_LIBTORCH_CUDNN_WHEEL_VERSION "9.20.0.48" CACHE STRING "Version of the nvidia-cudnn wheel added to LibTorch")
+set(TORCHANI_LIBTORCH_NCCL_WHEEL_VERSION "2.29.7" CACHE STRING "Version of the nvidia-nccl wheel added to LibTorch")
+set(TORCHANI_LIBTORCH_CUSPARSELT_WHEEL_VERSION "0.8.1" CACHE STRING "Version of the nvidia-cusparselt wheel added to LibTorch")
+set(TORCHANI_LIBTORCH_NVSHMEM_WHEEL_VERSION "3.4.5" CACHE STRING "Version of the nvidia-nvshmem wheel added to LibTorch")
 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
@@ -168,6 +178,10 @@ elseif(TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
         PATCH_VERSION ${TORCHANI_REQUIRED_LIBTORCH_PATCH_VERSION}
         CUDATK_VERSION ${TORCHANI_REQUIRED_CUDATK_VERSION}
         INSTALL_DIR "${TORCHANI_LIBTORCH_INSTALL_DIR}"
+        CUDNN_WHEEL_VERSION ${TORCHANI_LIBTORCH_CUDNN_WHEEL_VERSION}
+        NCCL_WHEEL_VERSION ${TORCHANI_LIBTORCH_NCCL_WHEEL_VERSION}
+        CUSPARSELT_WHEEL_VERSION ${TORCHANI_LIBTORCH_CUSPARSELT_WHEEL_VERSION}
+        NVSHMEM_WHEEL_VERSION ${TORCHANI_LIBTORCH_NVSHMEM_WHEEL_VERSION}
     )
     list(APPEND CMAKE_PREFIX_PATH ${LIBTORCH_ROOT})
 endif()
