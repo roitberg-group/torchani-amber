@@ -78,6 +78,7 @@ TEST_CASE("C bindings") {
             table<int, int, int, std::string>(
                 {
                     DeviceSpec{0, 0, 0, "_cpu"},  // CPU
+                    DeviceSpec{0, 0, 1, "_cpu"},  // CPU + cuAEV
                     DeviceSpec{1, 0, 0, "_cuda"},  // CUDA
                     DeviceSpec{1, 0, 1, "_cuda"}  // CUDA + cuAEV
                 }
@@ -88,7 +89,7 @@ TEST_CASE("C bindings") {
             SKIP("CUDA tests disabled by TORCHANI_SKIP_CUDA_TESTS");
         }
         int device_index = std::get<1>(device_spec);
-        int use_cuaev = std::get<2>(device_spec); // Only enabled for cuda devices
+        int use_cuaev = std::get<2>(device_spec);
         std::string device_suffix = std::get<3>(device_spec);
         INFO("Testing model on device: " << "device" << device_suffix);
         INFO("cuAEV: " << (use_cuaev == 1));

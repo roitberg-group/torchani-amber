@@ -253,14 +253,16 @@ void torchani_initialize(
     bool use_cuda_device,
     bool use_cuaev
 ) {
-    if (use_cuaev and not use_cuda_device) {
-        std::cerr << "WARNING (libtorchani)\n"
-                  << "A CUDA capable device must be selected to use the cuAEV\n"
-                  << "but CPU was selected.\n"
-                  << "The cuAEV extension will be disabled"
+#ifndef TORCHANI_BUILD_CUDA
+    if (use_cuda_device) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "A CUDA device was requested, but libtorchani was built\n"
+                  << "without CUDA support (TORCHANI_BUILD_CUDA=OFF).\n"
+                  << "Select the CPU, or rebuild with TORCHANI_BUILD_CUDA=ON"
                   << std::endl;
-        use_cuaev = false;
+        std::exit(2);
     }
+#endif
     std::string jit_models_dir = libtorchaniDir() + "/" + TORCHANI_MLIPS_RELATIVE_DIR;
 
     std::string model_type_str = model_type;

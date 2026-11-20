@@ -360,6 +360,7 @@ target_compile_definitions(
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
         TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
+        $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
 )
 # libtorchani references none of the symbols of cuaev and cell_list, but loading them is
 # what registers their Torch ops. libtorchani dlopens them at init from its own dir
