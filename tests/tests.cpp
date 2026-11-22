@@ -575,7 +575,7 @@ TEST_CASE("C bindings for other entry points") {
 }
 
 
-TEST_CASE("Charges for host electrostatics") {
+TEST_CASE("Charges for md engine electrostatics") {
     // AIMNet2 on the CPU, compared with the other entry points of the same model.
     // AIMNet2 keeps part of its arithmetic in float32 even in double precision,
     // so different backward passes through the same graph only agree to float32
@@ -598,8 +598,8 @@ TEST_CASE("Charges for host electrostatics") {
         double coords[size][3] = {{0.0, 0.0, 0.1}, {0.0, 0.76, -0.47}, {0.05, -0.74, -0.5}};
         int atomic_numbers[size] = {8, 1, 1};
         int no_eval_atoms[size] = {0, 0, 0};
-        double weights[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
-        double zero_weights[size] = {0.0, 0.0, 0.0};
+        double ml_system_potential[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
+        double zero_ml_system_potential[size] = {0.0, 0.0, 0.0};
         torchani_initialize(
             size, atomic_numbers, no_eval_atoms, 0, "aimnet2-wb97m-nocut", -1,
             use_double, false, false
@@ -610,14 +610,14 @@ TEST_CASE("Charges for host electrostatics") {
         torchani_energy_force_atomic_charges_with_derivatives(
             size, coords, ref_forces, ref_charges, dq, &ref_energy
         );
-        // Zero weights: the in-vacuo forces
+        // Zero potential: the in-vacuo forces
         double vjp_forces[size][3];
         torchani_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
         FLOAT_EQ(energy, ref_energy, false);
         for (int j = 0; j != size; ++j) {
             FLOAT_EQ(charges[j], ref_charges[j], false);
         }
-        torchani_energy_atomic_charges_vjp(size, zero_weights, vjp_forces);
+        torchani_energy_atomic_charges_vjp(size, zero_ml_system_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
@@ -626,14 +626,14 @@ TEST_CASE("Charges for host electrostatics") {
         // The in-vacuo forces plus those of the charges:
         // dq[c + 3 * j + 3 * size * k] = d(charge k) / d(coordinate c of atom j)
         torchani_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
-        torchani_energy_atomic_charges_vjp(size, weights, vjp_forces);
+        torchani_energy_atomic_charges_vjp(size, ml_system_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 double expect = ref_forces[j][c];
                 for (int k = 0; k != size; ++k) {
-                    expect -= weights[k] * dq[c + 3 * j + 3 * size * k];
+                    expect -= ml_system_potential[k] * dq[c + 3 * j + 3 * size * k];
                 }
-                // Round-off error is amplified by the weights applied in the vj product
+                // Round-off error is amplified by the potential applied in the vj product
                 // So increase tolerance a little above float precision
                 CHECK_THAT(
                     vjp_forces[j][c],
@@ -670,10 +670,10 @@ TEST_CASE("Charges for host electrostatics") {
             total += charges[j];
         }
         FLOAT_EQ(total, 1.0, false);
-        // Uniform weights: the total charge is fixed, so only the in-vacuo forces
-        double weights[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
+        // Uniform potential: the total charge is fixed, so only the in-vacuo forces
+        double ml_system_potential[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
         double vjp_forces[size][3];
-        torchani_energy_atomic_charges_vjp(size, weights, vjp_forces);
+        torchani_energy_atomic_charges_vjp(size, ml_system_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);

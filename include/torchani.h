@@ -64,13 +64,21 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     double* potential_energy
 );
 
-// For a host program that uses the predicted charges in its own electrostatics
+// This two-call API (retain + vjp) is only needed if the md engine's energy includes
+// interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
+// with periodic images of ML charges (including their own images). If the ML charges
+// interact only with MM charges (and their periodic images, e.g. PME with the ML
+// charges left out of the grid and the real-space pair list), the potential of the MM
+// charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
+// single call (not currently implemented).
+// For an md engine that uses the predicted charges in its own electrostatics
 // (e.g. PME). torchani_energy_atomic_charges_retain returns the in-vacuo energy
 // and the charges (forward pass only) and keeps the graph. Then
-// torchani_energy_atomic_charges_vjp, given charge_weights[k] = dE_host/d(charge k)
-// (kcal/mol/e), returns the total forces
-//   forces[j] = - d/d(coords j) [E + sum_k charge_weights[k] * charge k]
-// with a single backward pass, and frees the graph (zero weights give the
+// torchani_energy_atomic_charges_vjp, given ml_system_potential[k] = dE_mdengine/d(charge k)
+// (kcal/mol/e), returns the in-vacuo forces plus the forces due to the charges
+// changing with the geometry (ml_system_potential held fixed)
+//   forces[j] = - d/d(coords j) [E + sum_k ml_system_potential[k] * charge k]
+// with a single backward pass, and frees the graph (zero potential gives the
 // in-vacuo forces).
 void torchani_energy_atomic_charges_retain(
     int num_atoms,
@@ -81,9 +89,20 @@ void torchani_energy_atomic_charges_retain(
     double* potential_energy
 );
 
+// This two-call API (retain + vjp) is only needed if the md engine's energy includes
+// interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
+// with periodic images of ML charges (including their own images). If the ML charges
+// interact only with MM charges (and their periodic images, e.g. PME with the ML
+// charges left out of the grid and the real-space pair list), the potential of the MM
+// charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
+// single call (not currently implemented).
+// ml_system_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+// The returned forces don't include the electrostatic force at fixed charges on the
+// ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
+// otherwise the forces on the ML atoms are incomplete.
 void torchani_energy_atomic_charges_vjp(
     int num_atoms,
-    double charge_weights[],  // Shape (num_atoms,)
+    double ml_system_potential[],  // Shape (num_atoms,)
     /* outputs */
     double forces[][3]  // Shape (num_atoms, 3)
 );

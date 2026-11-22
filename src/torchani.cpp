@@ -816,7 +816,7 @@ void torchani_energy_atomic_charges_retain(
 
 void torchani_energy_atomic_charges_vjp(
     int num_atoms,
-    double charge_weights_buf[],
+    double ml_system_potential_buf[],
     /* outputs */
     double forces_buf[][3]
 ) {
@@ -827,11 +827,11 @@ void torchani_energy_atomic_charges_vjp(
                   << " torchani_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
-    torch::Tensor weights =
-        tensor_utils::dblBufToTensor(global_config, charge_weights_buf, {1, num_atoms});
+    torch::Tensor ml_system_potential =
+        tensor_utils::dblBufToTensor(global_config, ml_system_potential_buf, {1, num_atoms});
     std::vector<torch::Tensor> output_vec = {
         retained_energy.sum() * HARTREE_TO_KCALMOL +
-        (retained_atomic_charges * weights).sum()
+        (retained_atomic_charges * ml_system_potential).sum()
     };
     std::vector<torch::Tensor> coord_vec = {retained_coords};
     torch::Tensor forces = -torch::autograd::grad(
