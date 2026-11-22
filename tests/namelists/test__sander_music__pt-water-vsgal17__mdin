@@ -1,0 +1,37 @@
+Test vsGAL17 Pt-water force field, 100 steps MD
+&cntrl
+  imin = 0,
+  ntx = 5,
+  irest = 1,
+  nstlim = 100,
+  dt = 0.002,
+  temp0 = 300.0,
+  ntt = 2,
+  vrand = 100,
+  ntpr = 1,
+  ntwx = 1,
+  ioutfm = 1,
+  cut = 8.0,
+  ntb = 1,
+  ibelly=1,
+  bellymask='@O,H1,H2',
+  ntc=2,
+  ntf=2,
+  ig=777
+/
+&music
+  pt_plane = 'yz',
+  vs_atom_type  = 'VS',
+  s_ang         =  7.48000000000E+00,
+  r_ang         =  2.40300000000E+00,
+  a1            =  1.43900000000E+01,
+  a2            =  3.29700000000E+00,
+  a3            =  0.55600000000E+00,
+  a4            =  1.80800000000E+00,
+  b_h_surf      =  3.04135000000E+02,
+  n_h_surf      = 5,
+  do_gauss      = T,
+  eps_gauss     =  1.28570000000E+01,
+  bxy_gauss     =  3.33200000000E+00,
+  bz_gauss      =  4.11000000000E-01,
+/

@@ -1,0 +1,17 @@
+PRIMPIMD: NVT simulation of liquid water
+
+&cntrl
+
+   ipimd = 1, nstlim = 10   ! PRIMPIMD for 10 steps
+   ntx = 5, irest = 0       ! read coordinates
+   temp0 = 300, tempi = 300 ! target temperature and initial temperature
+   dt = 0.001               ! time step in ps
+   cut = 7.0                ! non-bond cut off
+   ischeme = 1,             ! middle scheme with leap-frog algorithm
+   ithermostat = 1,         ! Langevin thermostat, random seed is default value
+   therm_par = 5.0          ! thermostat parameter, in 1/ps
+                            ! (fricition coefficient for Langevin thermostat) 
+   ntc = 1                  ! without constraints, default
+   ntpr=1, ntwr=5, ntwx=5   ! output settings
+   
+/

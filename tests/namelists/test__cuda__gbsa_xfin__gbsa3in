@@ -1,0 +1,8 @@
+ test of gbsa3 dynamics
+ &cntrl
+   nstlim=10, cut=999.0, igb=1,
+   ntpr=1, ntwr=1000, ntt=0,
+   ntc=2, ntf=2, tol=0.000001,
+   ntx=5, irest=1, ntb=0, 
+   offset=0.09, gbsa=3, ig=71277,
+ /

@@ -459,11 +459,29 @@ if(NOT INSIDE_AMBER)
         list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
         include(Catch)
 
-        add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-        target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+        add_executable(
+            torchani_tests
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_fortran_utils.cpp"
+        )
+        target_include_directories(
+            torchani_tests
+            PRIVATE
+                "${CMAKE_CURRENT_LIST_DIR}/include"
+                "${CMAKE_CURRENT_LIST_DIR}/src"
+        )
         target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
         target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
         catch_discover_tests(torchani_tests)
+
+        # Used by tests/test_namelists.py to compare the namelist parser with f90nml
+        add_executable(
+            torchani_namelist_dump
+            "${CMAKE_CURRENT_LIST_DIR}/tests/namelist_dump.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/fortran_utils.cpp"
+        )
+        target_include_directories(torchani_namelist_dump PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
+        target_compile_features(torchani_namelist_dump PRIVATE cxx_std_20)
     endif()
 endif()
 

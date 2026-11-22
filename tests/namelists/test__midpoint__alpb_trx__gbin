@@ -1,0 +1,7 @@
+ test of ALPB. 
+ &cntrl                                                                        
+   imin=1, maxcyc=5,
+   alpb=1, Arad=16.444
+   cut=99.0, igb=5, saltcon=0.2, gbsa=0,
+   ntpr=1, ntx=1, ntb=0, ig=71277,
+ /

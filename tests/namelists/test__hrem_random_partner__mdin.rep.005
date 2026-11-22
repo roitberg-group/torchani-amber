@@ -1,0 +1,34 @@
+Amber input file
+&cntrl
+ntt=3,		! Switch for temperature scaling (=3, Use Langevin dynamics with the collision frequency – gamma_ln)
+gamma_ln=2.0,	! Collision frequency in ps-1 (10.0 ps-1)
+ntc=1, 		! Flag for SHAKE to perform bond length constraints (=2, bonds involving hydrogen are constrained)
+ntf=1,		! Force evaluation (=2, bond interactions involving H-atoms omitted)
+jfastw=4,       ! do not use routines for fast triangulated water
+ntb=1,		! Periodicity is applied i(=2, constant pressure (default when ntp > 0)
+ntp=0,		! Flag for constant pressure dynamics (=1 md with isotropic position scaling)
+barostat=2,	! Flag used to control which barostat to use in order to control the pressure (=1, Berendsen; =2, Monte Carlo)
+pres0=1.0,	! Reference pressure (1 bar)
+taup=5.0,       ! Pressure relaxation time (in ps). Recommend values between 1.0 and 5.0 ps
+cut=9.0,    	! no cutoff 
+dt=0.0005,	! The time step (psec)
+nstlim=10,     ! Number of MD-steps to be performed
+numexchg=5,
+ig=8133, 	! The seed for the pseudo-random number generator (=-1, it will be based on the current date and time, and hence will be different for every run)
+ntwr=100,	! The “restrt” file will be written every ntwr steps during dynamics
+ntwx=100,	! The coordinates will be written to the mdcrd file every ntwx steps
+ntpr=10,	! Energy information will be printed in human-readable form to files “mdout” and “mdinfo” every ntpr steps.
+iwrap=1,        ! Wrap molecules back into the original simulation box
+ioutfm=1, 	! The format of coordinate and velocity trajectory files (=1, Binary NetCDF trajectory)
+igb=0,   	! Use the GB model CpHMD and CEMD were parametrized for
+irest=1,	! Flag to restart a simulation
+ntx=5,		! Option to read the initial coordinates, velocities and box size from the inpcrd file (=5, coord. and veloc.will be read)
+ntr=0,          ! Turn on positional restraints
+nmropt=1,       ! Flag necessary to perform distance restraints (on if =1), based on the DISANG file given below
+/
+&wt
+ type='DUMPFREQ', istep1=1,
+/
+&wt type='END' /
+DISANG=disang.rep.005
+DUMPAVE=dumpave.dat.rep.005

@@ -1,0 +1,12 @@
+Title Line                                                    
+ &cntrl
+        imin = 0, nstlim = 100, dt = 0.002,
+        ntx = 5, irest = 1, ig = -71277,
+        ntwx = 500, ntwe = 0, ntwr =500, ntpr = 100,
+        ioutfm = 1,
+        ntt = 3, gamma_ln = 1.0, temp0 = 319.8,
+        ntc = 2, ntf = 2, ntb = 0,
+        cut = 9999.0, nscm = 500,
+        igb = 8, offset = 0.09,
+        numexchg=10,
+ &end

@@ -1,0 +1,29 @@
+Test GAL17 Pt-water force field, heat for 1000 steps MD
+&cntrl
+  imin = 0,
+  ntx = 1,
+  irest = 0,
+  nstlim = 1000,
+  dt = 0.002,
+  tempi = 10.0,
+  temp0 = 300.0,
+  ntt = 2,
+  vrand = 100,
+  ntpr = 1,
+  ntwx = 1,
+  ioutfm = 1,
+  cut = 8.0,
+  ntb = 1,
+  ibelly=1,
+  bellymask='@O,H1,H2',
+  ntc=2,
+  ntf=2,
+  ntxo = 1,
+  ig=777
+/
+&music
+  pt_plane = 'yz',
+/
+&wt type='TEMP0', istep1=0, istep2=9000, value1=0.0, value2=300 /
+&wt type='TEMP0', istep1=9001, istep2=10000, value1=300, value2=300 /
+&wt type='END' /

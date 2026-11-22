@@ -1,0 +1,60 @@
+NPT MD w/No position restraints and PME (sander)
+ &cntrl
+  ntx    = 5,
+  irest  = 0,
+  ntpr   = 2,
+  ntwx   = 10000,
+  ntwe   = 500,
+  ntwr   = 0,
+
+  ntxo   = 1,
+  ioutfm = 0,
+
+  cut    = 10.0,
+  iwrap  = 1,
+  nsnb   = 10,
+  vlimit = 20,
+  ig = 372376,
+
+  temp0  = 300.0,
+  tempi  = 300.0,
+  tautp  = 2.0,
+
+
+!gti-specfic
+!  gnet_force=1,
+!NVE
+!  ntt    = 0,
+!  ntb=1, ntp=0,
+!NVT
+!  ntt    = 3,
+!  ntb=1, ntp=0,
+
+!NPT
+  ntb=2, ntp=1,
+!NPT-BR
+!  barostat = 1,
+!NPT-MC
+   barostat = 2, mcbarint=10,
+
+
+  nstlim = 10,
+  numexchg = 10,
+  gremd_acyc=1,
+
+  t      = 0.0,
+  nscm   = 1000,
+  dt     = 0.001,
+
+  ntf    = 1,
+  ntc    = 2,
+  tol    = 0.000001,
+
+  icfe=1, 
+  clambda=0.00,
+  timask1=":L0",
+  timask2=":L1",
+&end
+ &ewald
+   skinnb=1, nfft1=32, nfft2=32, nfft3=60, netfrc=0,
+ /
