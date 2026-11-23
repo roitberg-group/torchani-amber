@@ -9,7 +9,7 @@ public :: &
     {{ fn.name }}, &
 {% endfor %}
     convert_sander_neighborlist_to_ani_fmt, &
-    torchani_dump_walltime, &
+    mlip_interface_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
 
 interface
@@ -37,24 +37,44 @@ endinterface
 contains
 
 {% for fn in functions if fn.generate_f_wrapper %}
+{% if fn.has_bool_args %}
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
+{% endif %}
+{% if fn.has_str_args %}
+! Wrapper needed to convert between fortran strings and null-terminated C strings
+{% endif %}
 subroutine {{ fn.name }}( &
-{% for arg in fn.args %}
+{% for arg in fn.f_wrapper_args %}
     {{ arg.name }}{{ "," if not loop.last }} &
 {% endfor %}
 )
-{% for arg in fn.args %}
+{% for arg in fn.f_wrapper_args %}
 {% if arg.intent != "in" and (loop.first or loop.previtem.intent == "in") %}
     ! Outputs
 {% endif %}
     {{ arg.f_wrapper_decl }}
+{% endfor %}
+{% for arg in fn.args %}
+{% for decl in arg.f_local_decls %}
+    {{ decl }}
+{% endfor %}
+{% endfor %}
+{% for arg in fn.args %}
+{% for stmt in arg.f_pre_call %}
+    {{ stmt }}
+{% endfor %}
 {% endfor %}
     call {{ fn.f_binding_name }}( &
 {% for arg in fn.args %}
         {{ arg.f_call_expr }}{{ "," if not loop.last }} &
 {% endfor %}
     )
+{% for arg in fn.args %}
+{% for stmt in arg.f_post_call %}
+    {{ stmt }}
+{% endfor %}
+{% endfor %}
 endsubroutine
 
 {% endfor %}

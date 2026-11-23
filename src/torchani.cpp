@@ -2,7 +2,10 @@
 
 #include <dlfcn.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -26,11 +29,11 @@ namespace {
 // Default device is CPU, and default kind is Float32
 config::GlobalConfig global_config{};
 std::unique_ptr<mlip::MlipModel> model;
-torch::Tensor torchani_atomic_numbers;
-torch::Tensor torchani_do_eval_atoms_mask;
-torch::Tensor torchani_do_eval_idxs;
-// Graph kept between torchani_energy_atomic_charges_retain and
-// torchani_energy_atomic_charges_vjp
+torch::Tensor mlip_interface_atomic_numbers;
+torch::Tensor mlip_interface_do_eval_atoms_mask;
+torch::Tensor mlip_interface_do_eval_idxs;
+// Graph kept between mlip_interface_energy_atomic_charges_retain and
+// mlip_interface_energy_atomic_charges_vjp
 torch::Tensor retained_coords;
 torch::Tensor retained_energy;
 torch::Tensor retained_atomic_charges;
@@ -39,7 +42,7 @@ bool charges_graph_retained = false;
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
 // double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
-std::vector<std::string> torchani_builtin_models = {
+std::vector<std::string> mlip_interface_builtin_models = {
     "ani1x",
     "ani1x-infer",
     "ani1ccx",
@@ -144,7 +147,7 @@ void populateEmbeddingForces(
 }
 
 void populateForces(torch::Tensor forces, double forces_buf[][3], int num_atoms) {
-    torch::Tensor torchani_force = forces * HARTREE_TO_KCALMOL;
+    torch::Tensor mlip_interface_force = forces * HARTREE_TO_KCALMOL;
     // Accessor is used to access tensor elements, but dimensionality has
     // to be known at compile time. Note that this is a CPU accessor.
     // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
@@ -152,16 +155,16 @@ void populateForces(torch::Tensor forces, double forces_buf[][3], int num_atoms)
     // This cast does nothing if output is already of the required type and
     // device, so there should be no overhead.
     //
-    torchani_force = torchani_force.to(torch::kCPU, torch::kDouble);
+    mlip_interface_force = mlip_interface_force.to(torch::kCPU, torch::kDouble);
     if (global_config.useNoEvalAtoms()) {
         int idx = 0;
-        auto do_eval_atoms_mask_clone  = torchani_do_eval_atoms_mask.clone().to(torch::kCPU);
+        auto do_eval_atoms_mask_clone  = mlip_interface_do_eval_atoms_mask.clone().to(torch::kCPU);
         auto do_eval_atoms_mask_a = do_eval_atoms_mask_clone.accessor<bool, 1>();
-        auto torchani_force_a = torchani_force.accessor<double, 3>();
+        auto mlip_interface_force_a = mlip_interface_force.accessor<double, 3>();
         for (int atom = 0; atom != num_atoms; ++atom) {
             if (do_eval_atoms_mask_a[atom]) {
                 for (int c = 0; c != 3; ++c) {
-                    forces_buf[atom][c] = torchani_force_a[0][idx][c];
+                    forces_buf[atom][c] = mlip_interface_force_a[0][idx][c];
                 }
                 idx += 1;
             } else {
@@ -171,10 +174,10 @@ void populateForces(torch::Tensor forces, double forces_buf[][3], int num_atoms)
             }
         }
     } else {
-        auto torchani_force_a = torchani_force.accessor<double, 3>();
+        auto mlip_interface_force_a = mlip_interface_force.accessor<double, 3>();
         for (int atom = 0; atom != num_atoms; ++atom) {
             for (int c = 0; c != 3; ++c) {
-                forces_buf[atom][c] = torchani_force_a[0][atom][c];
+                forces_buf[atom][c] = mlip_interface_force_a[0][atom][c];
             }
         }
     }
@@ -210,11 +213,41 @@ void exitIfNoEvalAtoms(const config::GlobalConfig& config, const std::string& fn
 }
 
 void exitIfNotInitialized(const config::GlobalConfig& config, const std::string& fn_name) {
-    if (not config.torchaniIsInit()) {
+    if (not config.mlipInterfaceIsInit()) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << fn_name << " was called before torchani_initialize" << std::endl;
+                  << fn_name << " was called before mlip_interface_initialize" << std::endl;
         std::exit(2);
     }
+}
+
+// The general or ML/MM config dict that holds the option. Throws if there is none
+const config::ConfigDict& configDictWithOption(const std::string& key) {
+    const config::ConfigDict& mlip_config = global_config.mlipConfig();
+    if (mlip_config.hasOption(key)) {
+        return mlip_config;
+    }
+    const config::ConfigDict& mlmm_config = global_config.mlmmConfig();
+    if (mlmm_config.hasOption(key)) {
+        return mlmm_config;
+    }
+    throw std::out_of_range("Unknown config option");
+}
+
+// Namelist keys are lowercase
+std::string lowercase(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return str;
+}
+
+void exitWithConfigOptionError(
+    const std::string& name,
+    const std::string& type_name,
+    const std::exception& err
+) {
+    std::cerr << "ERROR (libtorchani)\n"
+              << "Could not get config option " << name << " as " << type_name
+              << ": " << err.what() << std::endl;
+    std::exit(2);
 }
 
 void disableTorchReducedFloatPrecisionOptimizations() {
@@ -253,19 +286,35 @@ void loadTorchaniExtension(const std::string& lib_name) {
 }
 
 extern "C" {
-void torchani_initialize(
+void mlip_interface_initialize(
     int num_atoms,
-    int atomic_nums[],
-    int no_eval_atoms[],  // Shape (num_atoms,)
-    int device_index,
-    const char* model_type,
-    int network_index,
-    bool use_double_precision,
-    bool use_cuda_device,
-    bool use_cuaev
+    int atomic_nums[],  // Shape (num_atoms,)
+    const char* config_path,
+    bool read_mlmm_config,
+    bool validate_amber_config,
+    bool print_config_info
 ) {
+    try {
+        global_config = config::GlobalConfig::fromNamelistFile(
+            config_path, read_mlmm_config, validate_amber_config
+        );
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Could not read the config from " << config_path << ":\n"
+                  << e.what() << std::endl;
+        std::exit(2);
+    }
+    if (print_config_info) {
+        global_config.printInfo();
+    }
+    const config::ConfigDict& mlip_config = global_config.mlipConfig();
+    std::string model_type = mlip_config.getString("model_type");
+    int model_index = mlip_config.getInt("model_index");
+    bool use_cuaev = mlip_config.getBool("use_cuaev");
+    // TODO: no_eval_mask is not converted to no_eval_atoms yet, so all atoms are evaluated
+    std::vector<int> no_eval_atoms(num_atoms, 0);
 #ifndef TORCHANI_BUILD_CUDA
-    if (use_cuda_device) {
+    if (mlip_config.getBool("use_cuda_device")) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "A CUDA device was requested, but libtorchani was built\n"
                   << "without CUDA support (TORCHANI_BUILD_CUDA=OFF).\n"
@@ -291,8 +340,10 @@ void torchani_initialize(
 
     std::string model_path = "";
     if (std::find(
-            torchani_builtin_models.begin(), torchani_builtin_models.end(), model_type_str
-        ) != torchani_builtin_models.end()) {
+            mlip_interface_builtin_models.begin(),
+            mlip_interface_builtin_models.end(),
+            model_type_str
+        ) != mlip_interface_builtin_models.end()) {
         std::string jit_model_fname = model_type_str + ".pt";
         //  AimNet2 models are stored in a subdirectory
         std::string aimnet2_prefix = "aimnet2";
@@ -310,9 +361,6 @@ void torchani_initialize(
         // Assume the path has been passed directly
         model_path = model_type_str;
     }
-    global_config.setDeviceAndPrecision(
-        use_cuda_device, device_index, use_double_precision
-    );
     // It is VERY important to get types correctly here. If the
     // types don't match then from_blob will not interpret the pointers correctly
     // and as a consequence the tensor will have junk memory inside. If the blob
@@ -321,29 +369,31 @@ void torchani_initialize(
     //
     // PBC tensor is initialized even if pbc is not needed afterwards,
     // since the tensor occupies almost no space
-    torchani_atomic_numbers = torch::from_blob(
+    mlip_interface_atomic_numbers = torch::from_blob(
         atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
 
     auto no_eval_atoms_mask = torch::from_blob(
-        no_eval_atoms, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
+        no_eval_atoms.data(), {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     ).to(torch::kBool).to(global_config.device());
     bool use_no_eval_atoms = no_eval_atoms_mask.any().item().toBool();
     global_config.setNoEvalAtoms(use_no_eval_atoms);
-    torchani_do_eval_atoms_mask = ~no_eval_atoms_mask;
-    torchani_do_eval_idxs = torchani_do_eval_atoms_mask.nonzero().view({-1});
+    mlip_interface_do_eval_atoms_mask = ~no_eval_atoms_mask;
+    mlip_interface_do_eval_idxs = mlip_interface_do_eval_atoms_mask.nonzero().view({-1});
     LOG(INFO) << "MLIP Model full path: " << model_path;
-    torchani_atomic_numbers = torchani_atomic_numbers.to(global_config.device());
-    torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
+    mlip_interface_atomic_numbers = mlip_interface_atomic_numbers.to(global_config.device());
+    mlip_interface_atomic_numbers = mlip_interface_atomic_numbers.to(torch::kLong);
     // This is necessary since torch has to use this tensor to index internally,
     // and only long tensors can be used for this, so widening of the ints has
     // to be performed.
     // Also, torchani needs an extra dimension as batch dimension
-    torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
-    LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << torchani_atomic_numbers;
+    mlip_interface_atomic_numbers = mlip_interface_atomic_numbers.unsqueeze(0);
+    LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << mlip_interface_atomic_numbers;
     // Discard unused idxs
-    torchani_atomic_numbers = torchani_atomic_numbers.index_select(1, {torchani_do_eval_idxs});
-    LOG(INFO) << "After discarding unused atoms, atomic numbers are:\n" << torchani_atomic_numbers;
+    mlip_interface_atomic_numbers =
+        mlip_interface_atomic_numbers.index_select(1, {mlip_interface_do_eval_idxs});
+    LOG(INFO) << "After discarding unused atoms, atomic numbers are:\n"
+              << mlip_interface_atomic_numbers;
 
     // Disable TF32 and FP16 for accuracy
     disableTorchReducedFloatPrecisionOptimizations();
@@ -377,12 +427,12 @@ void torchani_initialize(
     }
 
     // Set the correct model configuration
-    if (network_index != -1) {
+    if (model_index != -1) {
         try {
-            model->useOnlyEnsembleMember(network_index);
+            model->useOnlyEnsembleMember(model_index);
         } catch (const std::runtime_error& e) {
             std::cerr << "ERROR (libtorchani)\n"
-                      << "You set 'network_index' to a value != -1, but:\n"
+                      << "You set 'model_index' to a value != -1, but:\n"
                       << e.what() << std::endl;
             std::exit(2);
         }
@@ -413,11 +463,11 @@ void torchani_initialize(
             std::exit(2);
         }
     }
-    global_config.setTorchaniIsInit(true);
+    global_config.setMlipInterfaceIsInit(true);
     LOG(INFO) << "Loaded MLIP model. Finished TorchANI-Amber MLIP initialization";
 }
 
-void torchani_calc_energy_force_from_external_neighbors(
+void mlip_interface_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords_buf[][3],
@@ -430,7 +480,7 @@ void torchani_calc_energy_force_from_external_neighbors(
     double forces_buf[][3],
     double* potential_energy_buf
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_energy_force_from_external_neighbors");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_energy_force_from_external_neighbors");
     timing::ScopedTimer timer{"energy force external neighbors"};
     if (!model->supportsComputeFromExternalNeighbors()) {
         std::cerr << "ERROR (libtorchani)\n"
@@ -448,18 +498,20 @@ void torchani_calc_energy_force_from_external_neighbors(
         tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
 
     if (global_config.useNoEvalAtoms()) {
-        auto mask = torchani_do_eval_atoms_mask.view({-1}).index({neighborlist.view(-1)}).view({2, -1});
+        auto mask = mlip_interface_do_eval_atoms_mask.view({-1})
+                        .index({neighborlist.view(-1)})
+                        .view({2, -1});
         auto do_eval_pairs = (torch::all(mask, 0)).nonzero().flatten();
         neighborlist = neighborlist.index_select(1, {do_eval_pairs});
         shifts = shifts.index_select(0, {do_eval_pairs});
         torch::Tensor reduced_idxs = torch::full({num_atoms}, -1, neighborlist.options());
         reduced_idxs.index_put_(
-            {torchani_do_eval_idxs},
-            torch::arange(torchani_do_eval_idxs.size(0), neighborlist.options())
+            {mlip_interface_do_eval_idxs},
+            torch::arange(mlip_interface_do_eval_idxs.size(0), neighborlist.options())
         );
         neighborlist = reduced_idxs.index({neighborlist});
-        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
-        coords = coords.index_select(1, {torchani_do_eval_idxs});
+        molecule_idxs = molecule_idxs.index({mlip_interface_do_eval_idxs});
+        coords = coords.index_select(1, {mlip_interface_do_eval_idxs});
     }
 
     std::optional<torch::Tensor> maybe_molecule_idxs;
@@ -467,7 +519,7 @@ void torchani_calc_energy_force_from_external_neighbors(
         maybe_molecule_idxs = molecule_idxs;
     }
     mlip::MlipOutput output = model->computeFromExternalNeighbors(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         neighborlist,
         shifts,
@@ -482,7 +534,7 @@ void torchani_calc_energy_force_from_external_neighbors(
     populateEnergyScalar(energy, potential_energy_buf);
 }
 
-void torchani_calc_energy_force(
+void mlip_interface_calc_energy_force(
     int num_atoms,
     double coords_buf[][3],
     double cell_buf[][3],
@@ -493,15 +545,15 @@ void torchani_calc_energy_force(
     double forces_buf[][3],
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_energy_force");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_energy_force");
     timing::ScopedTimer timer{"energy force"};
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     torch::Tensor cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
     torch::Tensor molecule_idxs =
         tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
     if (global_config.useNoEvalAtoms()) {
-        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
-        coords = coords.index_select(1, {torchani_do_eval_idxs});
+        molecule_idxs = molecule_idxs.index({mlip_interface_do_eval_idxs});
+        coords = coords.index_select(1, {mlip_interface_do_eval_idxs});
     }
     // Inputs are setup with PBC
     std::optional<torch::Tensor> maybe_cell;
@@ -515,7 +567,7 @@ void torchani_calc_energy_force(
         maybe_molecule_idxs = molecule_idxs;
     }
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         maybe_cell,
         net_charge,
@@ -529,7 +581,7 @@ void torchani_calc_energy_force(
     populateEnergyScalar(energy, potential_energy);
 }
 
-void torchani_energy_force_atomic_charges(
+void mlip_interface_energy_force_atomic_charges(
     int num_atoms,
     double coords_buf[][3],
     /* outputs */
@@ -537,11 +589,11 @@ void torchani_energy_force_atomic_charges(
     double atomic_charges_buf[],
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_energy_force_atomic_charges");
-    exitIfNoEvalAtoms(global_config, "torchani_energy_force_atomic_charges");
+    exitIfNotInitialized(global_config, "mlip_interface_energy_force_atomic_charges");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_energy_force_atomic_charges");
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
         /*net_charge=*/0,
@@ -565,7 +617,7 @@ void torchani_energy_force_atomic_charges(
  *
  * Currently this is the only code path that supports charged molecules
  */
-void torchani_calc_energy_force_with_coupling(
+void mlip_interface_calc_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
     double inv_pol_dielectric,
@@ -576,7 +628,7 @@ void torchani_calc_energy_force_with_coupling(
     bool predict_charges,
     bool simple_polarization_correction,
     bool use_charge_derivatives,
-    int ml_system_charge,
+    int ml_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
     double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
@@ -587,16 +639,16 @@ void torchani_calc_energy_force_with_coupling(
     double* ene_pot_embed_coulomb_buf,
     double* ene_pot_total_buf
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_energy_force_with_coupling");
-    exitIfNoEvalAtoms(global_config, "torchani_calc_energy_force_with_coupling");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_energy_force_with_coupling");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_calc_energy_force_with_coupling");
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     torch::Tensor atomic_charges = tensor_utils::dblBufToTensor(global_config, atomic_charges_buf, {num_atoms});
 
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
-        ml_system_charge,
+        ml_charge,
         /*atomic=*/false,
         /*ensemble_values=*/false,
         /*molecule_idxs=*/std::nullopt,
@@ -683,7 +735,7 @@ void torchani_calc_energy_force_with_coupling(
 }
 
 
-void torchani_calc_energy_force_custom_mlmm(
+void mlip_interface_calc_energy_force_custom_mlmm(
     int num_atoms,
     int num_env_charges,
     double coords_buf[][3],
@@ -693,14 +745,14 @@ void torchani_calc_energy_force_custom_mlmm(
     bool use_pbc,
     int* molecule_idxs_buf,
     bool calc_only_bonded,
-    int ml_system_charge,
+    int ml_charge,
     /* outputs */
     double forces_on_atoms_buf[][3],
     double forces_on_env_charges_buf[][3],
     double* ene_pot_total_buf
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_energy_force_custom_mlmm");
-    exitIfNoEvalAtoms(global_config, "torchani_calc_energy_force_custom_mlmm");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_energy_force_custom_mlmm");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_calc_energy_force_custom_mlmm");
     if (!model->supportsCustomMlmm()) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlmm_coupling=2 requires the model to export 'compute_mlmm(...)'. "
@@ -725,7 +777,7 @@ void torchani_calc_energy_force_custom_mlmm(
     }
     torch::Tensor empty_pairs = torch::empty({2, 0}, ml_coords.options().dtype(torch::kLong));
     mlip::MlipOutput output = model->computeMlmm(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         ml_coords,
         mm_coords,
         mm_charges,
@@ -733,7 +785,7 @@ void torchani_calc_energy_force_custom_mlmm(
         /*pairs_13=*/empty_pairs,
         /*pairs_14=*/empty_pairs,
         maybe_cell,
-        ml_system_charge,
+        ml_charge,
         /*spin_mult=*/1,
         /*mm_cutoff=*/0.0,
         /*atomic=*/false,
@@ -750,7 +802,7 @@ void torchani_calc_energy_force_custom_mlmm(
     populateEnergyScalar(energy, ene_pot_total_buf);
 }
 
-void torchani_energy_force_atomic_charges_with_derivatives(
+void mlip_interface_energy_force_atomic_charges_with_derivatives(
     int num_atoms,
     double coords_buf[][3],
     /* outputs */
@@ -759,11 +811,11 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     double* atomic_charge_derivatives,
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_energy_force_atomic_charges_with_derivatives");
-    exitIfNoEvalAtoms(global_config, "torchani_energy_force_atomic_charges_with_derivatives");
+    exitIfNotInitialized(global_config, "mlip_interface_energy_force_atomic_charges_with_derivatives");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_energy_force_atomic_charges_with_derivatives");
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
         /*net_charge=*/0,
@@ -785,7 +837,7 @@ void torchani_energy_force_atomic_charges_with_derivatives(
     populateAtomicCharges(atomic_charges, atomic_charges_buf, num_atoms);
 }
 
-void torchani_energy_atomic_charges_retain(
+void mlip_interface_energy_atomic_charges_retain(
     int num_atoms,
     double coords_buf[][3],
     int net_charge,
@@ -793,8 +845,8 @@ void torchani_energy_atomic_charges_retain(
     double atomic_charges_buf[],
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_energy_atomic_charges_retain");
-    exitIfNoEvalAtoms(global_config, "torchani_energy_atomic_charges_retain");
+    exitIfNotInitialized(global_config, "mlip_interface_energy_atomic_charges_retain");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_energy_atomic_charges_retain");
     // The graph outlives this call, so it must not refer to the caller's buffer
     // (dblBufToCoordsTensor does not copy for CPU double precision)
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms)
@@ -802,7 +854,7 @@ void torchani_energy_atomic_charges_retain(
                                .clone()
                                .requires_grad_(true);
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
         net_charge,
@@ -826,24 +878,25 @@ void torchani_energy_atomic_charges_retain(
     charges_graph_retained = true;
 }
 
-void torchani_energy_atomic_charges_vjp(
+void mlip_interface_energy_atomic_charges_vjp(
     int num_atoms,
-    double ml_system_potential_buf[],
+    double ml_electrostatic_potential_buf[],
     /* outputs */
     double forces_buf[][3]
 ) {
-    exitIfNotInitialized(global_config, "torchani_energy_atomic_charges_vjp");
+    exitIfNotInitialized(global_config, "mlip_interface_energy_atomic_charges_vjp");
     if (not charges_graph_retained) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "torchani_energy_atomic_charges_vjp must follow a call to"
-                  << " torchani_energy_atomic_charges_retain" << std::endl;
+                  << "mlip_interface_energy_atomic_charges_vjp must follow a call to"
+                  << " mlip_interface_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
-    torch::Tensor ml_system_potential =
-        tensor_utils::dblBufToTensor(global_config, ml_system_potential_buf, {1, num_atoms});
+    torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(
+        global_config, ml_electrostatic_potential_buf, {1, num_atoms}
+    );
     std::vector<torch::Tensor> output_vec = {
         retained_energy.sum() * HARTREE_TO_KCALMOL +
-        (retained_atomic_charges * ml_system_potential).sum()
+        (retained_atomic_charges * ml_electrostatic_potential).sum()
     };
     std::vector<torch::Tensor> coord_vec = {retained_coords};
     torch::Tensor forces = -torch::autograd::grad(
@@ -865,7 +918,7 @@ void torchani_energy_atomic_charges_vjp(
     charges_graph_retained = false;
 }
 
-void torchani_calc_energy_force_qbc(
+void mlip_interface_calc_energy_force_qbc(
     int num_atoms,
     double coords_buf[][3],
     int net_charge, 
@@ -874,11 +927,11 @@ void torchani_calc_energy_force_qbc(
     double qbc_derivatives[][3],
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_energy_force_qbc");
-    exitIfNoEvalAtoms(global_config, "torchani_calc_energy_force_qbc");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_energy_force_qbc");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_calc_energy_force_qbc");
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
         net_charge,
@@ -898,7 +951,7 @@ void torchani_calc_energy_force_qbc(
     populateEnergyScalar(qbc, qbc_buf);
 }
 
-void torchani_calc_data_for_monitored_mlmm(
+void mlip_interface_calc_data_for_monitored_mlmm(
     int num_atoms,
     double coords_buf[][3],
     int net_charge,
@@ -911,11 +964,11 @@ void torchani_calc_data_for_monitored_mlmm(
     double qbc_derivatives[][3],
     double* potential_energy
 ) {
-    exitIfNotInitialized(global_config, "torchani_calc_data_for_monitored_mlmm");
-    exitIfNoEvalAtoms(global_config, "torchani_calc_data_for_monitored_mlmm");
+    exitIfNotInitialized(global_config, "mlip_interface_calc_data_for_monitored_mlmm");
+    exitIfNoEvalAtoms(global_config, "mlip_interface_calc_data_for_monitored_mlmm");
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
     mlip::MlipOutput output = model->computeSinglePoint(
-        torchani_atomic_numbers,
+        mlip_interface_atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
         net_charge,
@@ -939,5 +992,53 @@ void torchani_calc_data_for_monitored_mlmm(
         output.at("atomic_charge_grads"), atomic_charge_derivatives, num_atoms
     );
     populateAtomicCharges(atomic_charges, atomic_charges_buf, num_atoms);
+}
+
+void mlip_interface_get_config_int_option(const char* name, int* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = configDictWithOption(key).getInt(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "an int", err);
+    }
+}
+
+void mlip_interface_get_config_bool_option(const char* name, bool* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = configDictWithOption(key).getBool(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a bool", err);
+    }
+}
+
+void mlip_interface_get_config_float_option(const char* name, double* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = configDictWithOption(key).getDouble(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a float", err);
+    }
+}
+
+void mlip_interface_get_config_str_option(
+    const char* name,
+    int out_value_len,
+    /* outputs */
+    char out_value[]
+) {
+    try {
+        std::string key = lowercase(name);
+        const std::string& value = configDictWithOption(key).getString(key);
+        if (static_cast<int>(value.size()) + 1 > out_value_len) {
+            throw std::length_error(
+                "Value '" + value + "' doesn't fit in a buffer of length "
+                + std::to_string(out_value_len)
+            );
+        }
+        std::memcpy(out_value, value.c_str(), value.size() + 1);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a str", err);
+    }
 }
 }

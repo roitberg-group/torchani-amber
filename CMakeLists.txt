@@ -463,6 +463,7 @@ if(NOT INSIDE_AMBER)
             torchani_tests
             "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/test_fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_config.cpp"
         )
         target_include_directories(
             torchani_tests
@@ -470,7 +471,7 @@ if(NOT INSIDE_AMBER)
                 "${CMAKE_CURRENT_LIST_DIR}/include"
                 "${CMAKE_CURRENT_LIST_DIR}/src"
         )
-        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
+        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani ${TORCH_LIBRARIES})
         target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
         catch_discover_tests(torchani_tests)
 

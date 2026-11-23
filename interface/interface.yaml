@@ -7,8 +7,9 @@
 #   name: C symbol name
 #   comment: (optional) emitted above the declaration in both languages
 #   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
-#       in templates/torchani_fortran_utils.F90. Otherwise, functions with bool args get
-#       an auto-generated Fortran wrapper that converts logical -> logical(c_bool)
+#       in templates/torchani_fortran_utils.F90. Otherwise, functions with bool or str
+#       args get an auto-generated Fortran wrapper that converts logical <-> logical(c_bool)
+#       and fortran strings <-> null-terminated C strings
 #
 # Arg fields:
 #   name: argument name
@@ -17,23 +18,28 @@
 #       the first are integer literals the C arg is typed as e.g. double x[][3],
 #       otherwise as a flat pointer
 #   intent: (optional) in | out | inout, default in. Scalar inputs are passed
-#       by value, everything else by reference
+#       by value, everything else by reference. bool and str args can't be inout.
+#       A str output <name> is a C char buffer, and needs an int arg <name>_len with
+#       its length. The Fortran wrapper takes the length from the Fortran string
 
 functions:
-  - name: torchani_initialize
+  - name: mlip_interface_initialize
     fortran_wrapper: manual
+    comment: |
+      Read the config from the first &mlip namelist of the file at config_path (the
+      mdin), and load the MLIP. The ML/MM options are only read if read_mlmm_config.
+      If validate_amber_config too, the &qmmm namelist is also read, and the config is
+      validated against it. If print_config_info, the config is printed to stdout.
+      In Fortran, validate_amber_config and print_config_info are optional, default false
     args:
       - {name: num_atoms, dtype: int}
       - {name: atomic_nums, dtype: int, shape: [num_atoms]}
-      - {name: no_eval_atoms, dtype: int, shape: [num_atoms]}
-      - {name: device_index, dtype: int}
-      - {name: model_type, dtype: str}
-      - {name: network_index, dtype: int}
-      - {name: use_double_precision, dtype: bool}
-      - {name: use_cuda_device, dtype: bool}
-      - {name: use_cuaev, dtype: bool}
+      - {name: config_path, dtype: str}
+      - {name: read_mlmm_config, dtype: bool}
+      - {name: validate_amber_config, dtype: bool}
+      - {name: print_config_info, dtype: bool}
 
-  - name: torchani_calc_energy_force
+  - name: mlip_interface_calc_energy_force
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -45,7 +51,7 @@ functions:
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_calc_energy_force_from_external_neighbors
+  - name: mlip_interface_calc_energy_force_from_external_neighbors
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_neighbors, dtype: int}
@@ -58,7 +64,7 @@ functions:
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_energy_force_atomic_charges
+  - name: mlip_interface_energy_force_atomic_charges
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -66,7 +72,7 @@ functions:
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_energy_force_atomic_charges_with_derivatives
+  - name: mlip_interface_energy_force_atomic_charges_with_derivatives
     comment: |
       Note that atomic_charges_grad is a [num_atoms x num_atoms x 3]
       array In fortran, an array of shape [3, num_atoms, num_atoms] should be
@@ -80,7 +86,7 @@ functions:
       - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_energy_atomic_charges_retain
+  - name: mlip_interface_energy_atomic_charges_retain
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -90,12 +96,13 @@ functions:
       charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
       single call (not currently implemented).
       For an md engine that uses the predicted charges in its own electrostatics
-      (e.g. PME). torchani_energy_atomic_charges_retain returns the in-vacuo energy
+      (e.g. PME). mlip_interface_energy_atomic_charges_retain returns the in-vacuo energy
       and the charges (forward pass only) and keeps the graph. Then
-      torchani_energy_atomic_charges_vjp, given ml_system_potential[k] = dE_mdengine/d(charge k)
-      (kcal/mol/e), returns the in-vacuo forces plus the forces due to the charges
-      changing with the geometry (ml_system_potential held fixed)
-        forces[j] = - d/d(coords j) [E + sum_k ml_system_potential[k] * charge k]
+      mlip_interface_energy_atomic_charges_vjp, given
+      ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
+      the in-vacuo forces plus the forces due to the charges
+      changing with the geometry (ml_electrostatic_potential held fixed)
+        forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
       with a single backward pass, and frees the graph (zero potential gives the
       in-vacuo forces).
     args:
@@ -105,7 +112,7 @@ functions:
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_energy_atomic_charges_vjp
+  - name: mlip_interface_energy_atomic_charges_vjp
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -114,16 +121,16 @@ functions:
       charges left out of the grid and the real-space pair list), the potential of the MM
       charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
       single call (not currently implemented).
-      ml_system_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+      ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
       The returned forces don't include the electrostatic force at fixed charges on the
       ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
       otherwise the forces on the ML atoms are incomplete.
     args:
       - {name: num_atoms, dtype: int}
-      - {name: ml_system_potential, dtype: double, shape: [num_atoms]}
+      - {name: ml_electrostatic_potential, dtype: double, shape: [num_atoms]}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
 
-  - name: torchani_calc_energy_force_qbc
+  - name: mlip_interface_calc_energy_force_qbc
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -133,7 +140,7 @@ functions:
       - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_calc_data_for_monitored_mlmm
+  - name: mlip_interface_calc_data_for_monitored_mlmm
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -145,7 +152,7 @@ functions:
       - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: torchani_calc_energy_force_with_coupling
+  - name: mlip_interface_calc_energy_force_with_coupling
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_env_charges, dtype: int}
@@ -157,7 +164,7 @@ functions:
       - {name: predict_charges, dtype: bool}
       - {name: use_simple_polarization_correction, dtype: bool}
       - {name: use_charge_derivatives, dtype: bool}
-      - {name: ml_system_charge, dtype: int}
+      - {name: ml_charge, dtype: int}
       - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: inout}
@@ -167,7 +174,7 @@ functions:
       - {name: ene_pot_embed_coulomb, dtype: double, intent: out}
       - {name: ene_pot_total, dtype: double, intent: out}
 
-  - name: torchani_calc_energy_force_custom_mlmm
+  - name: mlip_interface_calc_energy_force_custom_mlmm
     comment: |
       Custom ML/MM model: the TorchScript model receives ML species+coords and MM
       coords+charges and computes the total energy internally. The model must export
@@ -184,7 +191,41 @@ functions:
       - {name: use_pbc, dtype: bool}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: ml_system_charge, dtype: int}
+      - {name: ml_charge, dtype: int}
       - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
       - {name: ene_pot_total, dtype: double, intent: out}
+
+  - name: mlip_interface_get_config_int_option
+    comment: |
+      Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
+      Exits if the option doesn't exist, or is not an int
+    args:
+      - {name: name, dtype: str}
+      - {name: out_value, dtype: int, intent: out}
+
+  - name: mlip_interface_get_config_bool_option
+    comment: |
+      Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
+      Exits if the option doesn't exist, or is not a bool
+    args:
+      - {name: name, dtype: str}
+      - {name: out_value, dtype: bool, intent: out}
+
+  - name: mlip_interface_get_config_float_option
+    comment: |
+      Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
+      Exits if the option doesn't exist, or is not a float
+    args:
+      - {name: name, dtype: str}
+      - {name: out_value, dtype: double, intent: out}
+
+  - name: mlip_interface_get_config_str_option
+    comment: |
+      Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
+      out_value is a buffer of length out_value_len, the value is copied null-terminated.
+      Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
+    args:
+      - {name: name, dtype: str}
+      - {name: out_value_len, dtype: int}
+      - {name: out_value, dtype: str, intent: out}

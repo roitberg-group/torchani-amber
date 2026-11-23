@@ -2,19 +2,21 @@
 #pragma once
 
 extern "C" {
-void torchani_initialize(
+// Read the config from the first &mlip namelist of the file at config_path (the
+// mdin), and load the MLIP. The ML/MM options are only read if read_mlmm_config.
+// If validate_amber_config too, the &qmmm namelist is also read, and the config is
+// validated against it. If print_config_info, the config is printed to stdout.
+// In Fortran, validate_amber_config and print_config_info are optional, default false
+void mlip_interface_initialize(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
-    int no_eval_atoms[],  // Shape (num_atoms,)
-    int device_index,
-    const char* model_type,
-    int network_index,
-    bool use_double_precision,
-    bool use_cuda_device,
-    bool use_cuaev
+    const char* config_path,
+    bool read_mlmm_config,
+    bool validate_amber_config,
+    bool print_config_info
 );
 
-void torchani_calc_energy_force(
+void mlip_interface_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     double cell[][3],  // Shape (3, 3)
@@ -27,7 +29,7 @@ void torchani_calc_energy_force(
     double* potential_energy
 );
 
-void torchani_calc_energy_force_from_external_neighbors(
+void mlip_interface_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -41,7 +43,7 @@ void torchani_calc_energy_force_from_external_neighbors(
     double* potential_energy
 );
 
-void torchani_energy_force_atomic_charges(
+void mlip_interface_energy_force_atomic_charges(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     /* outputs */
@@ -54,7 +56,7 @@ void torchani_energy_force_atomic_charges(
 // array In fortran, an array of shape [3, num_atoms, num_atoms] should be
 // passed Where the element [i, j, k] is the derivative of the **charge on
 // k-th atom** with respect to the **i-th position of the j-th atom**
-void torchani_energy_force_atomic_charges_with_derivatives(
+void mlip_interface_energy_force_atomic_charges_with_derivatives(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     /* outputs */
@@ -72,15 +74,16 @@ void torchani_energy_force_atomic_charges_with_derivatives(
 // charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 // single call (not currently implemented).
 // For an md engine that uses the predicted charges in its own electrostatics
-// (e.g. PME). torchani_energy_atomic_charges_retain returns the in-vacuo energy
+// (e.g. PME). mlip_interface_energy_atomic_charges_retain returns the in-vacuo energy
 // and the charges (forward pass only) and keeps the graph. Then
-// torchani_energy_atomic_charges_vjp, given ml_system_potential[k] = dE_mdengine/d(charge k)
-// (kcal/mol/e), returns the in-vacuo forces plus the forces due to the charges
-// changing with the geometry (ml_system_potential held fixed)
-//   forces[j] = - d/d(coords j) [E + sum_k ml_system_potential[k] * charge k]
+// mlip_interface_energy_atomic_charges_vjp, given
+// ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
+// the in-vacuo forces plus the forces due to the charges
+// changing with the geometry (ml_electrostatic_potential held fixed)
+//   forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
 // with a single backward pass, and frees the graph (zero potential gives the
 // in-vacuo forces).
-void torchani_energy_atomic_charges_retain(
+void mlip_interface_energy_atomic_charges_retain(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     int net_charge,
@@ -96,18 +99,18 @@ void torchani_energy_atomic_charges_retain(
 // charges left out of the grid and the real-space pair list), the potential of the MM
 // charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 // single call (not currently implemented).
-// ml_system_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+// ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
 // The returned forces don't include the electrostatic force at fixed charges on the
 // ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 // otherwise the forces on the ML atoms are incomplete.
-void torchani_energy_atomic_charges_vjp(
+void mlip_interface_energy_atomic_charges_vjp(
     int num_atoms,
-    double ml_system_potential[],  // Shape (num_atoms,)
+    double ml_electrostatic_potential[],  // Shape (num_atoms,)
     /* outputs */
     double forces[][3]  // Shape (num_atoms, 3)
 );
 
-void torchani_calc_energy_force_qbc(
+void mlip_interface_calc_energy_force_qbc(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     int net_charge,
@@ -118,7 +121,7 @@ void torchani_calc_energy_force_qbc(
     double* potential_energy
 );
 
-void torchani_calc_data_for_monitored_mlmm(
+void mlip_interface_calc_data_for_monitored_mlmm(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     int net_charge,
@@ -131,7 +134,7 @@ void torchani_calc_data_for_monitored_mlmm(
     double* potential_energy
 );
 
-void torchani_calc_energy_force_with_coupling(
+void mlip_interface_calc_energy_force_with_coupling(
     int num_atoms,
     int num_env_charges,
     double inv_pol_dielectric,
@@ -142,7 +145,7 @@ void torchani_calc_energy_force_with_coupling(
     bool predict_charges,
     bool use_simple_polarization_correction,
     bool use_charge_derivatives,
-    int ml_system_charge,
+    int ml_charge,
     /* outputs */
     double forces_on_atoms[][3],  // Shape (num_atoms, 3)
     double forces_on_env_charges[][3],  // Shape (num_env_charges, 3)
@@ -159,7 +162,7 @@ void torchani_calc_energy_force_with_coupling(
 // a 'compute_mlmm' method (see README). Forces on both regions via autograd.
 // cell is ignored when use_pbc is false, and molecule_idxs is ignored when
 // calc_only_bonded is false.
-void torchani_calc_energy_force_custom_mlmm(
+void mlip_interface_calc_energy_force_custom_mlmm(
     int num_atoms,
     int num_env_charges,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -169,10 +172,44 @@ void torchani_calc_energy_force_custom_mlmm(
     bool use_pbc,
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
-    int ml_system_charge,
+    int ml_charge,
     /* outputs */
     double forces_on_atoms[][3],  // Shape (num_atoms, 3)
     double forces_on_env_charges[][3],  // Shape (num_env_charges, 3)
     double* ene_pot_total
+);
+
+// Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
+// Exits if the option doesn't exist, or is not an int
+void mlip_interface_get_config_int_option(
+    const char* name,
+    /* outputs */
+    int* out_value
+);
+
+// Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
+// Exits if the option doesn't exist, or is not a bool
+void mlip_interface_get_config_bool_option(
+    const char* name,
+    /* outputs */
+    bool* out_value
+);
+
+// Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
+// Exits if the option doesn't exist, or is not a float
+void mlip_interface_get_config_float_option(
+    const char* name,
+    /* outputs */
+    double* out_value
+);
+
+// Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
+// out_value is a buffer of length out_value_len, the value is copied null-terminated.
+// Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
+void mlip_interface_get_config_str_option(
+    const char* name,
+    int out_value_len,
+    /* outputs */
+    char out_value[]
 );
 }

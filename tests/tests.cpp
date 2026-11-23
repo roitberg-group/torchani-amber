@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -29,6 +30,29 @@ using Catch::Matchers::WithinRel;
     )
 
 
+
+// Write an &mlip namelist with the given options to a temporary file, return its path
+static std::string writeMlipConfig(
+    const std::string& model_type,
+    int model_index,
+    bool use_double_precision,
+    bool use_cuda_device,
+    bool use_cuaev,
+    int cuda_device_index = 0
+) {
+    std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "torchani_test_mlip_config.in";
+    std::ofstream file(path);
+    file << "&mlip\n"
+         << "  model_type = '" << model_type << "',\n"
+         << "  model_index = " << model_index << ",\n"
+         << "  use_double_precision = " << (use_double_precision ? "T" : "F") << ",\n"
+         << "  use_cuda_device = " << (use_cuda_device ? "T" : "F") << ",\n"
+         << "  use_cuaev = " << (use_cuaev ? "T" : "F") << ",\n"
+         << "  cuda_device_index = " << cuda_device_index << ",\n"
+         << "/\n";
+    return path.string();
+}
 
 static std::string file_path = __FILE__;
 static std::string file_directory = file_path.substr(
@@ -99,16 +123,15 @@ TEST_CASE("C bindings") {
         // output
         double potential_energy;
 
-        torchani_initialize(
+        mlip_interface_initialize(
             size,
             atomic_numbers,
-            no_eval_atoms,
-            device_index,
-            model_type.c_str(),
-            network_index,
-            use_double,
-            use_cuda_device,
-            use_cuaev
+            writeMlipConfig(
+                model_type, network_index, use_double, use_cuda_device, use_cuaev, device_index
+            ).c_str(),
+            false,
+            false,
+            false
         );
 
         std::string file_path = file_directory
@@ -133,7 +156,7 @@ TEST_CASE("C bindings") {
                 infile >> test_values[j];
             }
             for (long j = 0; j != 10; ++j) {
-                torchani_calc_energy_force(
+                mlip_interface_calc_energy_force(
                     size,
                     coords,
                     cell,
@@ -160,7 +183,7 @@ TEST_CASE("C bindings") {
             double* atomic_charge_derivatives;
             atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
             for (long j = 0; j != 10; ++j){
-                torchani_calc_data_for_monitored_mlmm(
+                mlip_interface_calc_data_for_monitored_mlmm(
                     size,
                     coords,
                     0,
@@ -235,7 +258,7 @@ static CouplingOutput calc_coupling(
     double atomic_alphas[2] = {COUPLING_ATOMIC_ALPHAS[0], COUPLING_ATOMIC_ALPHAS[1]};
     double env_charges[2] = {COUPLING_ENV_CHARGES[0], COUPLING_ENV_CHARGES[1]};
     CouplingOutput out{};
-    torchani_calc_energy_force_with_coupling(
+    mlip_interface_calc_energy_force_with_coupling(
         2,
         2,
         COUPLING_INV_POL_DIELECTRIC,
@@ -246,7 +269,7 @@ static CouplingOutput calc_coupling(
         /* predict_charges= */ true,
         /* use_simple_polarization_correction= */ true,
         use_charge_derivatives,
-        /* ml_system_charge= */ 0,
+        /* ml_charge= */ 0,
         out.forces_on_atoms,
         out.forces_on_env_charges,
         out.atomic_charges,
@@ -309,16 +332,15 @@ TEST_CASE("C bindings for other entry points") {
     INFO("Testing model on device: " << "device" << device_suffix);
     INFO("cuAEV: " << (use_cuaev == 1));
 
-    torchani_initialize(
+    mlip_interface_initialize(
         size,
         atomic_numbers,
-        no_eval_atoms,
-        0,
-        model_type.c_str(),
-        network_index,
-        use_double,
-        use_cuda_device,
-        use_cuaev
+        writeMlipConfig(
+            model_type, network_index, use_double, use_cuda_device, use_cuaev
+        ).c_str(),
+        false,
+        false,
+        false
     );
 
     std::string values_path = file_directory + "test_values" + device_suffix
@@ -337,7 +359,7 @@ TEST_CASE("C bindings for other entry points") {
     SECTION("Energy + Force, external neighbors") {
         int neighborlist[2][1] = {{0}, {1}};
         double shifts[1][3] = {{0.0, 0.0, 0.0}};
-        torchani_calc_energy_force_from_external_neighbors(
+        mlip_interface_calc_energy_force_from_external_neighbors(
             size,
             1,
             coords,
@@ -361,7 +383,7 @@ TEST_CASE("C bindings for other entry points") {
         if (model_is_ensemble) {
             double qbc;
             double qbc_deriv[size][3];
-            torchani_calc_energy_force_qbc(
+            mlip_interface_calc_energy_force_qbc(
                 size, coords, 0, forces, &qbc, qbc_deriv, &potential_energy
             );
             FLOAT_EQ(potential_energy, test_values[0], use_double);
@@ -385,7 +407,7 @@ TEST_CASE("C bindings for other entry points") {
     SECTION("Energy + Force + Atomic charges") {
         if (model_has_charges) {
             double atomic_charges[size];
-            torchani_energy_force_atomic_charges(
+            mlip_interface_energy_force_atomic_charges(
                 size, coords, forces, atomic_charges, &potential_energy
             );
             FLOAT_EQ(potential_energy, test_values[0], use_double);
@@ -506,7 +528,7 @@ TEST_CASE("C bindings for other entry points") {
             double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
             // Reference: animbis, mlmm_coupling=1, use_torchani_charges=.true.
             CouplingOutput expect{};
-            torchani_calc_energy_force_with_coupling(
+            mlip_interface_calc_energy_force_with_coupling(
                 size,
                 2,
                 AMBER_INV_POL_DIELECTRIC,
@@ -517,7 +539,7 @@ TEST_CASE("C bindings for other entry points") {
                 /* predict_charges= */ true,
                 /* use_simple_polarization_correction= */ true,
                 /* use_charge_derivatives= */ true,
-                /* ml_system_charge= */ 0,
+                /* ml_charge= */ 0,
                 expect.forces_on_atoms,
                 expect.forces_on_env_charges,
                 expect.atomic_charges,
@@ -528,23 +550,22 @@ TEST_CASE("C bindings for other entry points") {
                 &expect.ene_pot_total
             );
 
-            torchani_initialize(
+            mlip_interface_initialize(
                 size,
                 atomic_numbers,
-                no_eval_atoms,
-                0,
-                "animbis-custom-mlmm",
-                network_index,
-                use_double,
-                use_cuda_device,
-                use_cuaev
+                writeMlipConfig(
+                    "animbis-custom-mlmm", network_index, use_double, use_cuda_device, use_cuaev
+                ).c_str(),
+                false,
+                false,
+                false
             );
             bool calc_only_bonded = GENERATE(false, true);
             INFO("calc_only_bonded: " << calc_only_bonded);
             double forces_on_atoms[size][3];
             double forces_on_env_charges[2][3];
             double ene_pot_total;
-            torchani_calc_energy_force_custom_mlmm(
+            mlip_interface_calc_energy_force_custom_mlmm(
                 size,
                 2,
                 coords,
@@ -554,7 +575,7 @@ TEST_CASE("C bindings for other entry points") {
                 /* use_pbc= */ false,
                 molecule_idxs_buf,
                 calc_only_bonded,
-                /* ml_system_charge= */ 0,
+                /* ml_charge= */ 0,
                 forces_on_atoms,
                 forces_on_env_charges,
                 &ene_pot_total
@@ -598,26 +619,30 @@ TEST_CASE("Charges for md engine electrostatics") {
         double coords[size][3] = {{0.0, 0.0, 0.1}, {0.0, 0.76, -0.47}, {0.05, -0.74, -0.5}};
         int atomic_numbers[size] = {8, 1, 1};
         int no_eval_atoms[size] = {0, 0, 0};
-        double ml_system_potential[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
-        double zero_ml_system_potential[size] = {0.0, 0.0, 0.0};
-        torchani_initialize(
-            size, atomic_numbers, no_eval_atoms, 0, "aimnet2-wb97m-nocut", -1,
-            use_double, false, false
+        double ml_electrostatic_potential[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
+        double zero_ml_electrostatic_potential[size] = {0.0, 0.0, 0.0};
+        mlip_interface_initialize(
+            size,
+            atomic_numbers,
+            writeMlipConfig("aimnet2-wb97m-nocut", -1, use_double, false, false).c_str(),
+            false,
+            false,
+            false
         );
         double charges[size], energy;
         double ref_forces[size][3], ref_charges[size], ref_energy;
         double* dq = (double*) malloc(size * size * 3 * sizeof(double));
-        torchani_energy_force_atomic_charges_with_derivatives(
+        mlip_interface_energy_force_atomic_charges_with_derivatives(
             size, coords, ref_forces, ref_charges, dq, &ref_energy
         );
         // Zero potential: the in-vacuo forces
         double vjp_forces[size][3];
-        torchani_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
+        mlip_interface_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
         FLOAT_EQ(energy, ref_energy, false);
         for (int j = 0; j != size; ++j) {
             FLOAT_EQ(charges[j], ref_charges[j], false);
         }
-        torchani_energy_atomic_charges_vjp(size, zero_ml_system_potential, vjp_forces);
+        mlip_interface_energy_atomic_charges_vjp(size, zero_ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
@@ -625,13 +650,13 @@ TEST_CASE("Charges for md engine electrostatics") {
         }
         // The in-vacuo forces plus those of the charges:
         // dq[c + 3 * j + 3 * size * k] = d(charge k) / d(coordinate c of atom j)
-        torchani_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
-        torchani_energy_atomic_charges_vjp(size, ml_system_potential, vjp_forces);
+        mlip_interface_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
+        mlip_interface_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 double expect = ref_forces[j][c];
                 for (int k = 0; k != size; ++k) {
-                    expect -= ml_system_potential[k] * dq[c + 3 * j + 3 * size * k];
+                    expect -= ml_electrostatic_potential[k] * dq[c + 3 * j + 3 * size * k];
                 }
                 // Round-off error is amplified by the potential applied in the vj product
                 // So increase tolerance a little above float precision
@@ -653,17 +678,21 @@ TEST_CASE("Charges for md engine electrostatics") {
         int atomic_numbers[size] = {7, 1, 1, 1, 1};
         int no_eval_atoms[size] = {0, 0, 0, 0, 0};
         int molecule_idxs[size] = {0, 0, 0, 0, 0};
-        torchani_initialize(
-            size, atomic_numbers, no_eval_atoms, 0, "aimnet2-wb97m-nocut", -1,
-            use_double, false, false
+        mlip_interface_initialize(
+            size,
+            atomic_numbers,
+            writeMlipConfig("aimnet2-wb97m-nocut", -1, use_double, false, false).c_str(),
+            false,
+            false,
+            false
         );
         double charges[size], energy;
         double ref_forces[size][3], ref_energy;
-        torchani_calc_energy_force(
+        mlip_interface_calc_energy_force(
             size, coords, dummy_cell, false, molecule_idxs, false, 1,
             ref_forces, &ref_energy
         );
-        torchani_energy_atomic_charges_retain(size, coords, 1, charges, &energy);
+        mlip_interface_energy_atomic_charges_retain(size, coords, 1, charges, &energy);
         FLOAT_EQ(energy, ref_energy, false);
         double total = 0.0;
         for (int j = 0; j != size; ++j) {
@@ -671,9 +700,9 @@ TEST_CASE("Charges for md engine electrostatics") {
         }
         FLOAT_EQ(total, 1.0, false);
         // Uniform potential: the total charge is fixed, so only the in-vacuo forces
-        double ml_system_potential[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
+        double ml_electrostatic_potential[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
         double vjp_forces[size][3];
-        torchani_energy_atomic_charges_vjp(size, ml_system_potential, vjp_forces);
+        mlip_interface_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);

@@ -7,46 +7,46 @@
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - torchani_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of torchani_initialize
+! - mlip_interface_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of mlip_interface_initialize
 !   change in the yaml, that call must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
-subroutine torchani_initialize( &
+subroutine mlip_interface_initialize( &
     atomic_nums, &
-    no_eval_atoms, &
-    device_index, &
-    model_type, &
-    network_index, &
-    use_double_precision, &
-    use_cuda_device, &
-    use_cuaev &
+    config_path, &
+    read_mlmm_config, &
+    validate_amber_config, &
+    print_config_info &
 )
     integer(c_int), contiguous, intent(in) :: atomic_nums(:)
-    integer(c_int), contiguous, intent(in) :: no_eval_atoms(:)
-    integer(c_int), value, intent(in) :: device_index
-    character(len=*, kind=kind("a")), intent(in) :: model_type
-    integer(c_int), intent(in) :: network_index
-    ! Flags
-    logical, intent(in) :: use_double_precision
-    logical, intent(in) :: use_cuda_device
-    logical, intent(in) :: use_cuaev
+    character(len=*, kind=kind("a")), intent(in) :: config_path
+    logical, intent(in) :: read_mlmm_config
+    logical, optional, intent(in) :: validate_amber_config
+    logical, optional, intent(in) :: print_config_info
 
-    character(len=len_trim(model_type) + 1, kind=c_char) :: c_model_type
+    character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
+    logical :: do_validate_amber_config
+    logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
-    c_model_type = trim(model_type) // c_null_char
+    c_config_path = trim(config_path) // c_null_char
+    do_validate_amber_config = .false.
+    if (present(validate_amber_config)) then
+        do_validate_amber_config = validate_amber_config
+    endif
+    do_print_config_info = .false.
+    if (present(print_config_info)) then
+        do_print_config_info = print_config_info
+    endif
     call internal_initialize( &
         size(atomic_nums), &
         atomic_nums, &
-        no_eval_atoms, &
-        device_index, &
-        c_model_type, &
-        network_index, &
-        fbool_to_cbool(use_double_precision), &
-        fbool_to_cbool(use_cuda_device), &
-        fbool_to_cbool(use_cuaev) &
+        c_config_path, &
+        fbool_to_cbool(read_mlmm_config), &
+        fbool_to_cbool(do_validate_amber_config), &
+        fbool_to_cbool(do_print_config_info) &
     )
 endsubroutine
 
@@ -212,7 +212,7 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     endif
 endfunction
 
-subroutine torchani_dump_walltime()
+subroutine mlip_interface_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls
     logical, save :: first_call = .true.
     character(len=1), save :: need_walltime = "0"  ! Only set once
