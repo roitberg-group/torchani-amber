@@ -45,7 +45,7 @@ cd "${repo_root}"
         -o -path ./build \
         -o -path ./inputs \
         -o -path './jit/*.csv' \
-        -o -path ./tests/expect \
+        -o -path ./tests \
         -o -path ./jit/aimnet2 \
         -o -path ./jit/nutmeg \
         -o -path ./submodules/Catch2 \
@@ -60,5 +60,5 @@ cd "${repo_root}"
     --transform "s,^\.,${bundle_name}," \
     -T -
 
-echo "WARNING: tests/expect/ and inputs/ are not packed" >&2
+echo "WARNING: tests/ and inputs/ are not packed" >&2
 echo "Created ${output}"
