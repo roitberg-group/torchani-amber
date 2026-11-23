@@ -224,10 +224,17 @@ void disableTorchReducedFloatPrecisionOptimizations() {
     LOG(INFO) << "Disabled TF32 in cuBLAS and cuDNN, and FP16 reduction in cuBLAS";
 }
 
+// Return the directory of *this *.so*
 std::string libtorchaniDir() {
+    // &libtorchaniDir is the memory address of *this function*
+    // dladdr searches for the *.so that contains this memory address
+    // the Dl_info struct containes the absolute path to the *.so
+    // dladdr depends on a cast of a function pointer to void*. This is
+    // fully sound only in POSIX
     Dl_info info;
     if (dladdr(reinterpret_cast<void*>(&libtorchaniDir), &info) == 0) {
-        throw std::runtime_error("Could not locate libtorchani");
+        // dladdr returns 0 if it can't find the *.so that contains the requested addr
+        throw std::runtime_error("Could not locate the libtorchani.so install directory");
     }
     std::string lib_path = info.dli_fname;
     return lib_path.substr(0, lib_path.find_last_of("/"));
@@ -235,6 +242,10 @@ std::string libtorchaniDir() {
 
 void loadTorchaniExtension(const std::string& lib_name) {
     std::string lib_path = libtorchaniDir() + "/" + lib_name;
+    // RTLD_NOW | RTLD_LOCAL are dlopen flags that control *when* the librarie's
+    // symbols get resolved, and who else can see the symbols.
+    // RTLD_LOCAL doesn't export the symbols globally
+    // If dlopen fails to load with the passed flags, it returns nullptr
     if (dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL) == nullptr) {
         throw std::runtime_error("Could not load " + lib_path + ": " + dlerror());
     }
@@ -350,7 +361,8 @@ void torchani_initialize(
         }
     }
 
-    // The model is loaded from a pytorch file.
+    // The model is loaded from a pytorch file, which can be either a TorchScript
+    // compiled file (*.pt) or an AOTInductor-compiled graph (*.pt2 file)
     try {
         model = mlip::MlipModel::from_model_path(model_path, global_config.device(), global_config.dtype());
     } catch (const std::exception& e) {
