@@ -60,7 +60,9 @@ def prepare_arg(arg: dict) -> dict:
     arg = {"intent": "in", "shape": [], **arg}
     if arg["dtype"] in ("bool", "str"):
         if arg["shape"] or arg["intent"] == "inout":
-            raise ValueError(f"{arg['name']}: bool and str args must be scalar, in or out")
+            raise ValueError(
+                f"{arg['name']}: bool and str args must be scalar, in or out"
+            )
     name = arg["name"]
     c_name = f"c_{name}"
     arg["c_decl"] = c_declaration(arg)
@@ -82,7 +84,9 @@ def prepare_arg(arg: dict) -> dict:
         arg["f_post_call"] = [f"{name} = {c_name}"]
         arg["f_call_expr"] = c_name
     elif arg["dtype"] == "str" and arg["intent"] == "in":
-        arg["f_wrapper_decl"] = f'character(len=*, kind=kind("a")), intent(in) :: {name}'
+        arg[
+            "f_wrapper_decl"
+        ] = f'character(len=*, kind=kind("a")), intent(in) :: {name}'
         arg["f_local_decls"] = [
             f"character(len=len_trim({name}) + 1, kind=c_char) :: {c_name}"
         ]
@@ -91,7 +95,9 @@ def prepare_arg(arg: dict) -> dict:
     elif arg["dtype"] == "str":
         # Copied up to the null char, and padded with blanks
         idx = f"{name}_idx"
-        arg["f_wrapper_decl"] = f'character(len=*, kind=kind("a")), intent(out) :: {name}'
+        arg[
+            "f_wrapper_decl"
+        ] = f'character(len=*, kind=kind("a")), intent(out) :: {name}'
         arg["f_local_decls"] = [
             f"character(len=1, kind=c_char) :: {c_name}(len({name}) + 1)",
             f"integer :: {idx}",
