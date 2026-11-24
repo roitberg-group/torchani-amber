@@ -24,8 +24,8 @@ static std::filesystem::path writeTmpFile(const std::string& name, const std::st
 
 TEST_CASE("GlobalConfig getters throw before the config is read", "[config]") {
     GlobalConfig config{};
-    CHECK_THROWS_AS(config.mlipConfig(), std::logic_error);
-    CHECK_THROWS_AS(config.mlmmConfig(), std::logic_error);
+    CHECK_THROWS_AS(config.mlip(), std::logic_error);
+    CHECK_THROWS_AS(config.mlmm(), std::logic_error);
 }
 
 TEST_CASE("GlobalConfig from namelist file defaults", "[config]") {
@@ -39,14 +39,29 @@ TEST_CASE("GlobalConfig from namelist file defaults", "[config]") {
     CHECK(config.dtype() == torch::kFloat64);
     CHECK_FALSE(config.useNoEvalAtoms());
     CHECK_FALSE(config.mlipInterfaceIsInit());
-    CHECK(config.mlipConfig().getBool("use_cuaev"));
-    CHECK(config.mlipConfig().getString("model_type") == "ani2x");
-    CHECK_FALSE(config.mlipConfig().getBool("use_external_nonbond"));
-    CHECK(config.mlipConfig().getInt("model_index") == -1);
-    CHECK_FALSE(config.mlipConfig().getBool("use_external_neighborlist"));
-    CHECK(config.mlipConfig().getInt("ml_charge") == 0);
-    CHECK(config.mlipConfig().getInt("ml_spin_mult") == 1);
-    CHECK(config.mlipConfig().getString("no_eval_mask").empty());
+    CHECK(config.mlip().getBool("use_cuaev"));
+    CHECK(config.mlip().getString("model_type") == "ani2x");
+    CHECK_FALSE(config.mlip().getBool("use_external_nonbond"));
+    CHECK(config.mlip().getInt("model_index") == -1);
+    CHECK_FALSE(config.mlip().getBool("use_external_neighborlist"));
+    CHECK(config.mlip().getInt("ml_charge") == 0);
+    CHECK(config.mlip().getInt("ml_spin_mult") == 1);
+    CHECK(config.mlip().getString("no_eval_mask").empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig CUDA device", "[config]") {
+    std::filesystem::path path = writeTmpFile(
+        "torchani_test_config_cuda.in",
+        "&mlip use_cuda_device = T, cuda_device_index = 1 /\n"
+    );
+#ifdef TORCHANI_BUILD_CUDA
+    CHECK(GlobalConfig::fromNamelistFile(path.string()).device() == torch::Device(torch::kCUDA, 1));
+#else
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()), config::unsupported_device_error
+    );
+#endif
     std::filesystem::remove(path);
 }
 
@@ -54,25 +69,26 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
     std::filesystem::path path = writeTmpFile(
         "torchani_test_config_values.in",
         "&mlip\n"
-        "  model_type = 'animbis', use_cuda_device = .true., use_double_precision = F,\n"
+        "  model_type = 'animbis', use_cuda_device = F, use_double_precision = F,\n"
         "  net_charge = -1, no_eval_mask = ':WAT', use_amber_neighborlist = T,\n"
         "  use_all_amber_nonbond = T, use_cuaev = F, model_index = 3, cuda_device_index = 1,\n"
-        "  ml_spin_mult = 2,\n"
+        "  ml_spin_mult = 2, extra_features_file_path = 'features.txt',\n"
         "/\n"
         "&mlip model_type = 'ignored' /\n"
     );
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
-    CHECK(config.device() == torch::Device(torch::kCUDA, 1));
+    CHECK(config.mlip().getInt("cuda_device_index") == 1);
     CHECK(config.dtype() == torch::kFloat32);
     CHECK(config.useNoEvalAtoms());
-    CHECK_FALSE(config.mlipConfig().getBool("use_cuaev"));
-    CHECK(config.mlipConfig().getString("model_type") == "animbis");
-    CHECK(config.mlipConfig().getBool("use_external_nonbond"));
-    CHECK(config.mlipConfig().getInt("model_index") == 3);
-    CHECK(config.mlipConfig().getBool("use_external_neighborlist"));
-    CHECK(config.mlipConfig().getInt("ml_charge") == -1);
-    CHECK(config.mlipConfig().getInt("ml_spin_mult") == 2);
-    CHECK(config.mlipConfig().getString("no_eval_mask") == ":WAT");
+    CHECK_FALSE(config.mlip().getBool("use_cuaev"));
+    CHECK(config.mlip().getString("model_type") == "animbis");
+    CHECK(config.mlip().getBool("use_external_nonbond"));
+    CHECK(config.mlip().getInt("model_index") == 3);
+    CHECK(config.mlip().getBool("use_external_neighborlist"));
+    CHECK(config.mlip().getInt("ml_charge") == -1);
+    CHECK(config.mlip().getInt("ml_spin_mult") == 2);
+    CHECK(config.mlip().getString("no_eval_mask") == ":WAT");
+    CHECK(config.mlip().getString("extra_features_file_path") == "features.txt");
     std::filesystem::remove(path);
 
     path = writeTmpFile("torchani_test_config_values.in", "&mlip use_cuda_device = F /\n");
@@ -83,8 +99,8 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         "&mlip ml_charge = 2, use_external_neighborlist = T /\n"
     );
     config = GlobalConfig::fromNamelistFile(path.string());
-    CHECK(config.mlipConfig().getInt("ml_charge") == 2);
-    CHECK(config.mlipConfig().getBool("use_external_neighborlist"));
+    CHECK(config.mlip().getInt("ml_charge") == 2);
+    CHECK(config.mlip().getBool("use_external_neighborlist"));
     std::filesystem::remove(path);
 }
 
@@ -111,6 +127,13 @@ TEST_CASE("GlobalConfig from namelist file errors", "[config]") {
         GlobalConfig::fromNamelistFile(path.string()),
         fortran_utils::namelist_alias_conflict_error
     );
+    writeTmpFile(
+        "torchani_test_config_errors.in", "&mlip model_type = 'nutmeg-small::features.txt' /\n"
+    );
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()),
+        config::config_validation_error
+    );
     writeTmpFile("torchani_test_config_errors.in", "&mlip /\n&ani /\n");
     CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()), std::runtime_error);
     std::filesystem::remove(path);
@@ -125,7 +148,7 @@ TEST_CASE("GlobalConfig from deprecated ani namelist", "[config]") {
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
     std::cerr.rdbuf(cerr_buf);
-    CHECK(config.mlipConfig().getString("model_type") == "animbis");
+    CHECK(config.mlip().getString("model_type") == "animbis");
     CHECK(captured.str().find("&ani namelist") != std::string::npos);
     CHECK(captured.str().find("use &mlip instead") != std::string::npos);
     std::filesystem::remove(path);
@@ -137,18 +160,22 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         "&mlip mlmm_coupling = 1, use_torchani_charges = T, inv_pol_dielectric = 1,\n"
         "  pol_H = 2.5, pol_Ar = 10.0, pol_Fe = 50.0, write_xyz = T, switching_program = 'orca',\n"
         "  use_switching_function = T,\n"
-        "  qlow = 0.1, use_charges_derivatives = F, use_extcoupling = T, use_torch_coupling = F,\n"
-        "  extcoupling_program = 'orca' /\n"
+        "  qlow = 0.1, use_torch_coupling = T /\n"
         "&qmmm qmmask = ':1', qm_theory = 'EXTERN', qmcharge = 0, qm_ewald = 0, spin = 2,\n"
         "  qmcut = 8.0 /\n"
     );
+    std::stringstream captured_int;
+    std::streambuf* int_cerr_buf = std::cerr.rdbuf(captured_int.rdbuf());
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true, true);
-    const config::ConfigDict& mlmm = config.mlmmConfig();
-    CHECK(mlmm.getInt("mlmm_coupling") == 1);
+    std::cerr.rdbuf(int_cerr_buf);
+    CHECK(
+        captured_int.str().find("use mlmm_coupling = 'simple-polarizable'")
+        != std::string::npos
+    );
+    const config::ConfigDict& mlmm = config.mlmm();
+    CHECK(mlmm.getString("mlmm_coupling") == "simple-polarizable");
     CHECK(mlmm.getBool("use_mlip_atomic_charges"));
-    CHECK_FALSE(mlmm.getBool("use_mlip_atomic_charges_grad"));
     CHECK_FALSE(mlmm.getBool("use_numerical_mlmm_forces"));
-    CHECK_FALSE(mlmm.getBool("use_interface_coupling"));
     CHECK_FALSE(mlmm.getBool("allow_untested_protocols"));
     CHECK(mlmm.getDouble("inv_pol_dielectric") == 1.0);
     CHECK(mlmm.getDouble("pol_h") == 2.5);
@@ -162,35 +189,41 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     CHECK(mlmm.getString("hybrid_mlqm_method") == "orca");
     CHECK(mlmm.getDouble("hybrid_mlqm_switch_low") == 0.1);
     CHECK(mlmm.getDouble("hybrid_mlqm_switch_high") == 0.3);
-    CHECK(mlmm.getBool("use_qm_coupling"));
-    CHECK(mlmm.getString("qm_coupling_method") == "orca");
+    CHECK_FALSE(mlmm.getBool("use_qm_coupling"));
+    CHECK(mlmm.getString("qm_coupling_method") == "none");
 
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string()),
         fortran_utils::namelist_unknown_key_error
     );
-    writeTmpFile("torchani_test_config_mlmm.in", "&mlip /\n");
-    CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()).mlmmConfig(), std::logic_error);
+    writeTmpFile(
+        "torchani_test_config_mlmm.in",
+        "&mlip use_extcoupling = T, extcoupling_program = 'orca' /\n"
+    );
     config = GlobalConfig::fromNamelistFile(path.string(), true);
-    CHECK(config.mlmmConfig().getInt("mlmm_coupling") == 0);
+    CHECK(config.mlmm().getBool("use_qm_coupling"));
+    CHECK(config.mlmm().getString("qm_coupling_method") == "orca");
+    writeTmpFile("torchani_test_config_mlmm.in", "&mlip /\n");
+    CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()).mlmm(), std::logic_error);
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.mlmm().getString("mlmm_coupling") == "coulombic");
 
     writeTmpFile(
         "torchani_test_config_mlmm.in",
-        "&mlip mlmm_coupling = 1, use_mlip_atomic_charges = T, write_charges = T,\n"
-        "  write_charges_grad = T, write_forces = T, use_interface_coupling = F,\n"
+        "&mlip mlmm_coupling = 'Simple-Polarizable', use_mlip_atomic_charges = T,\n"
+        "  write_charges = T, write_charges_grad = T, write_forces = T,\n"
         "  use_hybrid_mlqm = T, hybrid_mlqm_method = 'gau', hybrid_mlqm_switch_high = 0.5 /\n"
     );
     config = GlobalConfig::fromNamelistFile(path.string(), true);
-    CHECK(config.mlmmConfig().getBool("use_mlip_atomic_charges"));
-    CHECK(config.mlmmConfig().getBool("write_ml_atomic_charges"));
-    CHECK(config.mlmmConfig().getBool("write_ml_atomic_charges_grad"));
-    CHECK_FALSE(config.mlmmConfig().getBool("write_ml_coords"));
-    CHECK(config.mlmmConfig().getBool("write_ml_forces"));
-    CHECK_FALSE(config.mlmmConfig().getBool("use_interface_coupling"));
-    CHECK(config.mlmmConfig().getBool("use_hybrid_mlqm"));
-    CHECK(config.mlmmConfig().getString("hybrid_mlqm_method") == "gau");
-    CHECK(config.mlmmConfig().getDouble("hybrid_mlqm_switch_high") == 0.5);
-    CHECK(config.mlmmConfig().getString("qm_coupling_method") == "none");
+    CHECK(config.mlmm().getString("mlmm_coupling") == "simple-polarizable");
+    CHECK(config.mlmm().getBool("use_mlip_atomic_charges"));
+    CHECK(config.mlmm().getBool("write_ml_atomic_charges"));
+    CHECK_FALSE(config.mlmm().getBool("write_ml_coords"));
+    CHECK(config.mlmm().getBool("write_ml_forces"));
+    CHECK(config.mlmm().getBool("use_hybrid_mlqm"));
+    CHECK(config.mlmm().getString("hybrid_mlqm_method") == "gau");
+    CHECK(config.mlmm().getDouble("hybrid_mlqm_switch_high") == 0.5);
+    CHECK(config.mlmm().getString("qm_coupling_method") == "none");
     std::filesystem::remove(path);
 }
 
@@ -198,22 +231,26 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
     const std::string fname = "torchani_test_config_validation.in";
     const std::vector<std::string> invalid_texts{
         "&mlip use_external_neighborlist = T /\n",
-        "&mlip ml_charge = 1, use_interface_coupling = F /\n",
-        "&mlip use_hybrid_mlqm = T, hybrid_mlqm_method = 'orca' /\n",
-        "&mlip mlmm_coupling = 3 /\n",
-        "&mlip mlmm_coupling = 0, use_mlip_atomic_charges = T /\n",
-        "&mlip mlmm_coupling = 1 /\n",
+        "&mlip mlmm_coupling = 4 /\n",
+        "&mlip mlmm_coupling = -1 /\n",
+        "&mlip mlmm_coupling = 'polarizable' /\n",
+        "&mlip mlmm_coupling = 'coulombic', use_mlip_atomic_charges = T /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable' /\n",
         "&mlip inv_pol_dielectric = 1.0 /\n",
-        "&mlip use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
-        "&mlip mlmm_coupling = 2, use_qm_coupling = T, qm_coupling_method = 'orca',\n"
-        "  use_interface_coupling = F /\n",
-        "&mlip mlmm_coupling = 2, use_mlip_atomic_charges = T, allow_untested_protocols = T /\n",
-        "&mlip mlmm_coupling = 2, write_ml_atomic_charges = T /\n",
-        "&mlip use_qm_coupling = T, use_interface_coupling = F /\n",
-        "&mlip use_hybrid_mlqm = T, use_interface_coupling = F /\n",
+        "&mlip mlmm_coupling = 'none', inv_pol_dielectric = 1.0 /\n",
+        "&mlip mlmm_coupling = 'custom', use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
+        "&mlip mlmm_coupling = 'custom', use_mlip_atomic_charges = T,\n"
+        "  allow_untested_protocols = T /\n",
+        "&mlip mlmm_coupling = 'custom', write_ml_atomic_charges = T /\n",
+        "&mlip use_qm_coupling = T /\n",
+        "&mlip use_hybrid_mlqm = T /\n",
+        "&mlip use_hybrid_mlqm = T, hybrid_mlqm_method = 'orca', mlmm_coupling = 'custom' /\n",
+        "&mlip use_hybrid_mlqm = T, hybrid_mlqm_method = 'orca', use_qm_coupling = T,\n"
+        "  qm_coupling_method = 'orca' /\n",
         "&mlip qm_coupling_method = 'orca' /\n",
         "&mlip hybrid_mlqm_method = 'orca' /\n",
         "&mlip use_numerical_mlmm_forces = T /\n",
+        "&mlip use_charges_derivatives = F /\n",
         "&mlip use_numerical_qmmm_forces = T /\n",
     };
     for (const std::string& text : invalid_texts) {
@@ -227,13 +264,32 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
 
     std::filesystem::path path = writeTmpFile(
         fname,
-        "&mlip mlmm_coupling = 0, use_mlip_atomic_charges = T, allow_untested_protocols = T /\n"
+        "&mlip mlmm_coupling = 'coulombic', use_mlip_atomic_charges = T,\n"
+        "  allow_untested_protocols = T /\n"
     );
     std::stringstream captured;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
     GlobalConfig::fromNamelistFile(path.string(), true);
     std::cerr.rdbuf(cerr_buf);
     CHECK(captured.str().find("untested protocol") != std::string::npos);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig deprecated no-op options", "[config]") {
+    std::filesystem::path path = writeTmpFile(
+        "torchani_test_config_torch_coupling.in",
+        "&mlip use_torch_coupling = F, write_charges_grad = T /\n"
+    );
+    std::stringstream captured;
+    std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
+    GlobalConfig::fromNamelistFile(path.string(), true);
+    std::cerr.rdbuf(cerr_buf);
+    CHECK(captured.str().find("use_torch_coupling is deprecated") != std::string::npos);
+    CHECK(captured.str().find("write_charges_grad is deprecated") != std::string::npos);
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()),
+        fortran_utils::namelist_unknown_key_error
+    );
     std::filesystem::remove(path);
 }
 
@@ -244,6 +300,23 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true));
     writeTmpFile(fname, "&mlip /\n&qmmm qmmm_int = 2 /\n");
     CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true));
+    writeTmpFile(
+        fname,
+        "&mlip use_qm_coupling = T, qm_coupling_method = 'orca' /\n&qmmm qmcharge = 1 /\n"
+    );
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, true));
+    writeTmpFile(
+        fname,
+        "&mlip use_qm_coupling = T, qm_coupling_method = 'orca', use_mlip_atomic_charges = T,\n"
+        "  allow_untested_protocols = T /\n&qmmm qmcharge = 1 /\n"
+    );
+    std::stringstream captured_charges;
+    std::streambuf* charges_cerr_buf = std::cerr.rdbuf(captured_charges.rdbuf());
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, true));
+    std::cerr.rdbuf(charges_cerr_buf);
+    CHECK(
+        captured_charges.str().find("use_mlip_atomic_charges has no effect") != std::string::npos
+    );
     writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = 'a' /\n");
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string(), true, true),
@@ -251,12 +324,18 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     );
 
     const std::vector<std::string> invalid_texts{
-        "&mlip use_interface_coupling = F /\n&qmmm qmcharge = 1 /\n",
         "&mlip allow_untested_protocols = T /\n&qmmm qmmm_int = 2 /\n",
-        "&mlip /\n&qmmm qmmm_int = 0 /\n",
-        "&mlip mlmm_coupling = 1, use_mlip_atomic_charges = T, allow_untested_protocols = T /\n"
-        "&qmmm qmmm_int = 0 /\n",
+        "&mlip mlmm_coupling = 'none' /\n&qmmm qmmm_int = 0 /\n",
+        "&mlip allow_untested_protocols = T /\n&qmmm qmmm_int = 0 /\n",
         "&mlip allow_untested_protocols = T /\n&qmmm qmmm_int = 5 /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  allow_untested_protocols = T /\n&qmmm qmmm_int = 0 /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  allow_untested_protocols = T /\n&qmmm qmmm_int = 5 /\n",
+        "&mlip mlmm_coupling = 'none', use_qm_coupling = T, qm_coupling_method = 'orca',\n"
+        "  allow_untested_protocols = T /\n&qmmm qmmm_int = 0 /\n",
+        "&mlip mlmm_coupling = 'none', use_qm_coupling = T, qm_coupling_method = 'orca',\n"
+        "  allow_untested_protocols = T /\n&qmmm qmmm_int = 5 /\n",
     };
     for (const std::string& text : invalid_texts) {
         writeTmpFile(fname, text);
@@ -266,7 +345,9 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
         );
     }
 
-    writeTmpFile(fname, "&mlip allow_untested_protocols = T /\n&qmmm qmmm_int = 0 /\n");
+    writeTmpFile(
+        fname, "&mlip mlmm_coupling = 'none', allow_untested_protocols = T /\n&qmmm qmmm_int = 0 /\n"
+    );
     std::stringstream captured;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
     GlobalConfig::fromNamelistFile(path.string(), true, true);
@@ -290,22 +371,30 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     CHECK(info.find("model_type") != std::string::npos);
     CHECK(info.find("animbis") != std::string::npos);
     CHECK(info.find("mlmm_coupling") == std::string::npos);
+    CHECK(info.find("extra_features_file_path") == std::string::npos);
+
+    writeTmpFile(fname, "&mlip extra_features_file_path = 'features.txt' /\n");
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string()));
+    CHECK(info.find("extra_features_file_path") != std::string::npos);
+    CHECK(info.find("features.txt") != std::string::npos);
 
     writeTmpFile(
         fname,
-        "&mlip mlmm_coupling = 1, use_mlip_atomic_charges = T, write_xyz = T /\n&qmmm /\n"
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  write_xyz = T /\n&qmmm /\n"
     );
     info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, true));
     CHECK(info.find("write_ml_coords") != std::string::npos);
     CHECK(info.find("write_xyz") == std::string::npos);
-    CHECK(info.find("(simple polarizable)") != std::string::npos);
+    CHECK(info.find("simple-polarizable") != std::string::npos);
     CHECK(info.find("calculated by MLIP Interface") != std::string::npos);
     CHECK(info.find("NN-predicted charges") != std::string::npos);
     CHECK(info.find("INTERNAL OPTIONS") == std::string::npos);
 
     writeTmpFile(
         fname,
-        "&mlip allow_untested_protocols = T, use_mlip_atomic_charges_grad = F /\n"
+        "&mlip mlmm_coupling = 'none', allow_untested_protocols = T,\n"
+        "  hybrid_mlqm_switch_low = 0.1 /\n"
         "&qmmm qmmm_int = 0 /\n"
     );
     std::stringstream captured_cerr;
@@ -313,8 +402,13 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, true));
     std::cerr.rdbuf(cerr_buf);
     CHECK(info.find("INTERNAL OPTIONS") != std::string::npos);
-    CHECK(info.find("use_mlip_atomic_charges_grad") != std::string::npos);
+    CHECK(info.find("hybrid_mlqm_switch_low") != std::string::npos);
     CHECK(info.find("mlmm_coupling") == std::string::npos);
+    CHECK(info.find("calculated by MLIP Interface") == std::string::npos);
+
+    writeTmpFile(fname, "&mlip mlmm_coupling = 'none' /\n&qmmm /\n");
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, true));
+    CHECK(info.find("only the in vacuo ML energy") != std::string::npos);
     CHECK(info.find("calculated by MLIP Interface") == std::string::npos);
     std::filesystem::remove(path);
 }
@@ -328,7 +422,7 @@ TEST_CASE("GlobalConfig from config dicts", "[config]") {
     CHECK(config.device() == torch::Device(torch::kCPU, 0));
     CHECK(config.dtype() == torch::kFloat32);
     CHECK_FALSE(config.useNoEvalAtoms());
-    CHECK_THROWS_AS(config.mlmmConfig(), std::logic_error);
+    CHECK_THROWS_AS(config.mlmm(), std::logic_error);
 
     mlip_config = mlip_config.withValue("no_eval_mask", std::string{":WAT"});
     CHECK(GlobalConfig{mlip_config}.useNoEvalAtoms());
@@ -341,4 +435,23 @@ TEST_CASE("Config dict getters", "[config]") {
     CHECK_THROWS_AS(mlip_config.getInt("no_such_key"), std::out_of_range);
     mlip_config = mlip_config.withValue("ml_charge", 1L << 40);
     CHECK_THROWS_AS(mlip_config.getInt("ml_charge"), std::out_of_range);
+}
+
+TEST_CASE("GlobalConfig polarizabilities", "[config]") {
+    config::ConfigDict mlip_config = config::defaultMlipConfig();
+    mlip_config = mlip_config.withValue("use_cuda_device", false);
+    CHECK_THROWS_AS(GlobalConfig{mlip_config}.getPolarizability(6L), std::logic_error);
+
+    config::ConfigDict mlmm_config = config::defaultMlmmConfig();
+    mlmm_config = mlmm_config.withValue("pol_c", 12.5);
+    GlobalConfig config{mlip_config, mlmm_config};
+    CHECK(config.getPolarizability(6L) == 12.5);
+    CHECK(config.getPolarizability("C") == 12.5);
+    CHECK(config.getPolarizability("c") == 12.5);
+    CHECK(config.getPolarizability(1L) == 3.08);
+    // Elements past Ar have no default
+    CHECK_THROWS_AS(config.getPolarizability(19L), std::runtime_error);
+    CHECK_THROWS_AS(config.getPolarizability(0L), std::out_of_range);
+    CHECK_THROWS_AS(config.getPolarizability(119L), std::out_of_range);
+    CHECK_THROWS_AS(config.getPolarizability("Xx"), std::out_of_range);
 }

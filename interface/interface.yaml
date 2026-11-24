@@ -47,7 +47,7 @@ functions:
       - {name: use_pbc, dtype: bool}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: net_charge, dtype: int}
+      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
@@ -60,30 +60,21 @@ functions:
       - {name: shifts, dtype: double, shape: [num_neighbors, 3]}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: net_charge, dtype: int}
+      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: mlip_interface_energy_force_atomic_charges
+  - name: mlip_interface_calc_energy_force_atomic_charges
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
+      - {name: cell, dtype: double, shape: [3, 3]}
+      - {name: use_pbc, dtype: bool}
+      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
+      - {name: calc_only_bonded, dtype: bool}
+      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
-  - name: mlip_interface_energy_force_atomic_charges_with_derivatives
-    comment: |
-      Note that atomic_charges_grad is a [num_atoms x num_atoms x 3]
-      array In fortran, an array of shape [3, num_atoms, num_atoms] should be
-      passed Where the element [i, j, k] is the derivative of the **charge on
-      k-th atom** with respect to the **i-th position of the j-th atom**
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
-      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
   - name: mlip_interface_energy_atomic_charges_retain
@@ -108,7 +99,7 @@ functions:
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: net_charge, dtype: int}
+      - {name: charge, dtype: int}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
@@ -130,71 +121,86 @@ functions:
       - {name: ml_electrostatic_potential, dtype: double, shape: [num_atoms]}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
 
-  - name: mlip_interface_calc_energy_force_qbc
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: net_charge, dtype: int}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: qbc, dtype: double, intent: out}
-      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
-  - name: mlip_interface_calc_data_for_monitored_mlmm
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: net_charge, dtype: int}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
-      - {name: atomic_charges_grad, dtype: double, shape: [num_atoms, num_atoms, 3], intent: out}
-      - {name: qbc, dtype: double, intent: out}
-      - {name: qbc_grad, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
-  - name: mlip_interface_calc_energy_force_with_coupling
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: num_env_charges, dtype: int}
-      - {name: inv_pol_dielectric, dtype: double}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: atomic_alphas, dtype: double, shape: [num_atoms]}
-      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
-      - {name: env_charges, dtype: double, shape: [num_env_charges]}
-      - {name: predict_charges, dtype: bool}
-      - {name: use_simple_polarization_correction, dtype: bool}
-      - {name: use_charge_derivatives, dtype: bool}
-      - {name: ml_charge, dtype: int}
-      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: inout}
-      - {name: ene_pot_invacuo, dtype: double, intent: out}
-      - {name: ene_pot_embed_pol, dtype: double, intent: out}
-      - {name: ene_pot_embed_dist, dtype: double, intent: out}
-      - {name: ene_pot_embed_coulomb, dtype: double, intent: out}
-      - {name: ene_pot_total, dtype: double, intent: out}
-
-  - name: mlip_interface_calc_energy_force_custom_mlmm
+  - name: mlip_interface_calc_energy_force_mlmm
     comment: |
-      Custom ML/MM model: the TorchScript model receives ML species+coords and MM
-      coords+charges and computes the total energy internally. The model must export
-      a 'compute_mlmm' method (see README). Forces on both regions via autograd.
-      cell is ignored when use_pbc is false, and molecule_idxs is ignored when
-      calc_only_bonded is false.
+      mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
+      (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
+      'simple-polarizable', the atomic polarizabilities and the inverse polarization
+      dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
+      ML/MM config, which must have been read. With 'custom', the TorchScript model
+      receives ML species+coords and MM coords+charges and computes the total energy
+      internally. The model must export a 'compute_mlmm' method (see README). Forces on
+      both regions via autograd. use_pbc and calc_only_bonded are only supported with
+      'custom', and predict_charges is not supported with 'custom'. cell is ignored when
+      use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
+      verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
+      'custom') are printed to stdout
     args:
-      - {name: num_atoms, dtype: int}
-      - {name: num_env_charges, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: env_charge_coords, dtype: double, shape: [num_env_charges, 3]}
-      - {name: env_charges, dtype: double, shape: [num_env_charges]}
+      - {name: ml_atoms_num, dtype: int}
+      - {name: mm_atoms_num, dtype: int}
+      - {name: ml_coords, dtype: double, shape: [ml_atoms_num, 3]}
+      - {name: mm_coords, dtype: double, shape: [mm_atoms_num, 3]}
+      - {name: mm_atomic_charges, dtype: double, shape: [mm_atoms_num]}
       - {name: cell, dtype: double, shape: [3, 3]}
       - {name: use_pbc, dtype: bool}
-      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
+      - {name: molecule_idxs, dtype: int, shape: [ml_atoms_num]}
       - {name: calc_only_bonded, dtype: bool}
+      - {name: predict_charges, dtype: bool}
+      - {name: mlmm_coupling, dtype: str}
       - {name: ml_charge, dtype: int}
-      - {name: forces_on_atoms, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: forces_on_env_charges, dtype: double, shape: [num_env_charges, 3], intent: out}
+      - {name: verbose, dtype: bool}
+      - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
+      - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
+      - {name: ml_atomic_charges, dtype: double, shape: [ml_atoms_num], intent: inout}
       - {name: ene_pot_total, dtype: double, intent: out}
+
+  - name: mlip_interface_calc_energy_force_mlmm_qbc
+    comment: |
+      Same as mlip_interface_calc_energy_force_mlmm, but also outputs the QBC of the
+      ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
+      not supported
+    args:
+      - {name: ml_atoms_num, dtype: int}
+      - {name: mm_atoms_num, dtype: int}
+      - {name: ml_coords, dtype: double, shape: [ml_atoms_num, 3]}
+      - {name: mm_coords, dtype: double, shape: [mm_atoms_num, 3]}
+      - {name: mm_atomic_charges, dtype: double, shape: [mm_atoms_num]}
+      - {name: cell, dtype: double, shape: [3, 3]}
+      - {name: use_pbc, dtype: bool}
+      - {name: molecule_idxs, dtype: int, shape: [ml_atoms_num]}
+      - {name: calc_only_bonded, dtype: bool}
+      - {name: predict_charges, dtype: bool}
+      - {name: mlmm_coupling, dtype: str}
+      - {name: ml_charge, dtype: int}
+      - {name: verbose, dtype: bool}
+      - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
+      - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
+      - {name: ml_atomic_charges, dtype: double, shape: [ml_atoms_num], intent: inout}
+      - {name: ene_pot_total, dtype: double, intent: out}
+      - {name: qbc, dtype: double, intent: out}
+      - {name: qbc_grad, dtype: double, shape: [ml_atoms_num, 3], intent: out}
+
+  - name: mlip_interface_store_float_tensor
+    comment: |
+      Store a copy of values, with shape dims, as a tensor named name, with the dtype
+      and device of the MLIP Interface. A tensor stored with the same name is replaced.
+      Stored tensors persist until mlip_interface_initialize is called again. dims is in
+      C (row-major) order, so a Fortran array of shape (3, n) has dims (n, 3). Exits if
+      dims_num or any dim is negative, or if name starts with "__" (reserved)
+    args:
+      - {name: name, dtype: str}
+      - {name: values, dtype: double, shape: [prod(dims)]}
+      - {name: dims, dtype: int, shape: [dims_num]}
+      - {name: dims_num, dtype: int}
+
+  - name: mlip_interface_store_int_tensor
+    comment: |
+      Same as mlip_interface_store_float_tensor, but the tensor is int64
+    args:
+      - {name: name, dtype: str}
+      - {name: values, dtype: int, shape: [prod(dims)]}
+      - {name: dims, dtype: int, shape: [dims_num]}
+      - {name: dims_num, dtype: int}
 
   - name: mlip_interface_get_config_int_option
     comment: |

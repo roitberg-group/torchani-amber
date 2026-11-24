@@ -8,14 +8,13 @@ public :: &
     mlip_interface_initialize, &
     mlip_interface_calc_energy_force, &
     mlip_interface_calc_energy_force_from_external_neighbors, &
-    mlip_interface_energy_force_atomic_charges, &
-    mlip_interface_energy_force_atomic_charges_with_derivatives, &
+    mlip_interface_calc_energy_force_atomic_charges, &
     mlip_interface_energy_atomic_charges_retain, &
     mlip_interface_energy_atomic_charges_vjp, &
-    mlip_interface_calc_energy_force_qbc, &
-    mlip_interface_calc_data_for_monitored_mlmm, &
-    mlip_interface_calc_energy_force_with_coupling, &
-    mlip_interface_calc_energy_force_custom_mlmm, &
+    mlip_interface_calc_energy_force_mlmm, &
+    mlip_interface_calc_energy_force_mlmm_qbc, &
+    mlip_interface_store_float_tensor, &
+    mlip_interface_store_int_tensor, &
     mlip_interface_get_config_int_option, &
     mlip_interface_get_config_bool_option, &
     mlip_interface_get_config_float_option, &
@@ -54,7 +53,7 @@ subroutine internal_calc_energy_force( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    net_charge, &
+    charge, &
     forces, &
     potential_energy &
 ) bind(c, name="mlip_interface_calc_energy_force")
@@ -65,7 +64,7 @@ subroutine internal_calc_energy_force( &
     logical(c_bool), value, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: net_charge
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -79,7 +78,7 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     shifts, &
     molecule_idxs, &
     calc_only_bonded, &
-    net_charge, &
+    charge, &
     forces, &
     potential_energy &
 ) bind(c, name="mlip_interface_calc_energy_force_from_external_neighbors")
@@ -91,47 +90,35 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(in) :: shifts(*)
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: net_charge
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine mlip_interface_energy_force_atomic_charges( &
+subroutine internal_calc_energy_force_atomic_charges( &
     num_atoms, &
     coords, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    charge, &
     forces, &
     atomic_charges, &
     potential_energy &
-) bind(c, name="mlip_interface_energy_force_atomic_charges")
+) bind(c, name="mlip_interface_calc_energy_force_atomic_charges")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
+    real(c_double), intent(in) :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-! Note that atomic_charges_grad is a [num_atoms x num_atoms x 3]
-! array In fortran, an array of shape [3, num_atoms, num_atoms] should be
-! passed Where the element [i, j, k] is the derivative of the **charge on
-! k-th atom** with respect to the **i-th position of the j-th atom**
-subroutine mlip_interface_energy_force_atomic_charges_with_derivatives( &
-    num_atoms, &
-    coords, &
-    forces, &
-    atomic_charges, &
-    atomic_charges_grad, &
-    potential_energy &
-) bind(c, name="mlip_interface_energy_force_atomic_charges_with_derivatives")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: atomic_charges_grad(*)
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
@@ -155,14 +142,14 @@ endsubroutine
 subroutine mlip_interface_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
-    net_charge, &
+    charge, &
     atomic_charges, &
     potential_energy &
 ) bind(c, name="mlip_interface_energy_atomic_charges_retain")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
-    integer(c_int), value, intent(in) :: net_charge
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: atomic_charges(*)
     real(c_double), intent(out) :: potential_energy
@@ -191,129 +178,135 @@ subroutine mlip_interface_energy_atomic_charges_vjp( &
     real(c_double), intent(out) :: forces(*)
 endsubroutine
 
-subroutine mlip_interface_calc_energy_force_qbc( &
-    num_atoms, &
-    coords, &
-    net_charge, &
-    forces, &
-    qbc, &
-    qbc_grad, &
-    potential_energy &
-) bind(c, name="mlip_interface_calc_energy_force_qbc")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    integer(c_int), value, intent(in) :: net_charge
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-subroutine mlip_interface_calc_data_for_monitored_mlmm( &
-    num_atoms, &
-    coords, &
-    net_charge, &
-    forces, &
-    atomic_charges, &
-    atomic_charges_grad, &
-    qbc, &
-    qbc_grad, &
-    potential_energy &
-) bind(c, name="mlip_interface_calc_data_for_monitored_mlmm")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    integer(c_int), value, intent(in) :: net_charge
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: atomic_charges_grad(*)
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
-subroutine internal_calc_energy_force_with_coupling( &
-    num_atoms, &
-    num_env_charges, &
-    inv_pol_dielectric, &
-    coords, &
-    atomic_alphas, &
-    env_charge_coords, &
-    env_charges, &
-    predict_charges, &
-    use_simple_polarization_correction, &
-    use_charge_derivatives, &
-    ml_charge, &
-    forces_on_atoms, &
-    forces_on_env_charges, &
-    atomic_charges, &
-    ene_pot_invacuo, &
-    ene_pot_embed_pol, &
-    ene_pot_embed_dist, &
-    ene_pot_embed_coulomb, &
-    ene_pot_total &
-) bind(c, name="mlip_interface_calc_energy_force_with_coupling")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_env_charges
-    real(c_double), value, intent(in) :: inv_pol_dielectric
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: atomic_alphas(*)
-    real(c_double), intent(in) :: env_charge_coords(*)
-    real(c_double), intent(in) :: env_charges(*)
-    logical(c_bool), value, intent(in) :: predict_charges
-    logical(c_bool), value, intent(in) :: use_simple_polarization_correction
-    logical(c_bool), value, intent(in) :: use_charge_derivatives
-    integer(c_int), value, intent(in) :: ml_charge
-    ! Outputs
-    real(c_double), intent(out) :: forces_on_atoms(*)
-    real(c_double), intent(out) :: forces_on_env_charges(*)
-    real(c_double), intent(inout) :: atomic_charges(*)
-    real(c_double), intent(out) :: ene_pot_invacuo
-    real(c_double), intent(out) :: ene_pot_embed_pol
-    real(c_double), intent(out) :: ene_pot_embed_dist
-    real(c_double), intent(out) :: ene_pot_embed_coulomb
-    real(c_double), intent(out) :: ene_pot_total
-endsubroutine
-
-! Custom ML/MM model: the TorchScript model receives ML species+coords and MM
-! coords+charges and computes the total energy internally. The model must export
-! a 'compute_mlmm' method (see README). Forces on both regions via autograd.
-! cell is ignored when use_pbc is false, and molecule_idxs is ignored when
-! calc_only_bonded is false.
-subroutine internal_calc_energy_force_custom_mlmm( &
-    num_atoms, &
-    num_env_charges, &
-    coords, &
-    env_charge_coords, &
-    env_charges, &
+! mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
+! (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
+! 'simple-polarizable', the atomic polarizabilities and the inverse polarization
+! dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
+! ML/MM config, which must have been read. With 'custom', the TorchScript model
+! receives ML species+coords and MM coords+charges and computes the total energy
+! internally. The model must export a 'compute_mlmm' method (see README). Forces on
+! both regions via autograd. use_pbc and calc_only_bonded are only supported with
+! 'custom', and predict_charges is not supported with 'custom'. cell is ignored when
+! use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
+! verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
+! 'custom') are printed to stdout
+subroutine internal_calc_energy_force_mlmm( &
+    ml_atoms_num, &
+    mm_atoms_num, &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
     cell, &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
+    predict_charges, &
+    mlmm_coupling, &
     ml_charge, &
-    forces_on_atoms, &
-    forces_on_env_charges, &
+    verbose, &
+    ml_forces, &
+    mm_forces, &
+    ml_atomic_charges, &
     ene_pot_total &
-) bind(c, name="mlip_interface_calc_energy_force_custom_mlmm")
+) bind(c, name="mlip_interface_calc_energy_force_mlmm")
     use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_env_charges
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: env_charge_coords(*)
-    real(c_double), intent(in) :: env_charges(*)
+    integer(c_int), value, intent(in) :: ml_atoms_num
+    integer(c_int), value, intent(in) :: mm_atoms_num
+    real(c_double), intent(in) :: ml_coords(*)
+    real(c_double), intent(in) :: mm_coords(*)
+    real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical(c_bool), value, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
+    logical(c_bool), value, intent(in) :: predict_charges
+    character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
     integer(c_int), value, intent(in) :: ml_charge
+    logical(c_bool), value, intent(in) :: verbose
     ! Outputs
-    real(c_double), intent(out) :: forces_on_atoms(*)
-    real(c_double), intent(out) :: forces_on_env_charges(*)
+    real(c_double), intent(out) :: ml_forces(*)
+    real(c_double), intent(out) :: mm_forces(*)
+    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
+endsubroutine
+
+! Same as mlip_interface_calc_energy_force_mlmm, but also outputs the QBC of the
+! ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
+! not supported
+subroutine internal_calc_energy_force_mlmm_qbc( &
+    ml_atoms_num, &
+    mm_atoms_num, &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    predict_charges, &
+    mlmm_coupling, &
+    ml_charge, &
+    verbose, &
+    ml_forces, &
+    mm_forces, &
+    ml_atomic_charges, &
+    ene_pot_total, &
+    qbc, &
+    qbc_grad &
+) bind(c, name="mlip_interface_calc_energy_force_mlmm_qbc")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: ml_atoms_num
+    integer(c_int), value, intent(in) :: mm_atoms_num
+    real(c_double), intent(in) :: ml_coords(*)
+    real(c_double), intent(in) :: mm_coords(*)
+    real(c_double), intent(in) :: mm_atomic_charges(*)
+    real(c_double), intent(in) :: cell(*)
+    logical(c_bool), value, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical(c_bool), value, intent(in) :: calc_only_bonded
+    logical(c_bool), value, intent(in) :: predict_charges
+    character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
+    integer(c_int), value, intent(in) :: ml_charge
+    logical(c_bool), value, intent(in) :: verbose
+    ! Outputs
+    real(c_double), intent(out) :: ml_forces(*)
+    real(c_double), intent(out) :: mm_forces(*)
+    real(c_double), intent(inout) :: ml_atomic_charges(*)
+    real(c_double), intent(out) :: ene_pot_total
+    real(c_double), intent(out) :: qbc
+    real(c_double), intent(out) :: qbc_grad(*)
+endsubroutine
+
+! Store a copy of values, with shape dims, as a tensor named name, with the dtype
+! and device of the MLIP Interface. A tensor stored with the same name is replaced.
+! Stored tensors persist until mlip_interface_initialize is called again. dims is in
+! C (row-major) order, so a Fortran array of shape (3, n) has dims (n, 3). Exits if
+! dims_num or any dim is negative, or if name starts with "__" (reserved)
+subroutine internal_store_float_tensor( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+) bind(c, name="mlip_interface_store_float_tensor")
+    use, intrinsic :: iso_c_binding
+    character(len=1, kind=c_char), intent(in) :: name(*)
+    real(c_double), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
+endsubroutine
+
+! Same as mlip_interface_store_float_tensor, but the tensor is int64
+subroutine internal_store_int_tensor( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+) bind(c, name="mlip_interface_store_int_tensor")
+    use, intrinsic :: iso_c_binding
+    character(len=1, kind=c_char), intent(in) :: name(*)
+    integer(c_int), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
 endsubroutine
 
 ! Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
@@ -380,7 +373,7 @@ subroutine mlip_interface_calc_energy_force( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    net_charge, &
+    charge, &
     forces, &
     potential_energy &
 )
@@ -390,7 +383,7 @@ subroutine mlip_interface_calc_energy_force( &
     logical, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: net_charge
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -401,7 +394,7 @@ subroutine mlip_interface_calc_energy_force( &
         fbool_to_cbool(use_pbc), &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
-        net_charge, &
+        charge, &
         forces, &
         potential_energy &
     )
@@ -417,7 +410,7 @@ subroutine mlip_interface_calc_energy_force_from_external_neighbors( &
     shifts, &
     molecule_idxs, &
     calc_only_bonded, &
-    net_charge, &
+    charge, &
     forces, &
     potential_energy &
 )
@@ -428,7 +421,7 @@ subroutine mlip_interface_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(in) :: shifts(*)
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: net_charge
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -440,7 +433,7 @@ subroutine mlip_interface_calc_energy_force_from_external_neighbors( &
         shifts, &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
-        net_charge, &
+        charge, &
         forces, &
         potential_energy &
     )
@@ -448,115 +441,214 @@ endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_interface_calc_energy_force_with_coupling( &
+subroutine mlip_interface_calc_energy_force_atomic_charges( &
     num_atoms, &
-    num_env_charges, &
-    inv_pol_dielectric, &
     coords, &
-    atomic_alphas, &
-    env_charge_coords, &
-    env_charges, &
-    predict_charges, &
-    use_simple_polarization_correction, &
-    use_charge_derivatives, &
-    ml_charge, &
-    forces_on_atoms, &
-    forces_on_env_charges, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    charge, &
+    forces, &
     atomic_charges, &
-    ene_pot_invacuo, &
-    ene_pot_embed_pol, &
-    ene_pot_embed_dist, &
-    ene_pot_embed_coulomb, &
-    ene_pot_total &
+    potential_energy &
 )
     integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_env_charges
-    real(c_double), value, intent(in) :: inv_pol_dielectric
     real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: atomic_alphas(*)
-    real(c_double), intent(in) :: env_charge_coords(*)
-    real(c_double), intent(in) :: env_charges(*)
-    logical, intent(in) :: predict_charges
-    logical, intent(in) :: use_simple_polarization_correction
-    logical, intent(in) :: use_charge_derivatives
-    integer(c_int), value, intent(in) :: ml_charge
+    real(c_double), intent(in) :: cell(*)
+    logical, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical, intent(in) :: calc_only_bonded
+    integer(c_int), value, intent(in) :: charge
     ! Outputs
-    real(c_double), intent(out) :: forces_on_atoms(*)
-    real(c_double), intent(out) :: forces_on_env_charges(*)
-    real(c_double), intent(inout) :: atomic_charges(*)
-    real(c_double), intent(out) :: ene_pot_invacuo
-    real(c_double), intent(out) :: ene_pot_embed_pol
-    real(c_double), intent(out) :: ene_pot_embed_dist
-    real(c_double), intent(out) :: ene_pot_embed_coulomb
-    real(c_double), intent(out) :: ene_pot_total
-    call internal_calc_energy_force_with_coupling( &
+    real(c_double), intent(out) :: forces(*)
+    real(c_double), intent(out) :: atomic_charges(*)
+    real(c_double), intent(out) :: potential_energy
+    call internal_calc_energy_force_atomic_charges( &
         num_atoms, &
-        num_env_charges, &
-        inv_pol_dielectric, &
         coords, &
-        atomic_alphas, &
-        env_charge_coords, &
-        env_charges, &
-        fbool_to_cbool(predict_charges), &
-        fbool_to_cbool(use_simple_polarization_correction), &
-        fbool_to_cbool(use_charge_derivatives), &
-        ml_charge, &
-        forces_on_atoms, &
-        forces_on_env_charges, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        charge, &
+        forces, &
         atomic_charges, &
-        ene_pot_invacuo, &
-        ene_pot_embed_pol, &
-        ene_pot_embed_dist, &
-        ene_pot_embed_coulomb, &
+        potential_energy &
+    )
+endsubroutine
+
+! Wrapper needed in case fortran logicals don't have the same binary
+! representation as c_bool
+! Wrapper needed to convert between fortran strings and null-terminated C strings
+subroutine mlip_interface_calc_energy_force_mlmm( &
+    ml_atoms_num, &
+    mm_atoms_num, &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
+    cell, &
+    use_pbc, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    predict_charges, &
+    mlmm_coupling, &
+    ml_charge, &
+    verbose, &
+    ml_forces, &
+    mm_forces, &
+    ml_atomic_charges, &
+    ene_pot_total &
+)
+    integer(c_int), value, intent(in) :: ml_atoms_num
+    integer(c_int), value, intent(in) :: mm_atoms_num
+    real(c_double), intent(in) :: ml_coords(*)
+    real(c_double), intent(in) :: mm_coords(*)
+    real(c_double), intent(in) :: mm_atomic_charges(*)
+    real(c_double), intent(in) :: cell(*)
+    logical, intent(in) :: use_pbc
+    integer(c_int), intent(in) :: molecule_idxs(*)
+    logical, intent(in) :: calc_only_bonded
+    logical, intent(in) :: predict_charges
+    character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
+    integer(c_int), value, intent(in) :: ml_charge
+    logical, intent(in) :: verbose
+    ! Outputs
+    real(c_double), intent(out) :: ml_forces(*)
+    real(c_double), intent(out) :: mm_forces(*)
+    real(c_double), intent(inout) :: ml_atomic_charges(*)
+    real(c_double), intent(out) :: ene_pot_total
+    character(len=len_trim(mlmm_coupling) + 1, kind=c_char) :: c_mlmm_coupling
+    c_mlmm_coupling = trim(mlmm_coupling) // c_null_char
+    call internal_calc_energy_force_mlmm( &
+        ml_atoms_num, &
+        mm_atoms_num, &
+        ml_coords, &
+        mm_coords, &
+        mm_atomic_charges, &
+        cell, &
+        fbool_to_cbool(use_pbc), &
+        molecule_idxs, &
+        fbool_to_cbool(calc_only_bonded), &
+        fbool_to_cbool(predict_charges), &
+        c_mlmm_coupling, &
+        ml_charge, &
+        fbool_to_cbool(verbose), &
+        ml_forces, &
+        mm_forces, &
+        ml_atomic_charges, &
         ene_pot_total &
     )
 endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_interface_calc_energy_force_custom_mlmm( &
-    num_atoms, &
-    num_env_charges, &
-    coords, &
-    env_charge_coords, &
-    env_charges, &
+! Wrapper needed to convert between fortran strings and null-terminated C strings
+subroutine mlip_interface_calc_energy_force_mlmm_qbc( &
+    ml_atoms_num, &
+    mm_atoms_num, &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
     cell, &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
+    predict_charges, &
+    mlmm_coupling, &
     ml_charge, &
-    forces_on_atoms, &
-    forces_on_env_charges, &
-    ene_pot_total &
+    verbose, &
+    ml_forces, &
+    mm_forces, &
+    ml_atomic_charges, &
+    ene_pot_total, &
+    qbc, &
+    qbc_grad &
 )
-    integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_env_charges
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: env_charge_coords(*)
-    real(c_double), intent(in) :: env_charges(*)
+    integer(c_int), value, intent(in) :: ml_atoms_num
+    integer(c_int), value, intent(in) :: mm_atoms_num
+    real(c_double), intent(in) :: ml_coords(*)
+    real(c_double), intent(in) :: mm_coords(*)
+    real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
+    logical, intent(in) :: predict_charges
+    character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
     integer(c_int), value, intent(in) :: ml_charge
+    logical, intent(in) :: verbose
     ! Outputs
-    real(c_double), intent(out) :: forces_on_atoms(*)
-    real(c_double), intent(out) :: forces_on_env_charges(*)
+    real(c_double), intent(out) :: ml_forces(*)
+    real(c_double), intent(out) :: mm_forces(*)
+    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
-    call internal_calc_energy_force_custom_mlmm( &
-        num_atoms, &
-        num_env_charges, &
-        coords, &
-        env_charge_coords, &
-        env_charges, &
+    real(c_double), intent(out) :: qbc
+    real(c_double), intent(out) :: qbc_grad(*)
+    character(len=len_trim(mlmm_coupling) + 1, kind=c_char) :: c_mlmm_coupling
+    c_mlmm_coupling = trim(mlmm_coupling) // c_null_char
+    call internal_calc_energy_force_mlmm_qbc( &
+        ml_atoms_num, &
+        mm_atoms_num, &
+        ml_coords, &
+        mm_coords, &
+        mm_atomic_charges, &
         cell, &
         fbool_to_cbool(use_pbc), &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
+        fbool_to_cbool(predict_charges), &
+        c_mlmm_coupling, &
         ml_charge, &
-        forces_on_atoms, &
-        forces_on_env_charges, &
-        ene_pot_total &
+        fbool_to_cbool(verbose), &
+        ml_forces, &
+        mm_forces, &
+        ml_atomic_charges, &
+        ene_pot_total, &
+        qbc, &
+        qbc_grad &
+    )
+endsubroutine
+
+! Wrapper needed to convert between fortran strings and null-terminated C strings
+subroutine mlip_interface_store_float_tensor( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    c_name = trim(name) // c_null_char
+    call internal_store_float_tensor( &
+        c_name, &
+        values, &
+        dims, &
+        dims_num &
+    )
+endsubroutine
+
+! Wrapper needed to convert between fortran strings and null-terminated C strings
+subroutine mlip_interface_store_int_tensor( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    c_name = trim(name) // c_null_char
+    call internal_store_int_tensor( &
+        c_name, &
+        values, &
+        dims, &
+        dims_num &
     )
 endsubroutine
 

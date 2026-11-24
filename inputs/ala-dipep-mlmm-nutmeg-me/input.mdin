@@ -24,10 +24,12 @@
     cuda_device_index = 0
     use_cuda_device = .True.
     use_cuaev = .False.
-    ! After the nutmeg potentials, a file has to be specified with the Gasteiger charges
-    model_type = "nutmeg-small::ace-ala-nme-test"
+    model_type = "nutmeg-small"
+    ! The nutmeg potentials need a file with the Gasteiger charges, relative paths are
+    ! resolved wrt the current working directory
+    extra_features_file_path = "ace-ala-nme.charges"
     use_double_precision = .False.
-    mlmm_coupling = 0  ! Mechanical Embedding
+    mlmm_coupling = 'coulombic'  ! Mechanical Embedding
     model_index = -1
     use_amber_neighborlist = .False.
 /

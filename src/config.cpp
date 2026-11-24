@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -82,12 +83,38 @@ bool isOneOf(const std::string& value, const std::vector<std::string>& options) 
     return std::find(options.begin(), options.end(), value) != options.end();
 }
 
+// mlmm_coupling may be one of the deprecated integers, or a string in any case
+std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        std::string mlmm_coupling = std::get<std::string>(value);
+        std::transform(
+            mlmm_coupling.begin(), mlmm_coupling.end(), mlmm_coupling.begin(), ::tolower
+        );
+        return mlmm_coupling;
+    }
+    const std::vector<std::string> names{
+        "coulombic", "simple-polarizable", "custom", "none"
+    };
+    long idx = std::get<long>(value);
+    if (idx < 0 || idx >= static_cast<long>(names.size())) {
+        throw config_validation_error(
+            "Valid integer mlmm_coupling values are 0, 1, 2 and 3 (deprecated)"
+        );
+    }
+    printWarning(
+        "mlmm_coupling = " + std::to_string(idx) + " is deprecated, use mlmm_coupling = '"
+        + names[idx] + "' instead"
+    );
+    return names[idx];
+}
+
 }  // namespace
 
 auto defaultMlipConfig() -> ConfigDict {
     return ConfigDict{{
         {"model_type", {std::string{"ani2x"}, NamelistType::STR}},
         {"no_eval_mask", {std::string{""}, NamelistType::STR}},
+        {"extra_features_file_path", {std::string{""}, NamelistType::STR}},
         {"ml_charge", {0L, NamelistType::INT}},
         {"ml_spin_mult", {1L, NamelistType::INT}},
         {"model_index", {-1L, NamelistType::INT}},
@@ -102,21 +129,18 @@ auto defaultMlipConfig() -> ConfigDict {
 
 auto defaultMlmmConfig() -> ConfigDict {
     std::map<std::string, ConfigOption> options{
-        {"mlmm_coupling", {0L, NamelistType::INT}},
+        {"mlmm_coupling", {std::string{"coulombic"}, NamelistType::INT_OR_STR}},
         {"use_mlip_atomic_charges", {false, NamelistType::BOOL}},
-        // Debug option, should always be True
-        {"use_mlip_atomic_charges_grad", {true, NamelistType::BOOL}},
+        // No longer supported, validation throws if it is False
+        {"use_charges_derivatives", {true, NamelistType::BOOL}},
         // No longer available, validation throws if it is True
         {"use_numerical_mlmm_forces", {false, NamelistType::BOOL}},
-        // Debug option, should always be True
-        {"use_interface_coupling", {true, NamelistType::BOOL}},
         // Debug option, should always be False
         {"allow_untested_protocols", {false, NamelistType::BOOL}},
         {"inv_pol_dielectric", {0.5, NamelistType::FLOAT}},
         {"write_ml_coords", {false, NamelistType::BOOL}},
         {"write_ml_forces", {false, NamelistType::BOOL}},
         {"write_ml_atomic_charges", {false, NamelistType::BOOL}},
-        {"write_ml_atomic_charges_grad", {false, NamelistType::BOOL}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -191,6 +215,15 @@ GlobalConfig::GlobalConfig(
     if (amber_qmmm_config) {
         m_amber_qmmm_int = amber_qmmm_config->getInt("qmmm_int");
     }
+#ifndef TORCHANI_BUILD_CUDA
+    if (m_mlip_config->getBool("use_cuda_device")) {
+        throw unsupported_device_error(
+            "A CUDA device was requested, but libtorchani was built\n"
+            "without CUDA support (TORCHANI_BUILD_CUDA=OFF).\n"
+            "Select CPU, or rebuild with TORCHANI_BUILD_CUDA=ON"
+        );
+    }
+#endif
     setDeviceAndPrecision(
         m_mlip_config->getBool("use_cuda_device"),
         static_cast<torch::DeviceIndex>(m_mlip_config->getInt("cuda_device_index")),
@@ -242,6 +275,9 @@ auto GlobalConfig::fromNamelistFile(
         for (const auto& [key, option] : mlmm_config->options()) {
             schema.emplace(key, option.type);
         }
+        // Deprecated no-ops, only checked below
+        schema.emplace("use_torch_coupling", NamelistType::BOOL);
+        schema.emplace("write_charges_grad", NamelistType::BOOL);
     }
 
     // List of pairs {<deprecated>, <canonical>}
@@ -250,11 +286,9 @@ auto GlobalConfig::fromNamelistFile(
         {"use_amber_neighborlist", "use_external_neighborlist"},
         {"use_all_amber_nonbond", "use_external_nonbond"},
         {"use_torchani_charges", "use_mlip_atomic_charges"},
-        {"use_torch_coupling", "use_interface_coupling"},
         {"write_xyz", "write_ml_coords"},
         {"write_forces", "write_ml_forces"},
         {"write_charges", "write_ml_atomic_charges"},
-        {"write_charges_grad", "write_ml_atomic_charges_grad"},
         {"use_numerical_qmmm_forces", "use_numerical_mlmm_forces"},
         {"use_switching_function", "use_hybrid_mlqm"},
         {"switching_program", "hybrid_mlqm_method"},
@@ -262,7 +296,6 @@ auto GlobalConfig::fromNamelistFile(
         {"qhigh", "hybrid_mlqm_switch_high"},
         {"use_extcoupling", "use_qm_coupling"},
         {"extcoupling_program", "qm_coupling_method"},
-        {"use_charges_derivatives", "use_mlip_atomic_charges_grad"},
     };
     std::vector<NamelistGroup> groups =
         fortran_utils::parseNamelists(text, group_name, schema, aliases);
@@ -271,6 +304,21 @@ auto GlobalConfig::fromNamelistFile(
     mlip_config = updatedConfig(mlip_config, group);
     if (mlmm_config) {
         mlmm_config = updatedConfig(*mlmm_config, group);
+        mlmm_config = mlmm_config->withValue(
+            "mlmm_coupling", normalizedMlmmCoupling(mlmm_config->value("mlmm_coupling"))
+        );
+        if (group.values.count("use_torch_coupling") > 0) {
+            printWarning(
+                "use_torch_coupling is deprecated and has no effect, the ML/MM coupling is"
+                " always calculated by the MLIP Interface"
+            );
+        }
+        if (group.values.count("write_charges_grad") > 0) {
+            printWarning(
+                "write_charges_grad is deprecated and has no effect, the gradients of the"
+                " charges are no longer written"
+            );
+        }
     }
     validateConfig(mlip_config, mlmm_config);
 
@@ -298,21 +346,37 @@ auto GlobalConfig::validateConfig(
     const ConfigDict& mlip_config,
     const std::optional<ConfigDict>& mlmm_config
 ) -> void {
+    if (mlip_config.getString("model_type").find("::") != std::string::npos) {
+        throw config_validation_error(
+            "model_type can't contain '::', use extra_features_file_path to specify the"
+            " extra features file"
+        );
+    }
     if (!mlmm_config) {
         return;
     }
     const ConfigDict& mlmm = *mlmm_config;
     const ConfigDict defaults = defaultMlmmConfig();
-    int mlmm_coupling = mlmm.getInt("mlmm_coupling");
+    const std::string& mlmm_coupling = mlmm.getString("mlmm_coupling");
     bool use_mlip_atomic_charges = mlmm.getBool("use_mlip_atomic_charges");
-    bool use_mlip_atomic_charges_grad = mlmm.getBool("use_mlip_atomic_charges_grad");
-    bool use_interface_coupling = mlmm.getBool("use_interface_coupling");
     bool use_hybrid_mlqm = mlmm.getBool("use_hybrid_mlqm");
     bool use_qm_coupling = mlmm.getBool("use_qm_coupling");
     const std::string& hybrid_mlqm_method = mlmm.getString("hybrid_mlqm_method");
     const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
     bool inv_pol_dielectric_is_default = isDefault(mlmm, defaults, "inv_pol_dielectric");
 
+    if (!isOneOf(mlmm_coupling, {"coulombic", "simple-polarizable", "custom", "none"})) {
+        throw config_validation_error(
+            "Valid mlmm_coupling values are 'coulombic', 'simple-polarizable', 'custom' and"
+            " 'none'"
+        );
+    }
+    if (!mlmm.getBool("use_charges_derivatives")) {
+        throw config_validation_error(
+            "use_charges_derivatives = F is no longer supported, the derivatives of the"
+            " charges are always taken into account"
+        );
+    }
     if (mlmm.getBool("use_numerical_mlmm_forces")) {
         throw config_validation_error(
             "use_numerical_mlmm_forces (formerly use_numerical_qmmm_forces) is no longer"
@@ -324,63 +388,51 @@ auto GlobalConfig::validateConfig(
             "use_external_neighborlist is not supported for ML/MM simulations"
         );
     }
-    if (mlip_config.getInt("ml_charge") != 0 && !use_interface_coupling) {
+    if (use_hybrid_mlqm && use_qm_coupling) {
         throw config_validation_error(
-            "A nonzero ml_charge is only supported with use_interface_coupling = T"
+            "use_hybrid_mlqm and use_qm_coupling can't be used together"
         );
     }
-    if (use_hybrid_mlqm && use_interface_coupling) {
+    if (use_hybrid_mlqm && mlmm_coupling == "custom") {
         throw config_validation_error(
-            "use_hybrid_mlqm is not supported with use_interface_coupling = T"
-        );
-    }
-    if (use_qm_coupling && use_interface_coupling) {
-        throw config_validation_error(
-            "use_qm_coupling is not supported with use_interface_coupling = T"
-        );
-    }
-    if (mlmm_coupling < 0 || mlmm_coupling > 2) {
-        throw config_validation_error(
-            "Valid mlmm_coupling values are 0 (coulombic), 1 (simple polarizable),"
-            " 2 (custom coupling)"
+            "use_hybrid_mlqm is not supported with mlmm_coupling = 'custom'"
         );
     }
     if (!mlmm.getBool("allow_untested_protocols")) {
-        if (mlmm_coupling == 0 && use_mlip_atomic_charges) {
+        if (mlmm_coupling == "coulombic" && use_mlip_atomic_charges) {
             throw config_validation_error(
-                "mlmm_coupling = 0 (coulombic) is untested with use_mlip_atomic_charges = T,"
+                "mlmm_coupling = 'coulombic' is untested with use_mlip_atomic_charges = T,"
                 " set allow_untested_protocols = T if you really mean to run this simulation"
             );
         }
-        if (mlmm_coupling == 1 && !use_mlip_atomic_charges) {
+        if (mlmm_coupling == "simple-polarizable" && !use_mlip_atomic_charges) {
             throw config_validation_error(
-                "mlmm_coupling = 1 (simple polarizable) is untested with fixed topology charges,"
-                " set allow_untested_protocols = T if you really mean to run this simulation"
+                "mlmm_coupling = 'simple-polarizable' is untested with fixed topology"
+                " charges, set allow_untested_protocols = T if you really mean to run this"
+                " simulation"
             );
         }
     }
-    if (!inv_pol_dielectric_is_default && mlmm_coupling != 1) {
+    if (!inv_pol_dielectric_is_default && mlmm_coupling != "simple-polarizable") {
         throw config_validation_error(
-            "inv_pol_dielectric only has an effect with mlmm_coupling = 1"
+            "inv_pol_dielectric only has an effect with mlmm_coupling = 'simple-polarizable'"
         );
     }
-    if (mlmm_coupling == 2) {
+    if (mlmm_coupling == "custom") {
         if (use_qm_coupling) {
             throw config_validation_error(
-                "mlmm_coupling = 2 (custom coupling) is incompatible with use_qm_coupling = T"
+                "mlmm_coupling = 'custom' is incompatible with use_qm_coupling = T"
             );
         }
         if (use_mlip_atomic_charges) {
             throw config_validation_error(
-                "mlmm_coupling = 2 (custom coupling) handles charges internally,"
+                "mlmm_coupling = 'custom' handles charges internally,"
                 " set use_mlip_atomic_charges = F"
             );
         }
-        if (mlmm.getBool("write_ml_atomic_charges")
-            || mlmm.getBool("write_ml_atomic_charges_grad")) {
+        if (mlmm.getBool("write_ml_atomic_charges")) {
             throw config_validation_error(
-                "mlmm_coupling = 2 (custom coupling) returns no charges,"
-                " set write_ml_atomic_charges = F and write_ml_atomic_charges_grad = F"
+                "mlmm_coupling = 'custom' returns no charges, set write_ml_atomic_charges = F"
             );
         }
     }
@@ -417,22 +469,22 @@ auto GlobalConfig::validateConfig(
             + std::to_string(mlmm.getDouble("inv_pol_dielectric")) + " was specified"
         );
     }
-    if (mlmm_coupling != 2 && !use_qm_coupling) {
-        if (use_mlip_atomic_charges && !use_mlip_atomic_charges_grad) {
+    if (use_qm_coupling && use_mlip_atomic_charges) {
+        printWarning(
+            "use_mlip_atomic_charges has no effect with use_qm_coupling = T, the QM/MM"
+            " coupling is calculated by the helper QM program"
+        );
+    }
+    if (!use_qm_coupling) {
+        if (mlmm_coupling == "coulombic" && use_mlip_atomic_charges) {
             printWarning(
-                "use_mlip_atomic_charges_grad = F disregards the derivatives of the charges"
-                " w.r.t. the coords, this is most likely an error"
-            );
-        }
-        if (mlmm_coupling == 0 && use_mlip_atomic_charges) {
-            printWarning(
-                "You are using an untested protocol: mlmm_coupling = 0 (coulombic) is only"
+                "You are using an untested protocol: mlmm_coupling = 'coulombic' is only"
                 " tested with fixed topology charges"
             );
         }
-        if (mlmm_coupling == 1 && !use_mlip_atomic_charges) {
+        if (mlmm_coupling == "simple-polarizable" && !use_mlip_atomic_charges) {
             printWarning(
-                "You are using an untested protocol: mlmm_coupling = 1 (simple polarizable)"
+                "You are using an untested protocol: mlmm_coupling = 'simple-polarizable'"
                 " is only tested with use_mlip_atomic_charges = T"
             );
         }
@@ -445,14 +497,8 @@ auto GlobalConfig::validateAmberQmmmNamelist(
     const ConfigDict& amber_qmmm_config
 ) -> void {
     int qmmm_int = amber_qmmm_config.getInt("qmmm_int");
-    int mlmm_coupling = mlmm_config.getInt("mlmm_coupling");
-    bool use_interface_coupling = mlmm_config.getBool("use_interface_coupling");
+    const std::string& mlmm_coupling = mlmm_config.getString("mlmm_coupling");
 
-    if (amber_qmmm_config.getInt("qmcharge") != 0 && !use_interface_coupling) {
-        throw config_validation_error(
-            "A nonzero qmcharge is only supported with use_interface_coupling = T"
-        );
-    }
     if (qmmm_int != 0 && qmmm_int != 1 && qmmm_int != 5) {
         throw config_validation_error(
             "ML/MM requires qmmm_int = 1 (0 and 5 are internal options for debugging only)"
@@ -464,16 +510,14 @@ auto GlobalConfig::validateAmberQmmmNamelist(
             " set allow_untested_protocols = T if you really mean to run this simulation"
         );
     }
-    if (qmmm_int == 0 && mlmm_coupling != 0) {
-        throw config_validation_error("mlmm_coupling is not supported with qmmm_int = 0");
+    if (qmmm_int == 0 && mlmm_coupling != "none") {
+        throw config_validation_error("qmmm_int = 0 requires mlmm_coupling = 'none'");
     }
-    if (qmmm_int == 5 && mlmm_coupling != 0) {
-        throw config_validation_error("mlmm_coupling is not supported with qmmm_int = 5");
+    if (qmmm_int == 5 && mlmm_coupling != "none") {
+        throw config_validation_error("qmmm_int = 5 requires mlmm_coupling = 'none'");
     }
-    if (qmmm_int == 5 && use_interface_coupling) {
-        throw config_validation_error(
-            "use_interface_coupling = T is not supported with qmmm_int = 5"
-        );
+    if (qmmm_int != 1 && mlmm_config.getBool("use_qm_coupling")) {
+        throw config_validation_error("use_qm_coupling requires qmmm_int = 1");
     }
 
     if (qmmm_int == 0) {
@@ -499,12 +543,33 @@ auto GlobalConfig::usesInternalOptions(const ConfigDict& mlmm_config) -> bool {
         || !isDefault(mlmm_config, defaults, "hybrid_mlqm_switch_low")
         || !isDefault(mlmm_config, defaults, "hybrid_mlqm_switch_high")
         || mlmm_config.getBool("use_qm_coupling")
-        || !isDefault(mlmm_config, defaults, "qm_coupling_method")
-        || !mlmm_config.getBool("use_mlip_atomic_charges_grad");
+        || !isDefault(mlmm_config, defaults, "qm_coupling_method");
+}
+
+auto GlobalConfig::getPolarizability(const std::string& element_symbol) const -> double {
+    std::string key = "pol_" + element_symbol;
+    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    if (!mlmm().hasOption(key)) {
+        throw std::out_of_range("Unknown element symbol " + element_symbol);
+    }
+    double polarizability = mlmm().getDouble(key);
+    if (std::isnan(polarizability)) {
+        throw std::runtime_error(
+            "The polarizability " + key
+            + " has no default, it must be specified in the namelist"
+        );
+    }
+    return polarizability;
+}
+
+auto GlobalConfig::getPolarizability(long atomic_num) const -> double {
+    if (atomic_num < 1 || atomic_num > static_cast<long>(constants::NUM_ELEMENTS)) {
+        throw std::out_of_range("Invalid atomic number " + std::to_string(atomic_num));
+    }
+    return getPolarizability(std::string(constants::ELEMENT_SYMBOLS[atomic_num - 1]));
 }
 
 auto GlobalConfig::printInfo() const -> void {
-    const ConfigDict& mlip = mlipConfig();
     std::ostringstream out;
     out << "ML/MM:------------------ML/MM config----------------\n";
     for (const char* key : {
@@ -515,7 +580,10 @@ auto GlobalConfig::printInfo() const -> void {
              "use_cuaev",
              "cuda_device_index",
          }) {
-        out << configLine(mlip, key);
+        out << configLine(mlip(), key);
+    }
+    if (!mlip().getString("extra_features_file_path").empty()) {
+        out << configLine(mlip(), "extra_features_file_path");
     }
     if (!m_mlmm_config) {
         out << "ML/MM:--------------end config-------------------\n";
@@ -523,29 +591,23 @@ auto GlobalConfig::printInfo() const -> void {
         return;
     }
     const ConfigDict& mlmm = *m_mlmm_config;
-    int mlmm_coupling = mlmm.getInt("mlmm_coupling");
+    const std::string& mlmm_coupling = mlmm.getString("mlmm_coupling");
     bool use_qm_coupling = mlmm.getBool("use_qm_coupling");
     const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
     for (const char* key : {
              "write_ml_coords",
              "write_ml_forces",
              "write_ml_atomic_charges",
-             "write_ml_atomic_charges_grad",
              "use_mlip_atomic_charges",
          }) {
         out << configLine(mlmm, key);
     }
     if (m_amber_qmmm_int == 1) {
-        const std::vector<std::string> coupling_names{
-            "(coulombic)", "(simple polarizable)", "(custom coupling)"
-        };
-        out << "ML/MM:  " << std::left << std::setw(29) << "mlmm_coupling" << mlmm_coupling
-            << " " << coupling_names.at(mlmm_coupling) << "\n";
+        out << configLine(mlmm, "mlmm_coupling");
     }
     if (usesInternalOptions(mlmm)) {
         out << "ML/MM:------WARNING! INTERNAL OPTIONS, DO NOT USE------\n";
         for (const char* key : {
-                 "use_mlip_atomic_charges_grad",
                  "hybrid_mlqm_method",
                  "use_hybrid_mlqm",
                  "hybrid_mlqm_switch_low",
@@ -575,6 +637,11 @@ auto GlobalConfig::printInfo() const -> void {
         std::cout << out.str() << std::flush;
         return;
     }
+    if (mlmm_coupling == "none" && !use_qm_coupling) {
+        out << "ML/MM: Will use no QM/MM interaction energy, only the in vacuo ML energy\n";
+        std::cout << out.str() << std::flush;
+        return;
+    }
     out << "ML/MM: QM/MM electrostatic coupling will be calculated by MLIP Interface\n";
     if (use_qm_coupling) {
         out << "ML/MM: This is an EXPERIMENTAL feature, don't use in production code!\n"
@@ -584,10 +651,10 @@ auto GlobalConfig::printInfo() const -> void {
         std::cout << out.str() << std::flush;
         return;
     }
-    if (mlmm_coupling == 0) {
+    if (mlmm_coupling == "coulombic") {
         out << "ML/MM: Will use a coulombic-only QM/MM interaction energy,"
             << " with no polarization corrections\n";
-    } else if (mlmm_coupling == 1) {
+    } else if (mlmm_coupling == "simple-polarizable") {
         out << "ML/MM: Will use the simple polarizable approximation for the QM/MM"
             << " interaction energy\n"
             << "     Thole-inspired correction terms will be added to the coulombic"
@@ -597,15 +664,15 @@ auto GlobalConfig::printInfo() const -> void {
             << "     If you use this setting please cite"
             << " 'https://doi.org/10.1021/acs.jcim.4c00478'\n";
     } else {
-        out << "ML/MM: Will use a fully custom ML/MM model (mlmm_coupling=2)\n"
+        out << "ML/MM: Will use a fully custom ML/MM model (mlmm_coupling = 'custom')\n"
             << "     The model receives ML species+coords and MM coords+charges\n"
             << "     and computes the coupling internally.\n"
             << "     Only models exposing custom_mlmm() support this kind of coupling.\n";
     }
-    if (mlmm_coupling != 2 && mlmm.getBool("use_mlip_atomic_charges")) {
+    if (mlmm_coupling != "custom" && mlmm.getBool("use_mlip_atomic_charges")) {
         out << "ML/MM: Will use position-dependent NN-predicted charges for the QM-region,"
             << " taking into account dq/dr\n";
-    } else if (mlmm_coupling != 2) {
+    } else if (mlmm_coupling != "custom") {
         out << "ML/MM: Will use fixed charges read from the topology file for the QM-region\n";
     }
     std::cout << out.str() << std::flush;

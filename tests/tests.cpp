@@ -5,11 +5,21 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
 
+#include <torch/all.h>
+
+#include "constants.h"
+#include "mlip.h"
+#include "tensor_utils.h"
+
+// c10 defines a CHECK macro, which must not replace the one from Catch2
+#undef CHECK
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators_all.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
@@ -38,7 +48,8 @@ static std::string writeMlipConfig(
     bool use_double_precision,
     bool use_cuda_device,
     bool use_cuaev,
-    int cuda_device_index = 0
+    int cuda_device_index = 0,
+    const std::string& extra_options = ""
 ) {
     std::filesystem::path path =
         std::filesystem::temp_directory_path() / "torchani_test_mlip_config.in";
@@ -50,8 +61,44 @@ static std::string writeMlipConfig(
          << "  use_cuda_device = " << (use_cuda_device ? "T" : "F") << ",\n"
          << "  use_cuaev = " << (use_cuaev ? "T" : "F") << ",\n"
          << "  cuda_device_index = " << cuda_device_index << ",\n"
+         << extra_options
          << "/\n";
     return path.string();
+}
+
+// Derivatives of the atomic charges wrt the coords, calculated with the internal model
+// on the CPU, flattened as dq[c + 3 * j + 3 * num_atoms * k] = d(charge k) / d(coord c
+// of atom j)
+static std::vector<double> calcAtomicChargeGrads(
+    const std::string& model_path,
+    int num_atoms,
+    int atomic_numbers[],
+    double coords[][3],
+    int net_charge,
+    bool use_double
+) {
+    torch::ScalarType dtype = use_double ? torch::kFloat64 : torch::kFloat32;
+    std::unique_ptr<mlip::MlipModel> model =
+        mlip::MlipModel::from_model_path(model_path, torch::kCPU, dtype);
+    torch::Tensor atomic_numbers_tensor =
+        torch::from_blob(atomic_numbers, {1, num_atoms}, torch::kInt32).to(torch::kLong);
+    torch::Tensor coords_tensor = torch::from_blob(coords, {1, num_atoms, 3}, torch::kFloat64)
+        .to(dtype)
+        .requires_grad_(true);
+    mlip::MlipOutput output = model->computeSinglePoint(
+        atomic_numbers_tensor,
+        coords_tensor,
+        /*cell=*/std::nullopt,
+        net_charge,
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        /*molecule_idxs=*/std::nullopt,
+        /*calc_forces=*/false,
+        /*calc_charges=*/true,
+        /*calc_charges_grad=*/true
+    );
+    torch::Tensor grads = output.at("atomic_charge_grads").to(torch::kFloat64).contiguous();
+    return std::vector<double>(grads.data_ptr<double>(), grads.data_ptr<double>() + grads.numel());
 }
 
 static std::string file_path = __FILE__;
@@ -180,20 +227,36 @@ TEST_CASE("C bindings") {
             for (int j = 0; j != 28; ++j) {
                 infile >> test_values[j];
             }
-            double* atomic_charge_derivatives;
-            atomic_charge_derivatives = (double*) malloc(2 * 2 * 3 * sizeof(double));
+            std::vector<double> atomic_charge_derivatives = calcAtomicChargeGrads(
+                std::string(TORCHANI_MLIPS_BUILD_DIR) + "/animbis.pt",
+                size,
+                atomic_numbers,
+                coords,
+                0,
+                use_double
+            );
             for (long j = 0; j != 10; ++j){
-                mlip_interface_calc_data_for_monitored_mlmm(
+                mlip_interface_calc_energy_force_mlmm_qbc(
                     size,
+                    /* mm_atoms_num= */ 0,
                     coords,
-                    0,
+                    /* mm_coords= */ nullptr,
+                    /* mm_atomic_charges= */ nullptr,
+                    /* cell= */ nullptr,
+                    /* use_pbc= */ false,
+                    /* molecule_idxs= */ nullptr,
+                    /* calc_only_bonded= */ false,
+                    /* predict_charges= */ true,
+                    /* mlmm_coupling= */ "coulombic",
+                    /* ml_charge= */ 0,
+                    /* verbose= */ false,
                     /* outputs */
                     forces,
+                    /* mm_forces= */ nullptr,
                     atomic_charges,
-                    atomic_charge_derivatives,
+                    &potential_energy,
                     &qbc,
-                    qbc_deriv,
-                    &potential_energy
+                    qbc_deriv
                 );
                 FLOAT_EQ(potential_energy, test_values[0], use_double);
                 FLOAT_EQ(forces[0][0], test_values[1], use_double);
@@ -224,59 +287,45 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(atomic_charge_derivatives[10], test_values[26], use_double);
                 FLOAT_EQ(atomic_charge_derivatives[11], test_values[27], use_double);
             }
-            free(atomic_charge_derivatives);
         }
     }
 }
 
-static const double ANGSTROM_TO_BOHR = 1.8897261328727875;
-static const double HARTREE_TO_KCALMOL = 627.5094738898777;
 static const double COUPLING_INV_POL_DIELECTRIC = 0.8;
 static const double COUPLING_ATOMIC_ALPHAS[] = {0.5, 1.2};
-static const double COUPLING_ENV_CHARGES[] = {0.5, -0.4};
+static const double COUPLING_MM_ATOMIC_CHARGES[] = {0.5, -0.4};
 
 struct CouplingOutput {
-    double forces_on_atoms[2][3];
-    double forces_on_env_charges[2][3];
-    double atomic_charges[2];
-    double ene_pot_invacuo;
-    double ene_pot_embed_pol;
-    double ene_pot_embed_dist;
-    double ene_pot_embed_coulomb;
+    double ml_forces[2][3];
+    double mm_forces[2][3];
+    double ml_atomic_charges[2];
     double ene_pot_total;
 };
 
-// Amber defaults for mlmm_coupling=1 (H and C polarizabilities in AU, converted to
-// Ang^3 as in the Amber patch)
-static const double AMBER_INV_POL_DIELECTRIC = 0.5;
-static const double AMBER_AU_TO_ANG3 = 0.1481847;
-static const double AMBER_ATOMIC_ALPHAS_AU[] = {3.08, 11.3};
-
 static CouplingOutput calc_coupling(
-    double coords[][3], double env_charge_coords[][3], bool use_charge_derivatives
+    double ml_coords[][3], double mm_coords[][3], bool verbose = false
 ) {
-    double atomic_alphas[2] = {COUPLING_ATOMIC_ALPHAS[0], COUPLING_ATOMIC_ALPHAS[1]};
-    double env_charges[2] = {COUPLING_ENV_CHARGES[0], COUPLING_ENV_CHARGES[1]};
+    double mm_atomic_charges[2] = {
+        COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
+    };
     CouplingOutput out{};
-    mlip_interface_calc_energy_force_with_coupling(
+    mlip_interface_calc_energy_force_mlmm(
         2,
         2,
-        COUPLING_INV_POL_DIELECTRIC,
-        coords,
-        atomic_alphas,
-        env_charge_coords,
-        env_charges,
+        ml_coords,
+        mm_coords,
+        mm_atomic_charges,
+        /* cell= */ nullptr,
+        /* use_pbc= */ false,
+        /* molecule_idxs= */ nullptr,
+        /* calc_only_bonded= */ false,
         /* predict_charges= */ true,
-        /* use_simple_polarization_correction= */ true,
-        use_charge_derivatives,
+        /* mlmm_coupling= */ "simple-polarizable",
         /* ml_charge= */ 0,
-        out.forces_on_atoms,
-        out.forces_on_env_charges,
-        out.atomic_charges,
-        &out.ene_pot_invacuo,
-        &out.ene_pot_embed_pol,
-        &out.ene_pot_embed_dist,
-        &out.ene_pot_embed_coulomb,
+        verbose,
+        out.ml_forces,
+        out.mm_forces,
+        out.ml_atomic_charges,
         &out.ene_pot_total
     );
     return out;
@@ -332,13 +381,25 @@ TEST_CASE("C bindings for other entry points") {
     INFO("Testing model on device: " << "device" << device_suffix);
     INFO("cuAEV: " << (use_cuaev == 1));
 
+    // Polarizabilities of H and C in the config are in AU. A non-default
+    // inv_pol_dielectric requires mlmm_coupling = 'simple-polarizable', which requires ML
+    // atomic charges
+    std::ostringstream mlmm_options;
+    mlmm_options << std::setprecision(17)
+                 << "  pol_H = "
+                 << COUPLING_ATOMIC_ALPHAS[0] / constants::POLARIZABILITY_AU_TO_ANG3 << ",\n"
+                 << "  pol_C = "
+                 << COUPLING_ATOMIC_ALPHAS[1] / constants::POLARIZABILITY_AU_TO_ANG3 << ",\n"
+                 << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC << ",\n"
+                 << "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n";
     mlip_interface_initialize(
         size,
         atomic_numbers,
         writeMlipConfig(
-            model_type, network_index, use_double, use_cuda_device, use_cuaev
+            model_type, network_index, use_double, use_cuda_device, use_cuaev, 0,
+            mlmm_options.str()
         ).c_str(),
-        false,
+        true,
         false,
         false
     );
@@ -383,8 +444,27 @@ TEST_CASE("C bindings for other entry points") {
         if (model_is_ensemble) {
             double qbc;
             double qbc_deriv[size][3];
-            mlip_interface_calc_energy_force_qbc(
-                size, coords, 0, forces, &qbc, qbc_deriv, &potential_energy
+            double atomic_charges[size] = {0.0, 0.0};
+            mlip_interface_calc_energy_force_mlmm_qbc(
+                size,
+                /* mm_atoms_num= */ 0,
+                coords,
+                /* mm_coords= */ nullptr,
+                /* mm_atomic_charges= */ nullptr,
+                /* cell= */ nullptr,
+                /* use_pbc= */ false,
+                /* molecule_idxs= */ nullptr,
+                /* calc_only_bonded= */ false,
+                /* predict_charges= */ false,
+                /* mlmm_coupling= */ "coulombic",
+                /* ml_charge= */ 0,
+                /* verbose= */ false,
+                forces,
+                /* mm_forces= */ nullptr,
+                atomic_charges,
+                &potential_energy,
+                &qbc,
+                qbc_deriv
             );
             FLOAT_EQ(potential_energy, test_values[0], use_double);
             for (int j = 0; j != size; ++j) {
@@ -407,8 +487,10 @@ TEST_CASE("C bindings for other entry points") {
     SECTION("Energy + Force + Atomic charges") {
         if (model_has_charges) {
             double atomic_charges[size];
-            mlip_interface_energy_force_atomic_charges(
-                size, coords, forces, atomic_charges, &potential_energy
+            double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
+            mlip_interface_calc_energy_force_atomic_charges(
+                size, coords, cell, false, molecule_idxs_buf, false, 0,
+                forces, atomic_charges, &potential_energy
             );
             FLOAT_EQ(potential_energy, test_values[0], use_double);
             for (int j = 0; j != size; ++j) {
@@ -422,12 +504,11 @@ TEST_CASE("C bindings for other entry points") {
 
     SECTION("Energy + Force with coupling") {
         if (model_has_charges) {
-            double env_charge_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            CouplingOutput out = calc_coupling(coords, env_charge_coords, true);
-            FLOAT_EQ(out.ene_pot_invacuo, test_values[0], use_double);
+            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+            CouplingOutput out = calc_coupling(coords, mm_coords);
             for (int j = 0; j != size; ++j) {
                 FLOAT_EQ(
-                    out.atomic_charges[j], test_values[charges_offset + j], use_double
+                    out.ml_atomic_charges[j], test_values[charges_offset + j], use_double
                 );
             }
 
@@ -439,49 +520,40 @@ TEST_CASE("C bindings for other entry points") {
                     double delta[3];
                     double dist_sq = 0.0;
                     for (int c = 0; c != 3; ++c) {
-                        delta[c] = env_charge_coords[k][c] - coords[j][c];
+                        delta[c] = mm_coords[k][c] - coords[j][c];
                         dist_sq += delta[c] * delta[c];
                     }
                     double dist = std::sqrt(dist_sq);
-                    expect_coulomb += COUPLING_ENV_CHARGES[k] * out.atomic_charges[j]
-                        / (dist * ANGSTROM_TO_BOHR);
+                    expect_coulomb += COUPLING_MM_ATOMIC_CHARGES[k] * out.ml_atomic_charges[j]
+                        / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
                     for (int c = 0; c != 3; ++c) {
-                        efield[c] += COUPLING_ENV_CHARGES[k] * delta[c]
-                            / (dist_sq * dist * ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR);
+                        efield[c] += COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
+                            / (dist_sq * dist
+                               * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
                     }
                 }
                 double efield_sq =
                     efield[0] * efield[0] + efield[1] * efield[1] + efield[2] * efield[2];
                 expect_pol -= COUPLING_INV_POL_DIELECTRIC * COUPLING_ATOMIC_ALPHAS[j]
-                    * std::pow(ANGSTROM_TO_BOHR, 3) * efield_sq;
+                    * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 3) * efield_sq;
             }
-            FLOAT_EQ(
-                out.ene_pot_embed_coulomb,
-                expect_coulomb * HARTREE_TO_KCALMOL,
-                use_double
-            );
-            FLOAT_EQ(out.ene_pot_embed_pol, expect_pol * HARTREE_TO_KCALMOL, use_double);
-            FLOAT_EQ(out.ene_pot_embed_dist, -0.5 * out.ene_pot_embed_pol, use_double);
+            // The in vacuo energy is the reference energy of the model
+            double expect_embed = expect_coulomb + expect_pol - 0.5 * expect_pol;
             FLOAT_EQ(
                 out.ene_pot_total,
-                out.ene_pot_invacuo + out.ene_pot_embed_pol + out.ene_pot_embed_dist
-                    + out.ene_pot_embed_coulomb,
+                test_values[0] + expect_embed * constants::HARTREE_TO_KCALMOL,
                 use_double
             );
 
-            // Charges depend only on the ML coords, so forces on the env charges
-            // don't depend on use_charge_derivatives
-            CouplingOutput out_no_deriv = calc_coupling(coords, env_charge_coords, false);
-            FLOAT_EQ(out_no_deriv.ene_pot_total, out.ene_pot_total, use_double);
-            for (int k = 0; k != 2; ++k) {
-                for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(
-                        out_no_deriv.forces_on_env_charges[k][c],
-                        out.forces_on_env_charges[k][c],
-                        use_double
-                    );
-                }
-            }
+            std::stringstream captured;
+            std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
+            calc_coupling(coords, mm_coords, true);
+            std::cout.rdbuf(cout_buf);
+            CHECK(captured.str().find("ML/MM: IN VACUO ENERGY") != std::string::npos);
+            CHECK(
+                captured.str().find("ML/MM: ML-MM COUPLING ENERGY (TOTAL)")
+                != std::string::npos
+            );
 
             // With charge derivatives, forces are minus the gradient of the total
             // energy (checked by central finite differences)
@@ -493,22 +565,22 @@ TEST_CASE("C bindings for other entry points") {
                         std::memcpy(displaced, coords, sizeof(displaced));
                         displaced[j][c] += step;
                         double ene_plus =
-                            calc_coupling(displaced, env_charge_coords, true).ene_pot_total;
+                            calc_coupling(displaced, mm_coords).ene_pot_total;
                         displaced[j][c] -= 2 * step;
                         double ene_minus =
-                            calc_coupling(displaced, env_charge_coords, true).ene_pot_total;
+                            calc_coupling(displaced, mm_coords).ene_pot_total;
                         CHECK_THAT(
-                            out.forces_on_atoms[j][c],
+                            out.ml_forces[j][c],
                             WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
                         );
 
-                        std::memcpy(displaced, env_charge_coords, sizeof(displaced));
+                        std::memcpy(displaced, mm_coords, sizeof(displaced));
                         displaced[j][c] += step;
-                        ene_plus = calc_coupling(coords, displaced, true).ene_pot_total;
+                        ene_plus = calc_coupling(coords, displaced).ene_pot_total;
                         displaced[j][c] -= 2 * step;
-                        ene_minus = calc_coupling(coords, displaced, true).ene_pot_total;
+                        ene_minus = calc_coupling(coords, displaced).ene_pot_total;
                         CHECK_THAT(
-                            out.forces_on_env_charges[j][c],
+                            out.mm_forces[j][c],
                             WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
                         );
                     }
@@ -517,36 +589,82 @@ TEST_CASE("C bindings for other entry points") {
         }
     }
 
+    SECTION("Energy + Force with no coupling") {
+        double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+        double mm_atomic_charges[2] = {
+            COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
+        };
+        double ml_forces[size][3];
+        double mm_forces[2][3];
+        double ml_atomic_charges[size] = {0.0, 0.0};
+        double ene_pot_total;
+        // Case-insensitive
+        mlip_interface_calc_energy_force_mlmm(
+            size,
+            2,
+            coords,
+            mm_coords,
+            mm_atomic_charges,
+            /* cell= */ nullptr,
+            /* use_pbc= */ false,
+            /* molecule_idxs= */ nullptr,
+            /* calc_only_bonded= */ false,
+            /* predict_charges= */ false,
+            /* mlmm_coupling= */ "None",
+            /* ml_charge= */ 0,
+            /* verbose= */ false,
+            ml_forces,
+            mm_forces,
+            ml_atomic_charges,
+            &ene_pot_total
+        );
+        FLOAT_EQ(ene_pot_total, test_values[0], use_double);
+        for (int j = 0; j != size; ++j) {
+            for (int c = 0; c != 3; ++c) {
+                FLOAT_EQ(ml_forces[j][c], test_values[1 + 3 * j + c], use_double);
+                CHECK(mm_forces[j][c] == 0.0);
+            }
+        }
+    }
+
     SECTION("Energy + Force with custom ML/MM model") {
         if (model_has_charges) {
-            double env_charge_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            double env_charges[2] = {COUPLING_ENV_CHARGES[0], COUPLING_ENV_CHARGES[1]};
-            double atomic_alphas[2] = {
-                AMBER_ATOMIC_ALPHAS_AU[0] * AMBER_AU_TO_ANG3,
-                AMBER_ATOMIC_ALPHAS_AU[1] * AMBER_AU_TO_ANG3,
+            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+            double mm_atomic_charges[2] = {
+                COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
             };
             double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
-            // Reference: animbis, mlmm_coupling=1, use_torchani_charges=.true.
+            // Reference: animbis, mlmm_coupling='simple-polarizable',
+            // use_torchani_charges=.true., with the
+            // default (Amber) polarizabilities
+            mlip_interface_initialize(
+                size,
+                atomic_numbers,
+                writeMlipConfig(
+                    model_type, network_index, use_double, use_cuda_device, use_cuaev
+                ).c_str(),
+                true,
+                false,
+                false
+            );
             CouplingOutput expect{};
-            mlip_interface_calc_energy_force_with_coupling(
+            mlip_interface_calc_energy_force_mlmm(
                 size,
                 2,
-                AMBER_INV_POL_DIELECTRIC,
                 coords,
-                atomic_alphas,
-                env_charge_coords,
-                env_charges,
+                mm_coords,
+                mm_atomic_charges,
+                /* cell= */ nullptr,
+                /* use_pbc= */ false,
+                /* molecule_idxs= */ nullptr,
+                /* calc_only_bonded= */ false,
                 /* predict_charges= */ true,
-                /* use_simple_polarization_correction= */ true,
-                /* use_charge_derivatives= */ true,
+                /* mlmm_coupling= */ "simple-polarizable",
                 /* ml_charge= */ 0,
-                expect.forces_on_atoms,
-                expect.forces_on_env_charges,
-                expect.atomic_charges,
-                &expect.ene_pot_invacuo,
-                &expect.ene_pot_embed_pol,
-                &expect.ene_pot_embed_dist,
-                &expect.ene_pot_embed_coulomb,
+                /* verbose= */ false,
+                expect.ml_forces,
+                expect.mm_forces,
+                expect.ml_atomic_charges,
                 &expect.ene_pot_total
             );
 
@@ -562,31 +680,36 @@ TEST_CASE("C bindings for other entry points") {
             );
             bool calc_only_bonded = GENERATE(false, true);
             INFO("calc_only_bonded: " << calc_only_bonded);
-            double forces_on_atoms[size][3];
-            double forces_on_env_charges[2][3];
+            double ml_forces[size][3];
+            double mm_forces[2][3];
             double ene_pot_total;
-            mlip_interface_calc_energy_force_custom_mlmm(
+            double ml_atomic_charges[size] = {0.0, 0.0};
+            mlip_interface_calc_energy_force_mlmm(
                 size,
                 2,
                 coords,
-                env_charge_coords,
-                env_charges,
+                mm_coords,
+                mm_atomic_charges,
                 cell,
                 /* use_pbc= */ false,
                 molecule_idxs_buf,
                 calc_only_bonded,
+                /* predict_charges= */ false,
+                /* mlmm_coupling= */ "custom",
                 /* ml_charge= */ 0,
-                forces_on_atoms,
-                forces_on_env_charges,
+                /* verbose= */ false,
+                ml_forces,
+                mm_forces,
+                ml_atomic_charges,
                 &ene_pot_total
             );
             FLOAT_EQ(ene_pot_total, expect.ene_pot_total, use_double);
             for (int j = 0; j != size; ++j) {
                 for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(forces_on_atoms[j][c], expect.forces_on_atoms[j][c], use_double);
+                    FLOAT_EQ(ml_forces[j][c], expect.ml_forces[j][c], use_double);
                     FLOAT_EQ(
-                        forces_on_env_charges[j][c],
-                        expect.forces_on_env_charges[j][c],
+                        mm_forces[j][c],
+                        expect.mm_forces[j][c],
                         use_double
                     );
                 }
@@ -631,10 +754,13 @@ TEST_CASE("Charges for md engine electrostatics") {
         );
         double charges[size], energy;
         double ref_forces[size][3], ref_charges[size], ref_energy;
-        double* dq = (double*) malloc(size * size * 3 * sizeof(double));
-        mlip_interface_energy_force_atomic_charges_with_derivatives(
-            size, coords, ref_forces, ref_charges, dq, &ref_energy
+        int molecule_idxs[size] = {0, 0, 0};
+        mlip_interface_calc_energy_force_atomic_charges(
+            size, coords, dummy_cell, false, molecule_idxs, false, 0,
+            ref_forces, ref_charges, &ref_energy
         );
+        std::vector<double> dq =
+            calcAtomicChargeGrads(model_path, size, atomic_numbers, coords, 0, use_double);
         // Zero potential: the in-vacuo forces
         double vjp_forces[size][3];
         mlip_interface_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
@@ -666,7 +792,30 @@ TEST_CASE("Charges for md engine electrostatics") {
                 );
             }
         }
-        free(dq);
+    }
+
+    SECTION("Polarizabilities in use are printed") {
+        const int size = 3;
+        int atomic_numbers[size] = {8, 1, 1};
+        std::stringstream captured;
+        std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
+        mlip_interface_initialize(
+            size,
+            atomic_numbers,
+            writeMlipConfig(
+                "aimnet2-wb97m-nocut", -1, use_double, false, false, 0,
+                "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+                "  pol_O = 6.0,\n"
+            ).c_str(),
+            true,
+            false,
+            true
+        );
+        std::cout.rdbuf(cout_buf);
+        std::string info = captured.str();
+        CHECK(info.find("atomic polarizabilities (alpha) are in use") != std::string::npos);
+        CHECK(info.find(" H, 3.0800") != std::string::npos);
+        CHECK(info.find(" O, 6.0000") != std::string::npos);
     }
 
     SECTION("Ammonium: net charge") {
@@ -709,4 +858,43 @@ TEST_CASE("Charges for md engine electrostatics") {
             }
         }
     }
+}
+
+TEST_CASE("Tensor container", "[tensors]") {
+    tensor_utils::TensorContainer container;
+    CHECK_FALSE(container.contains("x"));
+    CHECK_THROWS_AS(container.get("x"), std::out_of_range);
+    container.store("x", torch::ones({2, 3}));
+    REQUIRE(container.contains("x"));
+    CHECK(container.get("x").sizes() == torch::IntArrayRef({2, 3}));
+    container.store("x", torch::zeros({4}));
+    CHECK(container.get("x").sizes() == torch::IntArrayRef({4}));
+    CHECK(container.get("x").sum().item<double>() == 0.0);
+    container.store("y", torch::ones({1}));
+    container.clear("x");
+    CHECK_FALSE(container.contains("x"));
+    CHECK(container.contains("y"));
+    CHECK_NOTHROW(container.clear("x"));
+    container.clear();
+    CHECK_FALSE(container.contains("y"));
+}
+
+TEST_CASE("Store tensors through the C API", "[tensors]") {
+    int atomic_numbers[2] = {1, 6};
+    mlip_interface_initialize(
+        2,
+        atomic_numbers,
+        writeMlipConfig("ani1x", 0, true, false, false).c_str(),
+        false,
+        false,
+        false
+    );
+    double float_values[2][3] = {{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}};
+    int int_values[3] = {7, 8, 9};
+    int float_dims[2] = {2, 3};
+    int int_dims[1] = {3};
+    CHECK_NOTHROW(mlip_interface_store_float_tensor("f", &float_values[0][0], float_dims, 2));
+    CHECK_NOTHROW(mlip_interface_store_int_tensor("i", int_values, int_dims, 1));
+    // Storing again with the same name replaces the tensor
+    CHECK_NOTHROW(mlip_interface_store_int_tensor("i", int_values, int_dims, 1));
 }

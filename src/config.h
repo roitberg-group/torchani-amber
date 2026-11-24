@@ -80,6 +80,12 @@ class config_validation_error : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+// A device that libtorchani was not built to support
+class unsupported_device_error : public std::runtime_error {
+    public:
+    using std::runtime_error::runtime_error;
+};
+
 /**
  * Holds global TorchANI-Interface device and precision
  * */
@@ -151,23 +157,28 @@ class GlobalConfig {
         m_mlip_interface_is_init = mlip_interface_is_init;
     }
 
-    auto mlipConfig() const -> const ConfigDict& {
+    auto mlip() const -> const ConfigDict& {
         if (not m_mlip_config) {
             throw std::logic_error(
-                "GlobalConfig::mlipConfig was called before the config was read"
+                "GlobalConfig::mlip was called before the config was read"
             );
         }
         return *m_mlip_config;
     }
 
-    auto mlmmConfig() const -> const ConfigDict& {
+    auto mlmm() const -> const ConfigDict& {
         if (not m_mlmm_config) {
             throw std::logic_error(
-                "GlobalConfig::mlmmConfig was called but the ML/MM config was not read"
+                "GlobalConfig::mlmm was called but the ML/MM config was not read"
             );
         }
         return *m_mlmm_config;
     }
+
+    // Polarizability (AU) of an element, from the ML/MM config. Throws if the ML/MM
+    // config was not read, or if the element has no polarizability
+    auto getPolarizability(const std::string& element_symbol) const -> double;
+    auto getPolarizability(long atomic_num) const -> double;
 
     // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
     // was read

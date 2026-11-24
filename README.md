@@ -299,13 +299,17 @@ ML/MM and electrostatic related options:
    the `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. These
    charges are geometry-dependent, and the derivatives w.r.t. coordinates are used to
    calculate their contribution to the forces.
-- `mlmm_coupling` (int = `0` or `1`)
-   Currently available are: `0` (*coulombic coupling*) and `1` (*simple polarizable*
-   coupling).
+- `mlmm_coupling` (str, case-insensitive)
+   Currently available are: `'coulombic'` (*coulombic coupling*, the default),
+   `'simple-polarizable'` (*simple polarizable* coupling), `'custom'` (custom ML/MM model,
+   see below) and `'none'` (no ML/MM coupling, required with `qmmm_int = 0` or `5`). The
+   integers `0`, `1`, `2` and `3` are deprecated aliases of these values, in that order.
 
 We recommend using one of the following two settings:
-- *mlmm_coupling = 1* and *use_torchani_charges=.true.* (variable nn-predicted charges)
-- *mlmm_coupling = 0* and *use_torchani_charges=.false.* (fixed topology charges)
+- *mlmm_coupling = 'simple-polarizable'* and *use_torchani_charges=.true.* (variable
+  nn-predicted charges)
+- *mlmm_coupling = 'coulombic'* and *use_torchani_charges=.false.* (fixed topology
+  charges)
 
 A template for the first setting (simple polarizable with variable charges) is:
 
@@ -324,7 +328,7 @@ A template for the first setting (simple polarizable with variable charges) is:
 &ani
     model_type = 'animbis'  ! Charge-predicting model, 'animbis' or 'aimnet2-*-mbis-*'
     use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
-    mlmm_coupling = 1  ! Simple polarizable coupling
+    mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
     use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
@@ -347,7 +351,7 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 &ani
     model_type = 'ani2x'  ! Select any model
     use_torchani_charges = .false.  ! Use fixed topology charges
-    mlmm_coupling = 0  ! Coulombic coupling
+    mlmm_coupling = 'coulombic'  ! Coulombic coupling
     use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
@@ -485,7 +489,7 @@ examples see the [EMLE-engine repository](https://github.com/chemle/emle-engine)
 and the corresponding [EMLE-engine article](https://pubs.acs.org/jctcce/article/20/11/4514/169286/emle-engine-A-Flexible-Electrostatic-Machine).
 
 Custom ML/MM models, which calculate both the in-vacuo energy and the ML/MM coupling
-internally, are supported by setting `mlmm_coupling = 2`. Forces on the ML and MM
+internally, are supported by setting `mlmm_coupling = 'custom'`. Forces on the ML and MM
 regions are calculated by autograd from the returned energy. The model must support the
 following method:
 

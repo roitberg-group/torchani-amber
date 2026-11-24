@@ -66,7 +66,7 @@
     {% if mlmm.protocol == "me" %}
     use_torchani_charges = .False.
         {% if not legacy %}
-    mlmm_coupling = 0  ! Coulombic coupling
+    mlmm_coupling = 'coulombic'  ! Coulombic coupling
         {% else %}
     use_charges_derivatives = .False.
     polarize_qm_charges = .False.
@@ -75,7 +75,7 @@
     {% else %}
     use_torchani_charges = .True.
         {% if not legacy %}
-    mlmm_coupling = 1  ! Simple polarizable coupling
+    mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
         {% else %}
     use_charges_derivatives = .True.
     polarize_qm_charges = .True.

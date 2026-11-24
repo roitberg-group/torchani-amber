@@ -29,7 +29,7 @@
     use_double_precision = .False.
     use_torch_coupling = .True.
     use_torchani_charges = .True.
-    mlmm_coupling = 1  ! Simple polarizable coupling (with MBIS charges)
+    mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling (with MBIS charges)
     model_index = -1
     use_amber_neighborlist = .False.
 /

@@ -472,7 +472,12 @@ if(NOT INSIDE_AMBER)
                 "${CMAKE_CURRENT_LIST_DIR}/src"
         )
         target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani ${TORCH_LIBRARIES})
-        target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
+        target_compile_definitions(
+            torchani_tests
+            PRIVATE
+                TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}"
+                $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+        )
         catch_discover_tests(torchani_tests)
 
         # Used by tests/test_namelists.py to compare the namelist parser with f90nml

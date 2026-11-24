@@ -254,7 +254,8 @@ auto computeOutput(
             {output.at("qbc").sum()},
             {coords},
             /* grad_outputs= */ {},
-            /* retain_graph= */ calc_charges_grad
+            // Without calc_forces, the caller may differentiate the energy afterwards
+            /* retain_graph= */ calc_charges_grad or not calc_forces
         )[0];
     }
     if (calc_charges_grad) {

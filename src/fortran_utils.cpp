@@ -128,6 +128,8 @@ std::string typeName(NamelistType type) {
             return "STR";
         case NamelistType::BOOL:
             return "BOOL";
+        case NamelistType::INT_OR_STR:
+            return "INT_OR_STR";
         case NamelistType::VEC_FLOAT:
             return "VEC_FLOAT";
         case NamelistType::VEC_INT:
@@ -275,10 +277,12 @@ NamelistValue convertUnquotedWithType(
     const std::string& key,
     NamelistType type
 ) {
-    bool token_is_number = (type == NamelistType::INT && isInt(token))
-        || (type == NamelistType::FLOAT && isReal(token));
-    if (token_is_number) {
-        return convertNumber(text, token_start, token, key, type);
+    bool type_is_int = type == NamelistType::INT || type == NamelistType::INT_OR_STR;
+    if (type_is_int && isInt(token)) {
+        return convertNumber(text, token_start, token, key, NamelistType::INT);
+    }
+    if (type == NamelistType::FLOAT && isReal(token)) {
+        return convertNumber(text, token_start, token, key, NamelistType::FLOAT);
     }
     if (type == NamelistType::BOOL && isTrue(token)) {
         return true;
@@ -286,7 +290,8 @@ NamelistValue convertUnquotedWithType(
     if (type == NamelistType::BOOL && isFalse(token)) {
         return false;
     }
-    if (type == NamelistType::STR) {
+    bool token_is_value = isReal(token) || isTrue(token) || isFalse(token);
+    if (type == NamelistType::STR || (type == NamelistType::INT_OR_STR && !token_is_value)) {
         throwUnquotedStringError(text, token_start, token, key);
     }
     throwParseError<namelist_type_error>(
@@ -348,9 +353,10 @@ std::vector<NamelistValue> parseValues(
         }
         bool is_quoted = token.empty() && pos < text.size()
             && (text[pos] == '\'' || text[pos] == '"');
-        bool type_is_str = element_type == NamelistType::STR;
+        bool type_accepts_str = element_type == NamelistType::STR
+            || element_type == NamelistType::INT_OR_STR;
         NamelistValue value;
-        if (is_quoted && element_type && !type_is_str) {
+        if (is_quoted && element_type && !type_accepts_str) {
             throwParseError<namelist_type_error>(
                 text,
                 pos,

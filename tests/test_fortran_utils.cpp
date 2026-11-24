@@ -303,6 +303,16 @@ TEST_CASE("Namelist schema vectors", "[namelist]") {
     CHECK_THROWS_AS(parseNamelists("&g v3b=t,f,'t' /", "", schema), namelist_type_error);
 }
 
+TEST_CASE("Namelist schema int or str", "[namelist]") {
+    NamelistSchema schema{{"k", NamelistType::INT_OR_STR}};
+    CHECK(parseSingleGroup("&g k = 2 /", schema).at("k") == Values{2L});
+    CHECK(parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}});
+    CHECK_THROWS_AS(parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error);
+    CHECK_THROWS_AS(parseNamelists("&g k = 1.5 /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(parseNamelists("&g k = t /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(parseNamelists("&g k = 1, 2 /", "", schema), namelist_type_error);
+}
+
 TEST_CASE("Namelist aliases", "[namelist]") {
     NamelistAliases aliases{{"old", "new"}, {"Old2", "NEW"}};
     std::vector<NamelistGroup> groups = parseNamelists("&g old=1 x=2 /", "", {}, aliases);

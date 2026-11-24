@@ -12,13 +12,15 @@ namespace fortran_utils {
 // std::monostate represents a Fortran 'null' value (e.g. the second value in "a = 1,,3")
 using NamelistValue = std::variant<std::monostate, bool, long, double, std::string>;
 
-// FLOAT -> double, INT -> long, STR -> std::string, BOOL -> bool. Scalars take one
-// value, VEC_* any number of values, and VEC3_* exactly 3
+// FLOAT -> double, INT -> long, STR -> std::string, BOOL -> bool, INT_OR_STR -> long
+// or std::string. Scalars take one value, VEC_* any number of values, and VEC3_*
+// exactly 3
 enum class NamelistType {
     FLOAT,
     INT,
     STR,
     BOOL,
+    INT_OR_STR,
     VEC_FLOAT,
     VEC_INT,
     VEC_STR,
@@ -119,10 +121,11 @@ struct NamelistGroup {
  *
  * If schema is not empty, types are taken from it instead of inferred, and keys not
  * in it are rejected, or ignored if ignore_unknown_keys. Ignored keys must still be
- * valid namelist syntax, since their values are parsed to find where they end. FLOAT accepts integers and reals, INT only integers, BOOL only
- * logicals, and STR only quoted strings, and the same for the elements of VEC_* and
- * VEC3_*. Each assignment of a key must give one value for scalars and 3 for VEC3_*
- * (null values count, e.g. "a = 1,,3").
+ * valid namelist syntax, since their values are parsed to find where they end. FLOAT
+ * accepts integers and reals, INT only integers, BOOL only logicals, STR only quoted
+ * strings, and INT_OR_STR integers or quoted strings, and the same for the elements of
+ * VEC_* and VEC3_*. Each assignment of a key must give one value for scalars and 3 for
+ * VEC3_* (null values count, e.g. "a = 1,,3").
  *
  * Keys found in aliases are deprecated. They are renamed to the key they map to, with
  * a warning printed to stderr, before the schema is checked, so the schema must use the

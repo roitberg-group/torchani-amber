@@ -27,7 +27,7 @@
     ! Only nocut versions of aimnet2 are supported for ML/MM
     model_type = "aimnet2-wb97m-mbis-nocut"
     use_double_precision = .False.
-    mlmm_coupling = 0  ! Mechanical Embedding
+    mlmm_coupling = 'coulombic'  ! Mechanical Embedding
     model_index = -1
     use_amber_neighborlist = .False.
 /
