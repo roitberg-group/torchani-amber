@@ -152,6 +152,12 @@ class GlobalConfig {
         m_use_no_eval_atoms = use_no_eval_atoms;
     }
 
+    auto setMlChargeAndSpinMult(int ml_charge, int ml_spin_mult) -> void {
+        m_mlip_config = mlip()
+                            .withValue("ml_charge", static_cast<long>(ml_charge))
+                            .withValue("ml_spin_mult", static_cast<long>(ml_spin_mult));
+    }
+
     auto mlipInterfaceIsInit() const -> bool {
         return m_mlip_interface_is_init;
     }

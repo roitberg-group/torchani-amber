@@ -12,7 +12,7 @@ public :: &
     {{ generic_name }}, &
 {% endfor %}
     convert_sander_neighborlist_to_ani_fmt, &
-    ifmlip_dump_walltime, &
+    mlip_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
 {% for fn in functions if fn.fortran_generic %}
 {% if loop.first %}

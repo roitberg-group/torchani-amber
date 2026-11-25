@@ -39,7 +39,7 @@ namespace {
 config::GlobalConfig global_config{};
 std::unique_ptr<mlip::MlipModel> model;
 // Tensors stored through the C API, and the graph kept between
-// Cleared by ifmlip_initialize.
+// Cleared by mlip_initialize.
 // Names starting with "__" are reserved for internal use
 tensor_utils::TensorContainer tensor_container;
 
@@ -160,7 +160,7 @@ void exitIfNotInitialized(
 ) {
     if (not config.mlipInterfaceIsInit()) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << loc.function_name() << " was called before ifmlip_initialize" << std::endl;
+                  << loc.function_name() << " was called before mlip_initialize" << std::endl;
         std::exit(2);
     }
 }
@@ -567,6 +567,22 @@ void calcEnergyForceMlmm(
     }
 }
 
+// Between mlip_energy_atomic_charges_retain and mlip_energy_atomic_charges_vjp
+void exitIfChargesGraphIsRetained(
+    std::source_location loc = std::source_location::current()
+) {
+    bool charges_graph_is_retained = tensor_container.contains("__retain_coords")
+        or tensor_container.contains("__retain_energy")
+        or tensor_container.contains("__retain_atomic_charges");
+    if (charges_graph_is_retained) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " can't be called between"
+                  << " mlip_energy_atomic_charges_retain and"
+                  << " mlip_energy_atomic_charges_vjp" << std::endl;
+        std::exit(2);
+    }
+}
+
 // Names starting with "__" are reserved for tensors stored internally
 void exitIfNameIsReserved(const char* name) {
     if (std::string_view{name}.starts_with("__")) {
@@ -596,7 +612,7 @@ std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
 }  // namespace
 
 extern "C" {
-void ifmlip_initialize(
+void mlip_initialize(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
     const char* config_path,
@@ -648,7 +664,7 @@ void ifmlip_initialize(
     // Also, torchani needs an extra dimension as batch dimension
     atomic_numbers = atomic_numbers.unsqueeze(0);
     LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << atomic_numbers;
-    // All atoms are evaluated until ifmlip_set_no_eval_atoms_mask is called
+    // All atoms are evaluated until mlip_set_no_eval_atoms_mask is called
     tensor_container.store("__all_atomic_numbers", atomic_numbers);
     tensor_container.store("__atomic_numbers", atomic_numbers);
 
@@ -670,10 +686,10 @@ void ifmlip_initialize(
     std::string model_type = global_config.getString("model_type");
     std::filesystem::path model_path;
     if (std::find(
-            constants::ifmlip_builtin_models.begin(),
-            constants::ifmlip_builtin_models.end(),
+            constants::builtin_models.begin(),
+            constants::builtin_models.end(),
             model_type
-        ) != constants::ifmlip_builtin_models.end()) {
+        ) != constants::builtin_models.end()) {
         std::string jit_model_fname = model_type + ".pt";
         //  AimNet2 models, and Nutmeg models, are stored in subdirs
         std::filesystem::path model_dir =
@@ -757,18 +773,9 @@ void ifmlip_initialize(
     LOG(INFO) << "Loaded MLIP model and finished MLIP Interface initialization";
 }
 
-void ifmlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
+void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
     exitIfNotInitialized(global_config);
-    bool charges_graph_is_retained = tensor_container.contains("__retain_coords")
-        or tensor_container.contains("__retain_energy")
-        or tensor_container.contains("__retain_atomic_charges");
-    if (charges_graph_is_retained) {
-        std::cerr << "ERROR (libtorchani)\n"
-                  << "ifmlip_set_no_eval_atoms_mask can't be called between"
-                  << " ifmlip_energy_atomic_charges_retain and"
-                  << " ifmlip_energy_atomic_charges_vjp" << std::endl;
-        std::exit(2);
-    }
+    exitIfChargesGraphIsRetained();
     torch::Tensor all_atomic_numbers = tensor_container.get("__all_atomic_numbers");
     if (num_atoms != all_atomic_numbers.size(1)) {
         std::cerr << "ERROR (libtorchani)\n"
@@ -798,7 +805,13 @@ void ifmlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
     }
 }
 
-void ifmlip_calc_energy_force_from_external_neighbors(
+void mlip_set_ml_charge_and_spin_mult(int charge, int spin_mult) {
+    exitIfNotInitialized(global_config);
+    exitIfChargesGraphIsRetained();
+    global_config.setMlChargeAndSpinMult(charge, spin_mult);
+}
+
+void mlip_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords_buf[][3],
@@ -864,7 +877,7 @@ void ifmlip_calc_energy_force_from_external_neighbors(
     populateEnergyScalar(energy, potential_energy_buf);
 }
 
-void ifmlip_calc_energy_force(
+void mlip_calc_energy_force(
     int num_atoms,
     double coords_buf[][3],
     double cell_buf[][3],
@@ -913,7 +926,7 @@ void ifmlip_calc_energy_force(
     populateEnergyScalar(energy, potential_energy);
 }
 
-void ifmlip_calc_energy_force_atomic_charges(
+void mlip_calc_energy_force_atomic_charges(
     int num_atoms,
     double coords_buf[][3],
     double cell_buf[][3],
@@ -960,7 +973,7 @@ void ifmlip_calc_energy_force_atomic_charges(
     populateAtomicCharges(atomic_charges, atomic_charges_buf, num_atoms);
 }
 
-void ifmlip_calc_energy_force_mlmm(
+void mlip_calc_energy_force_mlmm(
     int ml_atoms_num,
     int mm_atoms_num,
     double ml_coords_buf[][3],
@@ -1006,7 +1019,7 @@ void ifmlip_calc_energy_force_mlmm(
     );
 }
 
-void ifmlip_calc_energy_force_mlmm_qbc(
+void mlip_calc_energy_force_mlmm_qbc(
     int ml_atoms_num,
     int mm_atoms_num,
     double ml_coords_buf[][3],
@@ -1054,7 +1067,7 @@ void ifmlip_calc_energy_force_mlmm_qbc(
     );
 }
 
-void ifmlip_energy_atomic_charges_retain(
+void mlip_energy_atomic_charges_retain(
     int num_atoms,
     double coords_buf[][3],
     int charge,
@@ -1095,7 +1108,7 @@ void ifmlip_energy_atomic_charges_retain(
     tensor_container.store("__retain_atomic_charges", atomic_charges);
 }
 
-void ifmlip_energy_atomic_charges_vjp(
+void mlip_energy_atomic_charges_vjp(
     int num_atoms,
     double ml_electrostatic_potential_buf[],
     /* outputs */
@@ -1107,8 +1120,8 @@ void ifmlip_energy_atomic_charges_vjp(
         and tensor_container.contains("__retain_atomic_charges");
     if (not charges_graph_is_retained) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "ifmlip_energy_atomic_charges_vjp must follow a call to"
-                  << " ifmlip_energy_atomic_charges_retain" << std::endl;
+                  << "mlip_energy_atomic_charges_vjp must follow a call to"
+                  << " mlip_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
     torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(
@@ -1137,7 +1150,7 @@ void ifmlip_energy_atomic_charges_vjp(
     tensor_container.clear("__retain_atomic_charges");
 }
 
-void ifmlip_store_float_tensor(
+void mlip_store_float_tensor(
     const char* name,
     double* values,
     int* dims,
@@ -1152,7 +1165,7 @@ void ifmlip_store_float_tensor(
     tensor_container.store(name, tensor);
 }
 
-void ifmlip_store_int_tensor(
+void mlip_store_int_tensor(
     const char* name,
     int* values,
     int* dims,
@@ -1165,7 +1178,7 @@ void ifmlip_store_int_tensor(
     tensor_container.store(name, tensor_utils::intBufToI64Tensor(global_config, values, shape));
 }
 
-void ifmlip_store_mask_tensor(
+void mlip_store_mask_tensor(
     const char* name,
     int* values,
     int* dims,
@@ -1184,7 +1197,7 @@ void ifmlip_store_mask_tensor(
     tensor_container.store(name, global_config.tensorToTorchaniDevice(tensor.to(torch::kBool)));
 }
 
-void ifmlip_get_config_int_option(const char* name, int* out_value) {
+void mlip_get_config_int_option(const char* name, int* out_value) {
     try {
         std::string key = lowercase(name);
         *out_value = global_config.getInt(key);
@@ -1193,7 +1206,7 @@ void ifmlip_get_config_int_option(const char* name, int* out_value) {
     }
 }
 
-void ifmlip_get_config_bool_option(const char* name, bool* out_value) {
+void mlip_get_config_bool_option(const char* name, bool* out_value) {
     try {
         std::string key = lowercase(name);
         *out_value = global_config.getBool(key);
@@ -1202,7 +1215,7 @@ void ifmlip_get_config_bool_option(const char* name, bool* out_value) {
     }
 }
 
-void ifmlip_get_config_float_option(const char* name, double* out_value) {
+void mlip_get_config_float_option(const char* name, double* out_value) {
     try {
         std::string key = lowercase(name);
         *out_value = global_config.getDouble(key);
@@ -1211,7 +1224,7 @@ void ifmlip_get_config_float_option(const char* name, double* out_value) {
     }
 }
 
-void ifmlip_get_config_str_option(
+void mlip_get_config_str_option(
     const char* name,
     int out_value_len,
     /* outputs */

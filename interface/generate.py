@@ -135,7 +135,7 @@ def prepare_function(fn: dict) -> dict:
     fn["f_wrapper_args"] = [arg for arg in fn["args"] if arg["f_is_wrapper_arg"]]
     fn["f_binding_name"] = fn["name"]
     if needs_wrapper or fn["fortran_wrapper"] == "manual":
-        fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("ifmlip_")
+        fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("mlip_")
     return fn
 
 

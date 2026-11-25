@@ -7,16 +7,16 @@
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - ifmlip_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of ifmlip_initialize
+! - mlip_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of mlip_initialize
 !   change in the yaml, that call must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
-! - The ifmlip_store_*_tensor wrappers call the bind(c) interfaces
+! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
-subroutine ifmlip_initialize( &
+subroutine mlip_initialize( &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
@@ -214,14 +214,14 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     endif
 endfunction
 
-subroutine ifmlip_set_no_eval_atoms_mask(values)
+subroutine mlip_set_no_eval_atoms_mask(values)
     integer(c_int), contiguous, intent(in) :: values(:)
     call internal_set_no_eval_atoms_mask(int(size(values), c_int), values)
 endsubroutine
 
 ! Wrapper needed to take arrays of any rank, and convert between fortran strings and
 ! null-terminated C strings
-subroutine ifmlip_store_float_tensor(name, values)
+subroutine mlip_store_float_tensor(name, values)
     character(len=*, kind=kind("a")), intent(in) :: name
     real(c_double), contiguous, target, intent(in) :: values(..)
     character(len=len_trim(name) + 1, kind=c_char) :: c_name
@@ -242,7 +242,7 @@ endsubroutine
 
 ! Wrapper needed to take arrays of any rank, and convert between fortran strings and
 ! null-terminated C strings
-subroutine ifmlip_store_int_tensor(name, values)
+subroutine mlip_store_int_tensor(name, values)
     character(len=*, kind=kind("a")), intent(in) :: name
     integer(c_int), contiguous, target, intent(in) :: values(..)
     character(len=len_trim(name) + 1, kind=c_char) :: c_name
@@ -263,7 +263,7 @@ endsubroutine
 
 ! Wrapper needed to take arrays of any rank, and convert between fortran strings and
 ! null-terminated C strings
-subroutine ifmlip_store_mask_tensor(name, values)
+subroutine mlip_store_mask_tensor(name, values)
     character(len=*, kind=kind("a")), intent(in) :: name
     integer(c_int), contiguous, target, intent(in) :: values(..)
     character(len=len_trim(name) + 1, kind=c_char) :: c_name
@@ -289,7 +289,7 @@ pure function c_order_dims(fortran_shape) result(dims)
     dims = int(fortran_shape(size(fortran_shape):1:-1), c_int)
 endfunction
 
-subroutine ifmlip_dump_walltime()
+subroutine mlip_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls
     logical, save :: first_call = .true.
     character(len=1), save :: need_walltime = "0"  ! Only set once

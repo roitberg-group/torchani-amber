@@ -25,7 +25,7 @@
 #       its length. The Fortran wrapper takes the length from the Fortran string
 
 functions:
-  - name: ifmlip_initialize
+  - name: mlip_initialize
     fortran_wrapper: manual
     comment: |
       Read the config from the first &mlip namelist of the file at config_path (the
@@ -41,18 +41,27 @@ functions:
       - {name: validate_amber_config, dtype: bool}
       - {name: print_config_info, dtype: bool}
 
-  - name: ifmlip_set_no_eval_atoms_mask
+  - name: mlip_set_no_eval_atoms_mask
     fortran_wrapper: manual
     comment: |
       Exclude the atoms with value 1 from the evaluation: they feel no forces, and don't
       contribute to the energy. values has one 0 or 1 per atom passed to
-      ifmlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
+      mlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
       Not supported by the ML/MM functions. In Fortran, num_atoms is size(values)
     args:
       - {name: num_atoms, dtype: int}
       - {name: values, dtype: int, shape: [num_atoms]}
 
-  - name: ifmlip_calc_energy_force
+  - name: mlip_set_ml_charge_and_spin_mult
+    comment: |
+      Set the ml_charge and ml_spin_mult options of the config, which can change between
+      calls. Exits if called between mlip_energy_atomic_charges_retain and
+      mlip_energy_atomic_charges_vjp
+    args:
+      - {name: charge, dtype: int}
+      - {name: spin_mult, dtype: int}
+
+  - name: mlip_calc_energy_force
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -64,7 +73,7 @@ functions:
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: ifmlip_calc_energy_force_from_external_neighbors
+  - name: mlip_calc_energy_force_from_external_neighbors
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_neighbors, dtype: int}
@@ -77,7 +86,7 @@ functions:
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: ifmlip_calc_energy_force_atomic_charges
+  - name: mlip_calc_energy_force_atomic_charges
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -90,7 +99,7 @@ functions:
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: ifmlip_energy_atomic_charges_retain
+  - name: mlip_energy_atomic_charges_retain
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -100,9 +109,9 @@ functions:
       charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
       single call (not currently implemented).
       For an md engine that uses the predicted charges in its own electrostatics
-      (e.g. PME). ifmlip_energy_atomic_charges_retain returns the in-vacuo energy
+      (e.g. PME). mlip_energy_atomic_charges_retain returns the in-vacuo energy
       and the charges (forward pass only) and keeps the graph. Then
-      ifmlip_energy_atomic_charges_vjp, given
+      mlip_energy_atomic_charges_vjp, given
       ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
       the in-vacuo forces plus the forces due to the charges
       changing with the geometry (ml_electrostatic_potential held fixed)
@@ -116,7 +125,7 @@ functions:
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: ifmlip_energy_atomic_charges_vjp
+  - name: mlip_energy_atomic_charges_vjp
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -134,7 +143,7 @@ functions:
       - {name: ml_electrostatic_potential, dtype: double, shape: [num_atoms]}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
 
-  - name: ifmlip_calc_energy_force_mlmm
+  - name: mlip_calc_energy_force_mlmm
     comment: |
       mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
       (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
@@ -167,9 +176,9 @@ functions:
       - {name: ml_atomic_charges, dtype: double, shape: [ml_atoms_num], intent: inout}
       - {name: ene_pot_total, dtype: double, intent: out}
 
-  - name: ifmlip_calc_energy_force_mlmm_qbc
+  - name: mlip_calc_energy_force_mlmm_qbc
     comment: |
-      Same as ifmlip_calc_energy_force_mlmm, but also outputs the QBC of the
+      Same as mlip_calc_energy_force_mlmm, but also outputs the QBC of the
       ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
       not supported
     args:
@@ -193,16 +202,16 @@ functions:
       - {name: qbc, dtype: double, intent: out}
       - {name: qbc_grad, dtype: double, shape: [ml_atoms_num, 3], intent: out}
 
-  - name: ifmlip_store_float_tensor
+  - name: mlip_store_float_tensor
     fortran_wrapper: manual
-    fortran_generic: ifmlip_store_tensor
+    fortran_generic: mlip_store_tensor
     comment: |
       Store a copy of values, with shape dims, as a tensor named name, with the dtype
       and device of the MLIP Interface. A tensor stored with the same name is replaced.
-      Stored tensors persist until ifmlip_initialize is called again. dims is in
+      Stored tensors persist until mlip_initialize is called again. dims is in
       C (row-major) order, so a Fortran array of shape (3, n) has dims (n, 3). Exits if
       dims_num or any dim is negative, or if name starts with "__" (reserved).
-      In Fortran, call ifmlip_store_tensor(name, values), with values a
+      In Fortran, call mlip_store_tensor(name, values), with values a
       contiguous array of any rank, or a scalar. dims is taken from its shape
     args:
       - {name: name, dtype: str}
@@ -210,32 +219,32 @@ functions:
       - {name: dims, dtype: int, shape: [dims_num]}
       - {name: dims_num, dtype: int}
 
-  - name: ifmlip_store_int_tensor
+  - name: mlip_store_int_tensor
     fortran_wrapper: manual
-    fortran_generic: ifmlip_store_tensor
+    fortran_generic: mlip_store_tensor
     comment: |
-      Same as ifmlip_store_float_tensor, but the tensor is int64
+      Same as mlip_store_float_tensor, but the tensor is int64
     args:
       - {name: name, dtype: str}
       - {name: values, dtype: int, shape: [prod(dims)]}
       - {name: dims, dtype: int, shape: [dims_num]}
       - {name: dims_num, dtype: int}
 
-  - name: ifmlip_store_mask_tensor
+  - name: mlip_store_mask_tensor
     fortran_wrapper: manual
     comment: |
-      Same as ifmlip_store_int_tensor, but the values must be 0 or 1, and the
+      Same as mlip_store_int_tensor, but the values must be 0 or 1, and the
       tensor is bool. Exits if any value is not 0 or 1. In Fortran, call
-      ifmlip_store_mask_tensor(name, values), with values as in
-      ifmlip_store_tensor
+      mlip_store_mask_tensor(name, values), with values as in
+      mlip_store_tensor
     args:
       - {name: name, dtype: str}
       - {name: values, dtype: int, shape: [prod(dims)]}
       - {name: dims, dtype: int, shape: [dims_num]}
       - {name: dims_num, dtype: int}
 
-  - name: ifmlip_get_config_int_option
-    fortran_generic: ifmlip_get_config_option
+  - name: mlip_get_config_int_option
+    fortran_generic: mlip_get_config_option
     comment: |
       Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
       Exits if the option doesn't exist, or is not an int
@@ -243,8 +252,8 @@ functions:
       - {name: name, dtype: str}
       - {name: out_value, dtype: int, intent: out}
 
-  - name: ifmlip_get_config_bool_option
-    fortran_generic: ifmlip_get_config_option
+  - name: mlip_get_config_bool_option
+    fortran_generic: mlip_get_config_option
     comment: |
       Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
       Exits if the option doesn't exist, or is not a bool
@@ -252,8 +261,8 @@ functions:
       - {name: name, dtype: str}
       - {name: out_value, dtype: bool, intent: out}
 
-  - name: ifmlip_get_config_float_option
-    fortran_generic: ifmlip_get_config_option
+  - name: mlip_get_config_float_option
+    fortran_generic: mlip_get_config_option
     comment: |
       Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
       Exits if the option doesn't exist, or is not a float
@@ -261,8 +270,8 @@ functions:
       - {name: name, dtype: str}
       - {name: out_value, dtype: double, intent: out}
 
-  - name: ifmlip_get_config_str_option
-    fortran_generic: ifmlip_get_config_option
+  - name: mlip_get_config_str_option
+    fortran_generic: mlip_get_config_option
     comment: |
       Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
       out_value is a buffer of length out_value_len, the value is copied null-terminated.

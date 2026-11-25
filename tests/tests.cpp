@@ -170,7 +170,7 @@ TEST_CASE("C bindings") {
         // output
         double potential_energy;
 
-        ifmlip_initialize(
+        mlip_initialize(
             size,
             atomic_numbers,
             writeMlipConfig(
@@ -203,7 +203,7 @@ TEST_CASE("C bindings") {
                 infile >> test_values[j];
             }
             for (long j = 0; j != 10; ++j) {
-                ifmlip_calc_energy_force(
+                mlip_calc_energy_force(
                     size,
                     coords,
                     cell,
@@ -236,7 +236,7 @@ TEST_CASE("C bindings") {
                 use_double
             );
             for (long j = 0; j != 10; ++j){
-                ifmlip_calc_energy_force_mlmm_qbc(
+                mlip_calc_energy_force_mlmm_qbc(
                     size,
                     /* mm_atoms_num= */ 0,
                     coords,
@@ -309,7 +309,7 @@ static CouplingOutput calc_coupling(
         COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
     };
     CouplingOutput out{};
-    ifmlip_calc_energy_force_mlmm(
+    mlip_calc_energy_force_mlmm(
         2,
         2,
         ml_coords,
@@ -392,7 +392,7 @@ TEST_CASE("C bindings for other entry points") {
                  << COUPLING_ATOMIC_ALPHAS[1] / constants::POLARIZABILITY_AU_TO_ANG3 << ",\n"
                  << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC << ",\n"
                  << "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n";
-    ifmlip_initialize(
+    mlip_initialize(
         size,
         atomic_numbers,
         writeMlipConfig(
@@ -420,7 +420,7 @@ TEST_CASE("C bindings for other entry points") {
     SECTION("Energy + Force, external neighbors") {
         int neighborlist[2][1] = {{0}, {1}};
         double shifts[1][3] = {{0.0, 0.0, 0.0}};
-        ifmlip_calc_energy_force_from_external_neighbors(
+        mlip_calc_energy_force_from_external_neighbors(
             size,
             1,
             coords,
@@ -445,7 +445,7 @@ TEST_CASE("C bindings for other entry points") {
             double qbc;
             double qbc_deriv[size][3];
             double atomic_charges[size] = {0.0, 0.0};
-            ifmlip_calc_energy_force_mlmm_qbc(
+            mlip_calc_energy_force_mlmm_qbc(
                 size,
                 /* mm_atoms_num= */ 0,
                 coords,
@@ -488,7 +488,7 @@ TEST_CASE("C bindings for other entry points") {
         if (model_has_charges) {
             double atomic_charges[size];
             double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
-            ifmlip_calc_energy_force_atomic_charges(
+            mlip_calc_energy_force_atomic_charges(
                 size, coords, cell, false, molecule_idxs_buf, false, 0,
                 forces, atomic_charges, &potential_energy
             );
@@ -599,7 +599,7 @@ TEST_CASE("C bindings for other entry points") {
         double ml_atomic_charges[size] = {0.0, 0.0};
         double ene_pot_total;
         // Case-insensitive
-        ifmlip_calc_energy_force_mlmm(
+        mlip_calc_energy_force_mlmm(
             size,
             2,
             coords,
@@ -637,7 +637,7 @@ TEST_CASE("C bindings for other entry points") {
             // Reference: animbis, mlmm_coupling='simple-polarizable',
             // use_torchani_charges=.true., with the
             // default (Amber) polarizabilities
-            ifmlip_initialize(
+            mlip_initialize(
                 size,
                 atomic_numbers,
                 writeMlipConfig(
@@ -648,7 +648,7 @@ TEST_CASE("C bindings for other entry points") {
                 false
             );
             CouplingOutput expect{};
-            ifmlip_calc_energy_force_mlmm(
+            mlip_calc_energy_force_mlmm(
                 size,
                 2,
                 coords,
@@ -668,7 +668,7 @@ TEST_CASE("C bindings for other entry points") {
                 &expect.ene_pot_total
             );
 
-            ifmlip_initialize(
+            mlip_initialize(
                 size,
                 atomic_numbers,
                 writeMlipConfig(
@@ -684,7 +684,7 @@ TEST_CASE("C bindings for other entry points") {
             double mm_forces[2][3];
             double ene_pot_total;
             double ml_atomic_charges[size] = {0.0, 0.0};
-            ifmlip_calc_energy_force_mlmm(
+            mlip_calc_energy_force_mlmm(
                 size,
                 2,
                 coords,
@@ -744,7 +744,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         int no_eval_atoms[size] = {0, 0, 0};
         double ml_electrostatic_potential[size] = {12.5, -30.0, 7.25};  // kcal/mol/e
         double zero_ml_electrostatic_potential[size] = {0.0, 0.0, 0.0};
-        ifmlip_initialize(
+        mlip_initialize(
             size,
             atomic_numbers,
             writeMlipConfig("aimnet2-wb97m-nocut", -1, use_double, false, false).c_str(),
@@ -755,7 +755,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         double charges[size], energy;
         double ref_forces[size][3], ref_charges[size], ref_energy;
         int molecule_idxs[size] = {0, 0, 0};
-        ifmlip_calc_energy_force_atomic_charges(
+        mlip_calc_energy_force_atomic_charges(
             size, coords, dummy_cell, false, molecule_idxs, false, 0,
             ref_forces, ref_charges, &ref_energy
         );
@@ -763,12 +763,12 @@ TEST_CASE("Charges for md engine electrostatics") {
             calcAtomicChargeGrads(model_path, size, atomic_numbers, coords, 0, use_double);
         // Zero potential: the in-vacuo forces
         double vjp_forces[size][3];
-        ifmlip_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
+        mlip_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
         FLOAT_EQ(energy, ref_energy, false);
         for (int j = 0; j != size; ++j) {
             FLOAT_EQ(charges[j], ref_charges[j], false);
         }
-        ifmlip_energy_atomic_charges_vjp(size, zero_ml_electrostatic_potential, vjp_forces);
+        mlip_energy_atomic_charges_vjp(size, zero_ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
@@ -776,8 +776,8 @@ TEST_CASE("Charges for md engine electrostatics") {
         }
         // The in-vacuo forces plus those of the charges:
         // dq[c + 3 * j + 3 * size * k] = d(charge k) / d(coordinate c of atom j)
-        ifmlip_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
-        ifmlip_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
+        mlip_energy_atomic_charges_retain(size, coords, 0, charges, &energy);
+        mlip_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 double expect = ref_forces[j][c];
@@ -799,7 +799,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         int atomic_numbers[size] = {8, 1, 1};
         std::stringstream captured;
         std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
-        ifmlip_initialize(
+        mlip_initialize(
             size,
             atomic_numbers,
             writeMlipConfig(
@@ -827,7 +827,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         int atomic_numbers[size] = {7, 1, 1, 1, 1};
         int no_eval_atoms[size] = {0, 0, 0, 0, 0};
         int molecule_idxs[size] = {0, 0, 0, 0, 0};
-        ifmlip_initialize(
+        mlip_initialize(
             size,
             atomic_numbers,
             writeMlipConfig("aimnet2-wb97m-nocut", -1, use_double, false, false).c_str(),
@@ -837,11 +837,11 @@ TEST_CASE("Charges for md engine electrostatics") {
         );
         double charges[size], energy;
         double ref_forces[size][3], ref_energy;
-        ifmlip_calc_energy_force(
+        mlip_calc_energy_force(
             size, coords, dummy_cell, false, molecule_idxs, false, 1,
             ref_forces, &ref_energy
         );
-        ifmlip_energy_atomic_charges_retain(size, coords, 1, charges, &energy);
+        mlip_energy_atomic_charges_retain(size, coords, 1, charges, &energy);
         FLOAT_EQ(energy, ref_energy, false);
         double total = 0.0;
         for (int j = 0; j != size; ++j) {
@@ -851,7 +851,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         // Uniform potential: the total charge is fixed, so only the in-vacuo forces
         double ml_electrostatic_potential[size] = {5.0, 5.0, 5.0, 5.0, 5.0};
         double vjp_forces[size][3];
-        ifmlip_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
+        mlip_energy_atomic_charges_vjp(size, ml_electrostatic_potential, vjp_forces);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
@@ -881,7 +881,7 @@ TEST_CASE("Tensor container", "[tensors]") {
 
 TEST_CASE("Store tensors through the C API", "[tensors]") {
     int atomic_numbers[2] = {1, 6};
-    ifmlip_initialize(
+    mlip_initialize(
         2,
         atomic_numbers,
         writeMlipConfig("ani1x", 0, true, false, false).c_str(),
@@ -893,12 +893,12 @@ TEST_CASE("Store tensors through the C API", "[tensors]") {
     int int_values[3] = {7, 8, 9};
     int float_dims[2] = {2, 3};
     int int_dims[1] = {3};
-    CHECK_NOTHROW(ifmlip_store_float_tensor("f", &float_values[0][0], float_dims, 2));
-    CHECK_NOTHROW(ifmlip_store_int_tensor("i", int_values, int_dims, 1));
+    CHECK_NOTHROW(mlip_store_float_tensor("f", &float_values[0][0], float_dims, 2));
+    CHECK_NOTHROW(mlip_store_int_tensor("i", int_values, int_dims, 1));
     // Storing again with the same name replaces the tensor
-    CHECK_NOTHROW(ifmlip_store_int_tensor("i", int_values, int_dims, 1));
+    CHECK_NOTHROW(mlip_store_int_tensor("i", int_values, int_dims, 1));
     int mask_values[3] = {1, 0, 1};
-    CHECK_NOTHROW(ifmlip_store_mask_tensor("m", mask_values, int_dims, 1));
+    CHECK_NOTHROW(mlip_store_mask_tensor("m", mask_values, int_dims, 1));
 }
 
 TEST_CASE("No-eval atoms mask", "[no_eval]") {
@@ -918,19 +918,19 @@ TEST_CASE("No-eval atoms mask", "[no_eval]") {
     const int water_size = 3;
     double water_forces[water_size][3];
     double water_energy;
-    ifmlip_initialize(
+    mlip_initialize(
         water_size, all_atomic_numbers, config_path.c_str(), false, false, false
     );
-    ifmlip_calc_energy_force(
+    mlip_calc_energy_force(
         water_size, all_coords, cell, false, all_molecule_idxs, false, 0,
         water_forces, &water_energy
     );
 
     double forces[all_size][3];
     double energy;
-    ifmlip_initialize(all_size, all_atomic_numbers, config_path.c_str(), false, false, false);
-    ifmlip_set_no_eval_atoms_mask(all_size, no_eval_atoms_mask);
-    ifmlip_calc_energy_force(
+    mlip_initialize(all_size, all_atomic_numbers, config_path.c_str(), false, false, false);
+    mlip_set_no_eval_atoms_mask(all_size, no_eval_atoms_mask);
+    mlip_calc_energy_force(
         all_size, all_coords, cell, false, all_molecule_idxs, false, 0, forces, &energy
     );
     CHECK_THAT(energy, Catch::Matchers::WithinAbs(water_energy, 1e-10));
@@ -946,9 +946,32 @@ TEST_CASE("No-eval atoms mask", "[no_eval]") {
 
     // An all-zeros mask evaluates all atoms again
     int all_zeros_mask[all_size] = {0, 0, 0, 0, 0, 0, 0, 0};
-    ifmlip_set_no_eval_atoms_mask(all_size, all_zeros_mask);
-    ifmlip_calc_energy_force(
+    mlip_set_no_eval_atoms_mask(all_size, all_zeros_mask);
+    mlip_calc_energy_force(
         all_size, all_coords, cell, false, all_molecule_idxs, false, 0, forces, &energy
     );
     CHECK(std::abs(energy - water_energy) > 1.0);
+}
+
+TEST_CASE("Set ML charge and spin multiplicity", "[config]") {
+    int atomic_numbers[2] = {1, 6};
+    mlip_initialize(
+        2,
+        atomic_numbers,
+        writeMlipConfig("ani1x", 0, true, false, false).c_str(),
+        false,
+        false,
+        false
+    );
+    int charge = 0;
+    int spin_mult = 0;
+    mlip_get_config_int_option("ml_charge", &charge);
+    mlip_get_config_int_option("ml_spin_mult", &spin_mult);
+    CHECK(charge == 0);
+    CHECK(spin_mult == 1);
+    mlip_set_ml_charge_and_spin_mult(-1, 2);
+    mlip_get_config_int_option("ml_charge", &charge);
+    mlip_get_config_int_option("ml_spin_mult", &spin_mult);
+    CHECK(charge == -1);
+    CHECK(spin_mult == 2);
 }

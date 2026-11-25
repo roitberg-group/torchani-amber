@@ -79,7 +79,7 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
     CHECK(config.getInt("cuda_device_index") == 1);
     CHECK(config.dtype() == torch::kFloat32);
-    // Only ifmlip_set_no_eval_atoms_mask enables the no-eval atoms
+    // Only mlip_set_no_eval_atoms_mask enables the no-eval atoms
     CHECK_FALSE(config.useNoEvalAtoms());
     CHECK_FALSE(config.getBool("use_cuaev"));
     CHECK(config.getString("model_type") == "animbis");

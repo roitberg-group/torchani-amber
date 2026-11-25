@@ -11,7 +11,7 @@ extern "C" {
 // If validate_amber_config too, the &qmmm namelist is also read, and the config is
 // validated against it. If print_config_info, the config is printed to stdout.
 // In Fortran, validate_amber_config and print_config_info are optional, default false
-void ifmlip_initialize(
+void mlip_initialize(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
     const char* config_path,
@@ -22,14 +22,22 @@ void ifmlip_initialize(
 
 // Exclude the atoms with value 1 from the evaluation: they feel no forces, and don't
 // contribute to the energy. values has one 0 or 1 per atom passed to
-// ifmlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
+// mlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
 // Not supported by the ML/MM functions. In Fortran, num_atoms is size(values)
-void ifmlip_set_no_eval_atoms_mask(
+void mlip_set_no_eval_atoms_mask(
     int num_atoms,
     int values[]  // Shape (num_atoms,)
 );
 
-void ifmlip_calc_energy_force(
+// Set the ml_charge and ml_spin_mult options of the config, which can change between
+// calls. Exits if called between mlip_energy_atomic_charges_retain and
+// mlip_energy_atomic_charges_vjp
+void mlip_set_ml_charge_and_spin_mult(
+    int charge,
+    int spin_mult
+);
+
+void mlip_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     double cell[][3],  // Shape (3, 3)
@@ -42,7 +50,7 @@ void ifmlip_calc_energy_force(
     double* potential_energy
 );
 
-void ifmlip_calc_energy_force_from_external_neighbors(
+void mlip_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -56,7 +64,7 @@ void ifmlip_calc_energy_force_from_external_neighbors(
     double* potential_energy
 );
 
-void ifmlip_calc_energy_force_atomic_charges(
+void mlip_calc_energy_force_atomic_charges(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     double cell[][3],  // Shape (3, 3)
@@ -78,16 +86,16 @@ void ifmlip_calc_energy_force_atomic_charges(
 // charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 // single call (not currently implemented).
 // For an md engine that uses the predicted charges in its own electrostatics
-// (e.g. PME). ifmlip_energy_atomic_charges_retain returns the in-vacuo energy
+// (e.g. PME). mlip_energy_atomic_charges_retain returns the in-vacuo energy
 // and the charges (forward pass only) and keeps the graph. Then
-// ifmlip_energy_atomic_charges_vjp, given
+// mlip_energy_atomic_charges_vjp, given
 // ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
 // the in-vacuo forces plus the forces due to the charges
 // changing with the geometry (ml_electrostatic_potential held fixed)
 //   forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
 // with a single backward pass, and frees the graph (zero potential gives the
 // in-vacuo forces).
-void ifmlip_energy_atomic_charges_retain(
+void mlip_energy_atomic_charges_retain(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
     int charge,
@@ -107,7 +115,7 @@ void ifmlip_energy_atomic_charges_retain(
 // The returned forces don't include the electrostatic force at fixed charges on the
 // ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 // otherwise the forces on the ML atoms are incomplete.
-void ifmlip_energy_atomic_charges_vjp(
+void mlip_energy_atomic_charges_vjp(
     int num_atoms,
     double ml_electrostatic_potential[],  // Shape (num_atoms,)
     /* outputs */
@@ -126,7 +134,7 @@ void ifmlip_energy_atomic_charges_vjp(
 // use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
 // verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
 // 'custom') are printed to stdout
-void ifmlip_calc_energy_force_mlmm(
+void mlip_calc_energy_force_mlmm(
     int ml_atoms_num,
     int mm_atoms_num,
     double ml_coords[][3],  // Shape (ml_atoms_num, 3)
@@ -147,10 +155,10 @@ void ifmlip_calc_energy_force_mlmm(
     double* ene_pot_total
 );
 
-// Same as ifmlip_calc_energy_force_mlmm, but also outputs the QBC of the
+// Same as mlip_calc_energy_force_mlmm, but also outputs the QBC of the
 // ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
 // not supported
-void ifmlip_calc_energy_force_mlmm_qbc(
+void mlip_calc_energy_force_mlmm_qbc(
     int ml_atoms_num,
     int mm_atoms_num,
     double ml_coords[][3],  // Shape (ml_atoms_num, 3)
@@ -175,31 +183,31 @@ void ifmlip_calc_energy_force_mlmm_qbc(
 
 // Store a copy of values, with shape dims, as a tensor named name, with the dtype
 // and device of the MLIP Interface. A tensor stored with the same name is replaced.
-// Stored tensors persist until ifmlip_initialize is called again. dims is in
+// Stored tensors persist until mlip_initialize is called again. dims is in
 // C (row-major) order, so a Fortran array of shape (3, n) has dims (n, 3). Exits if
 // dims_num or any dim is negative, or if name starts with "__" (reserved).
-// In Fortran, call ifmlip_store_tensor(name, values), with values a
+// In Fortran, call mlip_store_tensor(name, values), with values a
 // contiguous array of any rank, or a scalar. dims is taken from its shape
-void ifmlip_store_float_tensor(
+void mlip_store_float_tensor(
     const char* name,
     double values[],  // Shape (prod(dims),)
     int dims[],  // Shape (dims_num,)
     int dims_num
 );
 
-// Same as ifmlip_store_float_tensor, but the tensor is int64
-void ifmlip_store_int_tensor(
+// Same as mlip_store_float_tensor, but the tensor is int64
+void mlip_store_int_tensor(
     const char* name,
     int values[],  // Shape (prod(dims),)
     int dims[],  // Shape (dims_num,)
     int dims_num
 );
 
-// Same as ifmlip_store_int_tensor, but the values must be 0 or 1, and the
+// Same as mlip_store_int_tensor, but the values must be 0 or 1, and the
 // tensor is bool. Exits if any value is not 0 or 1. In Fortran, call
-// ifmlip_store_mask_tensor(name, values), with values as in
-// ifmlip_store_tensor
-void ifmlip_store_mask_tensor(
+// mlip_store_mask_tensor(name, values), with values as in
+// mlip_store_tensor
+void mlip_store_mask_tensor(
     const char* name,
     int values[],  // Shape (prod(dims),)
     int dims[],  // Shape (dims_num,)
@@ -208,7 +216,7 @@ void ifmlip_store_mask_tensor(
 
 // Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
 // Exits if the option doesn't exist, or is not an int
-void ifmlip_get_config_int_option(
+void mlip_get_config_int_option(
     const char* name,
     /* outputs */
     int* out_value
@@ -216,7 +224,7 @@ void ifmlip_get_config_int_option(
 
 // Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
 // Exits if the option doesn't exist, or is not a bool
-void ifmlip_get_config_bool_option(
+void mlip_get_config_bool_option(
     const char* name,
     /* outputs */
     bool* out_value
@@ -224,7 +232,7 @@ void ifmlip_get_config_bool_option(
 
 // Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
 // Exits if the option doesn't exist, or is not a float
-void ifmlip_get_config_float_option(
+void mlip_get_config_float_option(
     const char* name,
     /* outputs */
     double* out_value
@@ -233,7 +241,7 @@ void ifmlip_get_config_float_option(
 // Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
 // out_value is a buffer of length out_value_len, the value is copied null-terminated.
 // Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
-void ifmlip_get_config_str_option(
+void mlip_get_config_str_option(
     const char* name,
     int out_value_len,
     /* outputs */
