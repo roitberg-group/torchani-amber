@@ -323,6 +323,19 @@ ML/MM and electrostatic related options:
    energy of the ML region in vacuo. In this case `use_mlip_atomic_charges` and
    `use_mlip_atomic_volumes` must be `.false.`, and periodic boundary conditions
    (`igb = 0`) are required.
+- `mlmm_coupling = 'coulombic-geep'` and `mlmm_coupling = 'simple-polarizable-geep'`
+   Same as `'coulombic'` and `'simple-polarizable'`, but the MM charges are Gaussians
+   (GEEP), which modifies the electrostatic potential and field they generate at the ML
+   atoms. The width of each Gaussian depends on the element of the ML atom. Only
+   supported with the `&mlmm` namelist.
+- `geep_sigmas = 'builtin'` (str, or list of doubles)
+   GEEP widths, in bohr, only used with the GEEP couplings. `'builtin'` are the widths
+   used by pmemd (defined for H to Xe), and `'builtin-carbon'` uses the width of carbon
+   for all elements up to Xe. A list of doubles gives the width of each element, starting
+   at H (e.g. `geep_sigmas = 1.9, , , , , 2.8` sets H and C). Elements without a width
+   can't be in the ML region.
+- `geep_factor = 1.0` (double)
+   Factor that multiplies all the `geep_sigmas`, only used with the GEEP couplings.
 
 We recommend using one of the following two settings:
 - *mlmm_coupling = 'simple-polarizable'* and *use_mlip_atomic_charges=.true.* (variable

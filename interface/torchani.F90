@@ -89,10 +89,12 @@ endsubroutine
 ! the mlip_calc_* functions, which exit if they are not set. Can only be called once
 ! after each mlip_initialize, exits otherwise. The extra features file
 ! (extra_features_file_path) is read here, and must have one value per atom. With
-! use_mlip_atomic_volumes, exits if an element has no kz. If print_info and
-! mlmm_coupling is 'simple-polarizable', the polarizabilities (or kz factors) in use
-! are printed to stdout. In Fortran, num_atoms is size(atomic_nums), and print_info
-! is optional, default false
+! use_mlip_atomic_volumes, exits if an element has no kz. With mlmm_coupling
+! 'coulombic-geep' or 'simple-polarizable-geep', exits if an element has no GEEP
+! width. If print_info and mlmm_coupling is 'simple-polarizable' or
+! 'simple-polarizable-geep', the polarizabilities (or kz factors) in use are printed
+! to stdout. In Fortran, num_atoms is size(atomic_nums), and print_info is optional,
+! default false
 subroutine internal_set_atomic_numbers( &
     num_atoms, &
     atomic_nums, &
@@ -249,13 +251,16 @@ endsubroutine
 
 ! Requires the ML/MM config (mlip_initialize with from_namelist "mlmm"), exits
 ! otherwise. The coupling is its mlmm_coupling option: 'coulombic',
-! 'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
-! 0. With 'simple-polarizable', the atomic polarizabilities and the inverse
-! polarization dielectric are read from the pol_<symbol> and inv_pol_dielectric
-! options of the ML/MM config. 'coulombic' and 'simple-polarizable' use the atomic
-! charges predicted by the model if the use_mlip_atomic_charges option is set, and
-! otherwise the ones stored as 'fixed_atomic_charges' (with mlip_store_tensor),
-! exiting if they are missing. With 'custom', the TorchScript model
+! 'simple-polarizable', 'coulombic-geep', 'simple-polarizable-geep', 'none' or
+! 'custom'. With 'none', the ML/MM coupling energy is 0. With 'simple-polarizable'
+! (and its GEEP variant), the atomic polarizabilities and the inverse polarization
+! dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
+! ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths read
+! from the geep_sigmas and geep_factor options. 'coulombic', 'simple-polarizable' and
+! their GEEP variants use the atomic charges predicted by the model if the
+! use_mlip_atomic_charges option is set, and otherwise the ones stored as
+! 'fixed_atomic_charges' (with mlip_store_tensor), exiting if they are missing. With
+! 'custom', the TorchScript model
 ! receives ML species+coords and MM coords+charges and computes the total energy
 ! internally. The model must export a 'compute_mlmm' method (see README). Forces on
 ! both regions via autograd. use_pbc is only supported with 'custom'. cell is

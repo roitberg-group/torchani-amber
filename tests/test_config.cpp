@@ -10,15 +10,18 @@
 #include <vector>
 
 #include "config.h"
+#include "constants.h"
 #include "fortran_utils.h"
 
 // c10 defines a CHECK macro, which must not replace the one from Catch2
 #undef CHECK
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 using config::GlobalConfig;
+using Catch::Matchers::WithinRel;
 
 static std::filesystem::path writeTmpFile(const std::string& name, const std::string& text) {
     std::filesystem::path path = std::filesystem::temp_directory_path() / name;
@@ -176,6 +179,9 @@ TEST_CASE("GlobalConfig ML/MM mm_cutoff_kind", "[config]") {
     // Only one value is supported for each mlmm_coupling, which is the default
     auto [mlmm_coupling, supported_kind, unsupported_kind] = GENERATE(
         std::make_tuple(std::string{"coulombic"}, std::string{"hard"}, std::string{"none"}),
+        std::make_tuple(
+            std::string{"coulombic-geep"}, std::string{"hard"}, std::string{"none"}
+        ),
         std::make_tuple(std::string{"none"}, std::string{"hard"}, std::string{"none"}),
         std::make_tuple(std::string{"me"}, std::string{"none"}, std::string{"hard"}),
         std::make_tuple(
@@ -662,6 +668,121 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
     CHECK(config.getVolumeKz(1L) == 0.7659661617582175);
     CHECK(config.getVolumeKz(16L) == 0.030818228617190933);
     CHECK_THROWS_AS(config.getVolumeKz(3L), std::runtime_error);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig GEEP sigmas", "[config]") {
+    config::ConfigDict mlip_config = config::defaultMlipConfig();
+    mlip_config = mlip_config.withValue("use_cuda_device", false);
+    CHECK_THROWS_AS(GlobalConfig{mlip_config}.getGeepSigma(6L), std::logic_error);
+
+    const std::string fname = "torchani_test_config_geep_sigmas.in";
+    std::filesystem::path path = writeTmpFile(
+        fname, "&mlmm mlmm_coupling = 'coulombic-geep' /\n"
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    // The builtin widths are in Angstrom, converted to bohr
+    CHECK_THAT(
+        config.getGeepSigma(1L),
+        WithinRel(1.00 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+    );
+    CHECK_THAT(
+        config.getGeepSigma(6L),
+        WithinRel(1.50 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+    );
+    CHECK_THAT(
+        config.getGeepSigma(54L),
+        WithinRel(1.80 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+    );
+    CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);
+    CHECK_THROWS_AS(config.getGeepSigma(0L), std::out_of_range);
+    CHECK_THROWS_AS(config.getGeepSigma(119L), std::out_of_range);
+
+    writeTmpFile(
+        fname,
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = 'builtin-carbon',\n"
+        "  geep_factor = 2.0 /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    for (long atomic_num : {1L, 6L, 54L}) {
+        CHECK_THAT(
+            config.getGeepSigma(atomic_num),
+            WithinRel(3.0 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        );
+    }
+    CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);
+
+    writeTmpFile(
+        fname,
+        "&mlmm mlmm_coupling = 'simple-polarizable-geep', use_mlip_atomic_charges = T,\n"
+        "  geep_sigmas = 2.0, , 3.0, geep_factor = 0.5 /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getGeepSigma(1L) == 1.0);
+    CHECK(config.getGeepSigma(3L) == 1.5);
+    CHECK_THROWS_AS(config.getGeepSigma(2L), std::runtime_error);
+    CHECK_THROWS_AS(config.getGeepSigma(4L), std::runtime_error);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig GEEP validation", "[config]") {
+    const std::string fname = "torchani_test_config_geep_validation.in";
+    const std::vector<std::string> invalid_texts{
+        "&mlmm mlmm_coupling = 'coulombic', geep_sigmas = 1.0 /\n",
+        "&mlmm mlmm_coupling = 'coulombic', geep_factor = 1.2 /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_factor = 0.0 /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = -1.0 /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = 'builtin-nonexistent' /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = 1.0, 'builtin' /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', use_mlip_atomic_charges = T /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', inv_pol_dielectric = 1.0 /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', use_mlip_atomic_volumes = T /\n",
+        "&mlmm mlmm_coupling = 'simple-polarizable-geep' /\n",
+    };
+    for (const std::string& text : invalid_texts) {
+        std::filesystem::path path = writeTmpFile(fname, text);
+        INFO(text);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+            config::config_validation_error
+        );
+        std::filesystem::remove(path);
+    }
+
+    // Only supported with the &mlmm namelist
+    for (const std::string& mlmm_coupling : {"coulombic-geep", "simple-polarizable-geep"}) {
+        std::filesystem::path path = writeTmpFile(
+            fname,
+            "&mlip mlmm_coupling = '" + mlmm_coupling + "',"
+            " use_mlip_atomic_charges = T, allow_untested_protocols = T /\n"
+        );
+        INFO(mlmm_coupling);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"),
+            config::config_validation_error
+        );
+        std::filesystem::remove(path);
+    }
+
+    std::filesystem::path path = writeTmpFile(
+        fname,
+        "&mlmm mlmm_coupling = 'Simple-Polarizable-GEEP', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, inv_pol_dielectric = 0.5 /\n"
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getString("mlmm_coupling") == "simple-polarizable-geep");
+    CHECK(config.getString("mm_cutoff_kind") == "hard");
+    std::string info = capturedPrintInfo(config);
+    CHECK(info.find("geep_sigmas") != std::string::npos);
+    CHECK(info.find("builtin") != std::string::npos);
+    CHECK(info.find("geep_factor") != std::string::npos);
+    CHECK(info.find("simple polarizable approximation") != std::string::npos);
+    CHECK(info.find("Gaussians (GEEP)") != std::string::npos);
+
+    writeTmpFile(fname, "&mlmm mlmm_coupling = 'coulombic' /\n");
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"));
+    CHECK(info.find("geep_sigmas") == std::string::npos);
+    CHECK(info.find("GEEP") == std::string::npos);
     std::filesystem::remove(path);
 }
 

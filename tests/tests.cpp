@@ -311,6 +311,9 @@ static const double COUPLING_ATOMIC_ALPHAS[] = {0.5, 1.2};
 static const double COUPLING_MM_ATOMIC_CHARGES[] = {0.5, -0.4};
 // kz of H and C, such that alpha = kz * volume (AU)
 static const double COUPLING_VOLUME_KZS[] = {0.03, 0.02};
+// GEEP widths (bohr) of H and C, before multiplying by COUPLING_GEEP_FACTOR
+static const double COUPLING_GEEP_SIGMAS[] = {2.0, 2.5};
+static const double COUPLING_GEEP_FACTOR = 1.2;
 
 struct CouplingOutput {
     double ml_forces[2][3];
@@ -345,12 +348,14 @@ static CouplingOutput calc_coupling(
 }
 
 // Embedding energy (kcal/mol) of the simple-polarizable coupling, for the ML atoms in
-// coords and the MM atoms in mm_coords (with COUPLING_MM_ATOMIC_CHARGES)
+// coords and the MM atoms in mm_coords (with COUPLING_MM_ATOMIC_CHARGES). If
+// ml_geep_sigmas (Angstrom) is passed, the MM charges are Gaussians
 static double expectedEmbeddingEnergy(
     double coords[][3],
     double mm_coords[][3],
     const double ml_atomic_charges[],
-    const double ml_atomic_alphas[]
+    const double ml_atomic_alphas[],
+    const double* ml_geep_sigmas = nullptr
 ) {
     double expect_coulomb = 0.0;
     double expect_pol = 0.0;
@@ -364,10 +369,19 @@ static double expectedEmbeddingEnergy(
                 dist_sq += delta[c] * delta[c];
             }
             double dist = std::sqrt(dist_sq);
-            expect_coulomb += COUPLING_MM_ATOMIC_CHARGES[k] * ml_atomic_charges[j]
-                / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
+            double potential_screening = 1.0;
+            double efield_screening = 1.0;
+            if (ml_geep_sigmas != nullptr) {
+                double scaled_dist = dist / (std::sqrt(2.0) * ml_geep_sigmas[j]);
+                potential_screening = std::erf(scaled_dist);
+                efield_screening = std::erf(scaled_dist)
+                    - std::sqrt(2.0 / M_PI) * dist / ml_geep_sigmas[j]
+                    * std::exp(-scaled_dist * scaled_dist);
+            }
+            expect_coulomb += potential_screening * COUPLING_MM_ATOMIC_CHARGES[k]
+                * ml_atomic_charges[j] / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
             for (int c = 0; c != 3; ++c) {
-                efield[c] += COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
+                efield[c] += efield_screening * COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
                     / (dist_sq * dist * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
             }
         }
@@ -670,6 +684,92 @@ TEST_CASE("C bindings for other entry points") {
             // The volumes depend on the coords, so this also checks dvolume/dr
             if (use_double) {
                 checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
+            }
+        }
+    }
+
+    SECTION("Energy + Force with GEEP coupling") {
+        // The GEEP couplings are only supported with the &mlmm namelist
+        if (model_has_charges && from_namelist == "mlmm") {
+            for (const std::string mlmm_coupling :
+                 {"coulombic-geep", "simple-polarizable-geep"}) {
+                INFO(mlmm_coupling);
+                bool use_mlip_atomic_charges = mlmm_coupling == "simple-polarizable-geep";
+                std::ostringstream geep_options;
+                geep_options << std::setprecision(17)
+                             << "  geep_sigmas = " << COUPLING_GEEP_SIGMAS[0] << ", , , , , "
+                             << COUPLING_GEEP_SIGMAS[1] << ",\n"
+                             << "  geep_factor = " << COUPLING_GEEP_FACTOR << ",\n"
+                             << "  mlmm_coupling = '" << mlmm_coupling << "',\n";
+                if (use_mlip_atomic_charges) {
+                    geep_options << "  pol_H = " << COUPLING_ATOMIC_ALPHAS[0] << ",\n"
+                                 << "  pol_C = " << COUPLING_ATOMIC_ALPHAS[1] << ",\n"
+                                 << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC
+                                 << ",\n"
+                                 << "  use_mlip_atomic_charges = T,\n";
+                }
+                mlip_initialize(
+                    writeMlipConfig(
+                        model_type, network_index, use_double, use_cuda_device, use_cuaev, 0,
+                        geep_options.str(),
+                        namelist
+                    ).c_str(),
+                    from_namelist.c_str(),
+                    "none"
+                );
+                mlip_set_atomic_numbers(size, atomic_numbers, false);
+                double fixed_atomic_charges[size] = {0.3, -0.3};
+                if (!use_mlip_atomic_charges) {
+                    int charges_dims[1] = {size};
+                    mlip_store_float_tensor(
+                        "fixed_atomic_charges", fixed_atomic_charges, charges_dims, 1
+                    );
+                }
+                double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+                CouplingOutput out = calc_coupling(coords, mm_coords);
+                double ml_geep_sigmas[size];
+                for (int j = 0; j != size; ++j) {
+                    ml_geep_sigmas[j] = COUPLING_GEEP_SIGMAS[j] * COUPLING_GEEP_FACTOR
+                        / constants::CODATA08_ANGSTROM_TO_BOHR;
+                }
+                double zero_alphas[size] = {0.0, 0.0};
+                const double* ml_atomic_charges =
+                    use_mlip_atomic_charges ? out.ml_atomic_charges : fixed_atomic_charges;
+                const double* ml_atomic_alphas =
+                    use_mlip_atomic_charges ? COUPLING_ATOMIC_ALPHAS : zero_alphas;
+                // The in vacuo energy is the reference energy of the model
+                double expect_embed = expectedEmbeddingEnergy(
+                    coords, mm_coords, ml_atomic_charges, ml_atomic_alphas, ml_geep_sigmas
+                );
+                FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
+                // The GEEP screening changes the energy wrt point MM charges
+                double expect_point_embed = expectedEmbeddingEnergy(
+                    coords, mm_coords, ml_atomic_charges, ml_atomic_alphas
+                );
+                CHECK(std::abs(expect_embed - expect_point_embed) > 1e-3);
+                if (use_double) {
+                    checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
+                }
+
+                // An MM atom on top of an ML atom gives a finite energy and forces, close
+                // to those of a slightly displaced MM atom
+                double overlap_mm_coords[2][3] = {
+                    {coords[0][0], coords[0][1], coords[0][2]}, {0.0, 0.0, 3.0}
+                };
+                CouplingOutput overlap_out = calc_coupling(coords, overlap_mm_coords);
+                overlap_mm_coords[0][0] += 1e-5;
+                CouplingOutput near_out = calc_coupling(coords, overlap_mm_coords);
+                CHECK(std::isfinite(overlap_out.pot_energy));
+                CHECK_THAT(
+                    overlap_out.pot_energy,
+                    WithinAbs(near_out.pot_energy, use_double ? 1e-4 : 1e-2)
+                );
+                for (int j = 0; j != size; ++j) {
+                    for (int c = 0; c != 3; ++c) {
+                        CHECK(std::isfinite(overlap_out.ml_forces[j][c]));
+                        CHECK(std::isfinite(overlap_out.mm_forces[j][c]));
+                    }
+                }
             }
         }
     }

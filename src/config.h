@@ -103,6 +103,12 @@ auto defaultMlmmConfig() -> ConfigDict;
 // other options of the group are ignored
 auto defaultAmberQmmmConfig() -> ConfigDict;
 
+// mlmm_coupling values that add the polarization correction to the coulombic coupling
+auto isPolarizableCoupling(const std::string& mlmm_coupling) -> bool;
+
+// mlmm_coupling values that use the potential and field of Gaussian MM charges (GEEP)
+auto isGeepCoupling(const std::string& mlmm_coupling) -> bool;
+
 // An invalid combination of config options
 class config_validation_error : public std::runtime_error {
     public:
@@ -256,6 +262,12 @@ class GlobalConfig {
     // volume, from the ML/MM config, or a builtin default if volume_kzs is not set.
     // Throws if the ML/MM config was not read, or if the element has no kz
     auto getVolumeKz(long atomic_num) const -> double;
+
+    // GEEP width (bohr) of the Gaussian MM charges that interact with an ML atom of a
+    // given element, geep_sigmas times geep_factor, from the ML/MM config, or a builtin
+    // default if geep_sigmas is not set. Throws if the ML/MM config was not read, or if
+    // the element has no width
+    auto getGeepSigma(long atomic_num) const -> double;
 
     // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
     // was read

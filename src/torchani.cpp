@@ -236,6 +236,25 @@ torch::Tensor mlVolumeKzs() {
     );
 }
 
+// GEEP widths of the ML atoms (bohr), from the ML/MM config. Exits if the ML/MM config
+// was not read, or if an element has no width
+torch::Tensor mlGeepSigmas() {
+    std::vector<double> sigmas;
+    for (long atomic_num : mlAtomicNumbers()) {
+        double sigma = std::numeric_limits<double>::quiet_NaN();
+        try {
+            sigma = global_config.getGeepSigma(atomic_num);
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
+        sigmas.push_back(sigma);
+    }
+    return global_config.tensorToTorchaniDtypeAndDevice(
+        torch::tensor(sigmas, torch::TensorOptions().dtype(torch::kDouble))
+    );
+}
+
 void printPolarizabilitiesInUse() {
     std::set<long> atomic_nums;
     for (long atomic_num : mlAtomicNumbers()) {
@@ -721,10 +740,14 @@ void calcEnergyForceMlmm(
         torch::Tensor mm_to_ml_distances =
             torch::linalg_norm(delta, std::nullopt, 2);
 
+        std::optional<torch::Tensor> ml_geep_sigmas;
+        if (config::isGeepCoupling(mlmm_coupling)) {
+            ml_geep_sigmas = mlGeepSigmas() / constants::CODATA08_ANGSTROM_TO_BOHR;
+        }
         ene_pot_coulomb = electro::coulombicEmbeddingEnergy(
-            ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances
+            ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances, ml_geep_sigmas
         );
-        if (mlmm_coupling == "simple-polarizable") {
+        if (config::isPolarizableCoupling(mlmm_coupling)) {
             // Exits if the ML/MM config was not read, so it can be read afterwards
             torch::Tensor atomic_alphas;
             if (global_config.getBool("use_mlip_atomic_volumes")) {
@@ -745,7 +768,8 @@ void calcEnergyForceMlmm(
                 mm_coords,
                 mm_atomic_charges,
                 mm_to_ml_distances,
-                inv_pol_dielectric
+                inv_pol_dielectric,
+                ml_geep_sigmas
             );
             ene_pot_dist = -0.5 * ene_pot_pol;
         }
@@ -1016,9 +1040,16 @@ void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) 
         mlVolumeKzs();
     }
     if (
+        global_config.hasMlmmConfig()
+        && config::isGeepCoupling(global_config.getString("mlmm_coupling"))
+    ) {
+        // Exits if an element of the ML atoms has no GEEP width
+        mlGeepSigmas();
+    }
+    if (
         print_info
         && global_config.hasMlmmConfig()
-        && global_config.getString("mlmm_coupling") == "simple-polarizable"
+        && config::isPolarizableCoupling(global_config.getString("mlmm_coupling"))
     ) {
         printPolarizabilitiesInUse();
     }

@@ -171,6 +171,73 @@ std::vector<double> resolvedVolumeKzs(const ConfigDict& mlmm) {
     return kzs;
 }
 
+// GEEP widths (Angstrom) used by pmemd, for H to Xe, indexed by atomic number starting
+// at H. Elements past Xe have no width
+const std::vector<double> PMEMD_GEEP_SIGMAS_ANG{
+    1.00, 1.20, 1.60, 1.50, 1.50, 1.50, 1.40, 1.30, 1.25, 1.30,  // H to Ne
+    1.80, 1.70, 1.70, 1.65, 1.60, 1.60, 1.55, 1.50, 2.00, 1.90,  // Na to Ca
+    1.85, 1.80, 1.80, 1.75, 1.75, 1.75, 1.70, 1.70, 1.70, 1.70,  // Sc to Zn
+    1.75, 1.70, 1.70, 1.70, 1.70, 1.70, 2.10, 2.00, 1.95, 1.90,  // Ga to Zr
+    1.90, 1.90, 1.85, 1.85, 1.85, 1.85, 1.85, 1.85, 1.90, 1.90,  // Nb to Sn
+    1.90, 1.90, 1.85, 1.80,  // Sb to Xe
+};
+
+// geep_sigmas may be "builtin" (the pmemd widths), "builtin-carbon" (the pmemd width of
+// carbon for all elements up to Xe) or the width of each element, in bohr
+std::vector<double> builtinGeepSigmas(const std::string& name) {
+    constexpr std::size_t carbon_idx = 5;
+    std::vector<double> sigmas = PMEMD_GEEP_SIGMAS_ANG;
+    if (name == "builtin-carbon") {
+        std::fill(sigmas.begin(), sigmas.end(), PMEMD_GEEP_SIGMAS_ANG[carbon_idx]);
+    } else if (name != "builtin") {
+        throw config_validation_error(
+            "Valid geep_sigmas names are 'builtin' and 'builtin-carbon'"
+        );
+    }
+    for (double& sigma : sigmas) {
+        sigma *= constants::CODATA08_ANGSTROM_TO_BOHR;
+    }
+    return sigmas;
+}
+
+// The width (bohr) of each element, indexed by atomic number starting at H, NaN if the
+// element has no width. Builtin names are replaced by their values. geep_factor is not
+// applied
+std::vector<double> resolvedGeepSigmas(const ConfigDict& mlmm) {
+    std::vector<fortran_utils::NamelistValue> geep_sigmas = mlmm.values("geep_sigmas");
+    if (geep_sigmas.empty()) {
+        geep_sigmas = {std::string{"builtin"}};
+    }
+    std::vector<double> sigmas(
+        constants::NUM_ELEMENTS, std::numeric_limits<double>::quiet_NaN()
+    );
+    if (geep_sigmas.size() == 1 && std::holds_alternative<std::string>(geep_sigmas.front())) {
+        std::vector<double> builtin_sigmas =
+            builtinGeepSigmas(std::get<std::string>(geep_sigmas.front()));
+        std::copy(builtin_sigmas.begin(), builtin_sigmas.end(), sigmas.begin());
+        return sigmas;
+    }
+    if (geep_sigmas.size() > constants::NUM_ELEMENTS) {
+        throw config_validation_error(
+            "geep_sigmas has more values than there are elements"
+        );
+    }
+    for (std::size_t i = 0; i != geep_sigmas.size(); ++i) {
+        if (std::holds_alternative<std::string>(geep_sigmas[i])) {
+            throw config_validation_error(
+                "geep_sigmas must be a single builtin name, or a list of numbers"
+            );
+        }
+        if (std::holds_alternative<double>(geep_sigmas[i])) {
+            sigmas[i] = std::get<double>(geep_sigmas[i]);
+            if (sigmas[i] <= 0.0) {
+                throw config_validation_error("geep_sigmas must be > 0");
+            }
+        }
+    }
+    return sigmas;
+}
+
 // With mechanical embedding the MD engine calculates the ML/MM coupling
 bool isMechanicalEmbedding(const std::string& mlmm_coupling) {
     return mlmm_coupling == "mechanical-embedding"
@@ -212,6 +279,15 @@ std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
 
 }  // namespace
 
+auto isPolarizableCoupling(const std::string& mlmm_coupling) -> bool {
+    return mlmm_coupling == "simple-polarizable"
+        || mlmm_coupling == "simple-polarizable-geep";
+}
+
+auto isGeepCoupling(const std::string& mlmm_coupling) -> bool {
+    return mlmm_coupling == "coulombic-geep" || mlmm_coupling == "simple-polarizable-geep";
+}
+
 auto defaultMlipConfig() -> ConfigDict {
     return ConfigDict{{
         {"model_type", {std::string{"ani2x"}, NamelistType::STR}},
@@ -244,6 +320,9 @@ auto defaultMlmmConfig() -> ConfigDict {
         {"use_mlip_atomic_charges", {false, NamelistType::BOOL}},
         {"use_mlip_atomic_volumes", {false, NamelistType::BOOL}},
         {"volume_kzs", {std::vector<fortran_utils::NamelistValue>{}, NamelistType::VEC_FLOAT_OR_STR}},
+        // 'builtin' if empty
+        {"geep_sigmas", {std::vector<fortran_utils::NamelistValue>{}, NamelistType::VEC_FLOAT_OR_STR}},
+        {"geep_factor", {1.0, NamelistType::FLOAT}},
         // No longer supported, validation throws if it is False
         {"use_charges_derivatives", {true, NamelistType::BOOL}},
         // No longer available, validation throws if it is True
@@ -490,6 +569,12 @@ auto GlobalConfig::fromNamelistFile(
             }
             mlmm_config = mlmm_config->withValue("mm_cutoff", 0.1);
         }
+        if (isGeepCoupling(mlmm_coupling) && source != "mlmm") {
+            throw config_validation_error(
+                "mlmm_coupling = '" + mlmm_coupling + "' is only supported with the"
+                " &mlmm namelist"
+            );
+        }
         std::string mm_cutoff_kind = mlmm_config->getString("mm_cutoff_kind");
         std::transform(
             mm_cutoff_kind.begin(), mm_cutoff_kind.end(), mm_cutoff_kind.begin(), ::tolower
@@ -587,11 +672,17 @@ auto GlobalConfig::validateConfig(
     const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
     bool inv_pol_dielectric_is_default = isDefault(mlmm, defaults, "inv_pol_dielectric");
 
-    if (!isOneOf(mlmm_coupling, {"coulombic", "simple-polarizable", "custom", "none"})
-        && !isMechanicalEmbedding(mlmm_coupling)) {
+    bool coupling_is_coulombic = mlmm_coupling == "coulombic"
+        || mlmm_coupling == "coulombic-geep";
+    bool coupling_is_polarizable = isPolarizableCoupling(mlmm_coupling);
+    bool coupling_is_geep = isGeepCoupling(mlmm_coupling);
+
+    if (!isOneOf(mlmm_coupling, {"custom", "none"}) && !coupling_is_coulombic
+        && !coupling_is_polarizable && !isMechanicalEmbedding(mlmm_coupling)) {
         throw config_validation_error(
-            "Valid mlmm_coupling values are 'coulombic', 'simple-polarizable', 'custom',"
-            " 'none', 'mechanical-embedding' (or 'me') and"
+            "Valid mlmm_coupling values are 'coulombic', 'simple-polarizable',"
+            " 'coulombic-geep', 'simple-polarizable-geep', 'custom', 'none',"
+            " 'mechanical-embedding' (or 'me') and"
             " 'mechanical-embedding-no-electrostatics' (or 'me-no-electrostatics')"
         );
     }
@@ -655,15 +746,16 @@ auto GlobalConfig::validateConfig(
         );
     }
     if (!mlmm.getBool("allow_untested_protocols")) {
-        if (mlmm_coupling == "coulombic" && use_mlip_atomic_charges) {
+        if (coupling_is_coulombic && use_mlip_atomic_charges) {
             throw config_validation_error(
-                "mlmm_coupling = 'coulombic' is untested with use_mlip_atomic_charges = T,"
-                " set allow_untested_protocols = T if you really mean to run this simulation"
+                "mlmm_coupling = '" + mlmm_coupling + "' is untested with"
+                " use_mlip_atomic_charges = T, set allow_untested_protocols = T if you"
+                " really mean to run this simulation"
             );
         }
-        if (mlmm_coupling == "simple-polarizable" && !use_mlip_atomic_charges) {
+        if (coupling_is_polarizable && !use_mlip_atomic_charges) {
             throw config_validation_error(
-                "mlmm_coupling = 'simple-polarizable' is untested with fixed topology"
+                "mlmm_coupling = '" + mlmm_coupling + "' is untested with fixed topology"
                 " charges, set allow_untested_protocols = T if you really mean to run this"
                 " simulation"
             );
@@ -672,9 +764,10 @@ auto GlobalConfig::validateConfig(
     bool use_mlip_atomic_volumes = mlmm.getBool("use_mlip_atomic_volumes");
     bool volume_kzs_is_set = !mlmm.values("volume_kzs").empty();
     resolvedVolumeKzs(mlmm);
-    if (use_mlip_atomic_volumes && mlmm_coupling != "simple-polarizable") {
+    if (use_mlip_atomic_volumes && !coupling_is_polarizable) {
         throw config_validation_error(
-            "use_mlip_atomic_volumes = T requires mlmm_coupling = 'simple-polarizable'"
+            "use_mlip_atomic_volumes = T requires mlmm_coupling = 'simple-polarizable' or"
+            " 'simple-polarizable-geep'"
         );
     }
     if (!use_mlip_atomic_volumes && volume_kzs_is_set) {
@@ -682,9 +775,26 @@ auto GlobalConfig::validateConfig(
             "volume_kzs only has an effect with use_mlip_atomic_volumes = T"
         );
     }
-    if (!inv_pol_dielectric_is_default && mlmm_coupling != "simple-polarizable") {
+    if (!inv_pol_dielectric_is_default && !coupling_is_polarizable) {
         throw config_validation_error(
             "inv_pol_dielectric only has an effect with mlmm_coupling = 'simple-polarizable'"
+            " or 'simple-polarizable-geep'"
+        );
+    }
+    resolvedGeepSigmas(mlmm);
+    if (mlmm.getDouble("geep_factor") <= 0.0) {
+        throw config_validation_error("geep_factor must be > 0");
+    }
+    if (!coupling_is_geep && !mlmm.values("geep_sigmas").empty()) {
+        throw config_validation_error(
+            "geep_sigmas only has an effect with mlmm_coupling = 'coulombic-geep' or"
+            " 'simple-polarizable-geep'"
+        );
+    }
+    if (!coupling_is_geep && !isDefault(mlmm, defaults, "geep_factor")) {
+        throw config_validation_error(
+            "geep_factor only has an effect with mlmm_coupling = 'coulombic-geep' or"
+            " 'simple-polarizable-geep'"
         );
     }
     if (mlmm_coupling == "custom") {
@@ -735,16 +845,16 @@ auto GlobalConfig::validateConfig(
         );
     }
     if (!use_qm_coupling) {
-        if (mlmm_coupling == "coulombic" && use_mlip_atomic_charges) {
+        if (coupling_is_coulombic && use_mlip_atomic_charges) {
             printWarning(
-                "You are using an untested protocol: mlmm_coupling = 'coulombic' is only"
-                " tested with fixed topology charges"
+                "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
+                + "' is only tested with fixed topology charges"
             );
         }
-        if (mlmm_coupling == "simple-polarizable" && !use_mlip_atomic_charges) {
+        if (coupling_is_polarizable && !use_mlip_atomic_charges) {
             printWarning(
-                "You are using an untested protocol: mlmm_coupling = 'simple-polarizable'"
-                " is only tested with use_mlip_atomic_charges = T"
+                "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
+                + "' is only tested with use_mlip_atomic_charges = T"
             );
         }
     }
@@ -845,6 +955,22 @@ auto GlobalConfig::getVolumeKz(long atomic_num) const -> double {
     return kzs[idx];
 }
 
+auto GlobalConfig::getGeepSigma(long atomic_num) const -> double {
+    if (atomic_num < 1 || atomic_num > static_cast<long>(constants::NUM_ELEMENTS)) {
+        throw std::out_of_range("Invalid atomic number " + std::to_string(atomic_num));
+    }
+    std::vector<double> sigmas = resolvedGeepSigmas(mlmm());
+    auto idx = static_cast<std::size_t>(atomic_num - 1);
+    if (std::isnan(sigmas[idx])) {
+        throw std::runtime_error(
+            "geep_sigmas has no value for element "
+            + std::string(constants::ELEMENT_SYMBOLS[idx])
+            + " (atomic number " + std::to_string(atomic_num) + ")"
+        );
+    }
+    return sigmas[idx] * mlmm().getDouble("geep_factor");
+}
+
 auto GlobalConfig::getPolarizability(long atomic_num) const -> double {
     if (atomic_num < 1 || atomic_num > static_cast<long>(constants::NUM_ELEMENTS)) {
         throw std::out_of_range("Invalid atomic number " + std::to_string(atomic_num));
@@ -896,6 +1022,16 @@ auto GlobalConfig::printInfo() const -> void {
     }
     if (m_amber_qmmm_int == 1) {
         out << configLine(mlmm(), "mlmm_coupling");
+    }
+    if (isGeepCoupling(mlmm_coupling) && mlmm().values("geep_sigmas").empty()) {
+        out << configLine(
+            mlmm().withValue("geep_sigmas", std::string{"builtin"}), "geep_sigmas"
+        );
+    } else if (isGeepCoupling(mlmm_coupling)) {
+        out << configLine(mlmm(), "geep_sigmas");
+    }
+    if (isGeepCoupling(mlmm_coupling)) {
+        out << configLine(mlmm(), "geep_factor");
     }
     if (usesInternalOptions(mlmm())) {
         out << "ML/MM:------WARNING! INTERNAL OPTIONS, DO NOT USE------\n";
@@ -958,10 +1094,10 @@ auto GlobalConfig::printInfo() const -> void {
         std::cout << out.str() << std::flush;
         return;
     }
-    if (mlmm_coupling == "coulombic") {
+    if (mlmm_coupling == "coulombic" || mlmm_coupling == "coulombic-geep") {
         out << "ML/MM: Will use a coulombic-only QM/MM interaction energy,"
             << " with no polarization corrections\n";
-    } else if (mlmm_coupling == "simple-polarizable") {
+    } else if (isPolarizableCoupling(mlmm_coupling)) {
         out << "ML/MM: Will use the simple polarizable approximation for the QM/MM"
             << " interaction energy\n"
             << "     Thole-inspired correction terms will be added to the coulombic"
@@ -975,6 +1111,10 @@ auto GlobalConfig::printInfo() const -> void {
             << "     The model receives ML species+coords and MM coords+charges\n"
             << "     and computes the coupling internally.\n"
             << "     Only models exposing custom_mlmm() support this kind of coupling.\n";
+    }
+    if (isGeepCoupling(mlmm_coupling)) {
+        out << "ML/MM: The MM charges are Gaussians (GEEP), with widths (bohr) that depend"
+            << " on the element of the ML atom, geep_sigmas times geep_factor\n";
     }
     if (mlmm_coupling != "custom" && getBool("use_mlip_atomic_charges")) {
         out << "ML/MM: Will use position-dependent NN-predicted charges for the QM-region,"
