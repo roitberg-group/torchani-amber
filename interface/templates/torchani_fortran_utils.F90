@@ -25,38 +25,31 @@
 !   new public routine must also be added there.
 
 subroutine mlip_initialize( &
-    atomic_nums, &
     config_path, &
-    read_mlmm_config, &
-    calling_program, &
-    print_config_info &
+    from_namelist, &
+    calling_program &
 )
-    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
     character(len=*, kind=kind("a")), intent(in) :: config_path
-    logical, intent(in) :: read_mlmm_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: from_namelist
     character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
-    logical, optional, intent(in) :: print_config_info
 
     character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
+    character(len=:, kind=c_char), allocatable :: c_from_namelist
     character(len=:, kind=c_char), allocatable :: c_calling_program
-    logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_config_path = trim(config_path) // c_null_char
+    c_from_namelist = "mlip" // c_null_char
+    if (present(from_namelist)) then
+        c_from_namelist = trim(from_namelist) // c_null_char
+    endif
     c_calling_program = "none" // c_null_char
     if (present(calling_program)) then
         c_calling_program = trim(calling_program) // c_null_char
     endif
-    do_print_config_info = .false.
-    if (present(print_config_info)) then
-        do_print_config_info = print_config_info
-    endif
     call internal_initialize( &
-        size(atomic_nums), &
-        atomic_nums, &
         c_config_path, &
-        fbool_to_cbool(read_mlmm_config), &
-        c_calling_program, &
-        fbool_to_cbool(do_print_config_info) &
+        c_from_namelist, &
+        c_calling_program &
     )
 endsubroutine
 
@@ -470,6 +463,21 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
         ret = .false._c_bool
     endif
 endfunction
+
+subroutine mlip_set_atomic_numbers(atomic_nums, print_info)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    logical, optional, intent(in) :: print_info
+    logical :: do_print_info
+    do_print_info = .false.
+    if (present(print_info)) then
+        do_print_info = print_info
+    endif
+    call internal_set_atomic_numbers( &
+        int(size(atomic_nums), c_int), &
+        atomic_nums, &
+        fbool_to_cbool(do_print_info) &
+    )
+endsubroutine
 
 subroutine mlip_set_no_eval_atoms_mask(values)
     integer(c_int), contiguous, intent(in) :: values(:)

@@ -57,7 +57,7 @@ Experimental *QM coupling* feature:
   `'gau'` or `'lio'` are specified, the `orc`, `gau` or `lio` namelists should also be
   included.
 
-An example `&mlip` namelist for use with the *QM coupling* feature:
+An example `&mlmm` namelist for use with the *QM coupling* feature:
 
 ```raw
 &mlip

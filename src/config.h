@@ -123,6 +123,7 @@ class GlobalConfig {
         torch::TensorOptions().device(torch::Device{torch::kCPU, -1}).dtype(torch::kFloat)
     };
     bool m_use_no_eval_atoms = false;
+    bool m_has_atomic_numbers = false;
     bool m_mlip_interface_is_init = false;
     std::optional<ConfigDict> m_mlip_config;
     std::optional<ConfigDict> m_mlmm_config;
@@ -156,13 +157,15 @@ class GlobalConfig {
         std::optional<ConfigDict> amber_qmmm_config = std::nullopt
     );
 
-    // Read the config from the first "&mlip" namelist in an Amber input file (mdin).
-    // If read_mlmm_config, also read the ML/MM options. If calling_program is "sander"
-    // too, also read the first "&qmmm" namelist, and validate the config against it.
-    // calling_program is "none", "sander" or "pmemd" (case-insensitive)
+    // Read the config from an Amber input file (mdin). from_namelist is "mlip" (first
+    // "&mlip" namelist, no ML/MM options), "qmmm-and-mlip" (deprecated, first "&mlip"
+    // namelist with the ML/MM options, and if calling_program is "sander" also the
+    // first "&qmmm" namelist, the config is validated against it) or "mlmm" (first
+    // "&mlmm" namelist with the ML/MM options, a "&qmmm" namelist is an error).
+    // calling_program is "none", "sander" or "pmemd". Both are case-insensitive
     static auto fromNamelistFile(
         const std::string& fpath,
-        bool read_mlmm_config = false,
+        const std::string& from_namelist = "mlip",
         const std::string& calling_program = "none"
     ) -> GlobalConfig;
 
@@ -180,6 +183,14 @@ class GlobalConfig {
 
     auto setNoEvalAtoms(bool use_no_eval_atoms) -> void {
         m_use_no_eval_atoms = use_no_eval_atoms;
+    }
+
+    auto hasAtomicNumbers() const -> bool {
+        return m_has_atomic_numbers;
+    }
+
+    auto setHasAtomicNumbers(bool has_atomic_numbers) -> void {
+        m_has_atomic_numbers = has_atomic_numbers;
     }
 
     auto setMlChargeAndSpinMult(int ml_charge, int ml_spin_mult) -> void {

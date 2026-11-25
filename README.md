@@ -168,12 +168,11 @@ and the resulting oversubscription can make dynamics more than 10x slower.
 
 Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
 
-To use TorchANI-Amber to run full-ML simulations, you need three different
-namelists in your input file:
-- The usual `&cntrl` namelist, which *must have* the flag `iextpot = 2`, together
-  with the usual simulation configuration.
-- Second, the `&extpot` namelist, with the only setting `extprog = 'TORCHANI'`.
-- Third, the `&mlip` namelist, with the actual `TorchANI` configuration.
+To use TorchANI-Amber to run full-ML simulations, you need two different namelists in
+your input file:
+- The usual `&cntrl` namelist, which *must have* the flag `imlip = 1`, together with
+  the usual simulation configuration.
+- Second, the `&mlip` namelist, with the actual `TorchANI` configuration.
 
 The `&mlip` namelist supports the following basic options:
 - `model_type` (*string*)
@@ -235,11 +234,8 @@ An example `mdin` input file with the correct format:
 
 ```
 &cntrl
-    iextpot = 2  ! Required to run full-ML TorchANI-Amber
+    imlip = 1  ! Required to run full-ML TorchANI-Amber
     ! ... Add the rest of the Sander options here
-/
-&extpot
-    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
 /
 &mlip
     model_type = "ani2x"
@@ -267,12 +263,9 @@ An example `mdin` input file for the Amber-NB configuration is, schematically:
 
 ```
 &cntrl
-    iextpot = 2  ! Required to run full-ML TorchANI-Amber
+    imlip = 1  ! Required to run full-ML TorchANI-Amber
     cut = 8.0  ! Cutoff for the inter-molecular FF non-bonded interactions
     ! ... Add the rest of the Sander options here
-/
-&extpot
-    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
 /
 &mlip
     model_type = "ani2x"
@@ -292,23 +285,26 @@ TorchANI-Amber is also integrated with the QM/MM Sander subsystem, which means y
 perform ML/MM simulations with it. Sander is *required* for this, Pmemd is not
 supported.
 
-If you want to run this kind of dynamics, **instead** of setting `iextpot = 2` and
-including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
-namelist.
+If you want to run this kind of dynamics, **instead** of setting `imlip = 1` and
+including the `&mlip` namelist, you should set `ifmlmm = 1` in the `&cntrl` namelist,
+and include the `&mlmm` namelist. The `&mlmm` namelist replaces both the `&mlip` and the
+`&qmmm` namelists: it accepts all the `&mlip` options, and Sander sets up its QM/MM
+subsystem from it. A `&qmmm` namelist can't be used together with `&mlmm`, and
+`ifmlmm = 1` can't be used together with `ifqnt = 1`.
 
-Many options can be used in the `&qmmm` namelist, but `qmmm_int = 1` (default),
-`qm_ewald = 0`, and `qm_theory = 'EXTERN'` (must be specified) are *required* to run
-ML/MM simulations with TorchANI-Amber. The default for `qm_ewald` is `1`, and it is only
-turned off automatically if `ntb = 0` or `use_pme = 0`, so it must be set explicitly
-for periodic systems. The QM region has no default, it must be selected with `qmmask`
-(or `iqmatoms`). `qmcut` defaults to the value of `cut` in the `&cntrl` namelist.
-
-For ML/MM, set the charge and spin multiplicity of the ML region with `qmcharge` and
-`spin` in the `&qmmm` namelist, instead of `ml_charge` and `ml_spin_mult` in the
-`&mlip` namelist. TorchANI-Amber takes them from `&qmmm`, and Sander also uses
-`qmcharge` (e.g. to adjust the MM charges, see `adjust_q`).
-
-The `&mlip` namelist remains the same, with the following extra available options.
+The `&mlmm` namelist supports, in addition to the `&mlip` options:
+- `ml_mask` (str)
+   Amber mask that selects the ML region (e.g. `':1'`). It has no default, if it is not
+   set the ML region is empty and Sander stops with an error.
+- `mm_cutoff = 15.0` (double)
+   Cutoff (in Angstrom) of the MM atoms that interact with the ML region. It can't be
+   set with `mlmm_coupling = 'mechanical-embedding'`.
+- `ml_shake = .true.` (bool)
+   Whether the bonds to hydrogen within the ML region are constrained by SHAKE (only if
+   SHAKE is turned on with `ntc > 1`).
+- `ml_charge = 0` and `ml_spin_mult = 1` (int)
+   Charge and spin multiplicity of the ML region. Sander also uses the charge (e.g. to
+   adjust the MM charges so that the total charge is preserved).
 
 ML/MM and electrostatic related options:
 - `use_mlip_atomic_charges` (bool)
@@ -321,8 +317,12 @@ ML/MM and electrostatic related options:
 - `mlmm_coupling` (str, case-insensitive)
    Currently available are: `'coulombic'` (*coulombic coupling*, the default),
    `'simple-polarizable'` (*simple polarizable* coupling), `'custom'` (custom ML/MM model,
-   see below) and `'none'` (no ML/MM coupling, required with `qmmm_int = 0` or `5`). The
-   integers `0`, `1`, `2` and `3` are deprecated aliases of these values, in that order.
+   see below), `'none'` (no ML/MM coupling) and `'mechanical-embedding'` (or `'me'`).
+   With `'mechanical-embedding'`, Sander calculates the ML/MM interaction with the force
+   field, using the topology charges of the ML region, and the MLIP only calculates the
+   energy of the ML region in vacuo. In this case `use_mlip_atomic_charges` and
+   `use_mlip_atomic_volumes` must be `.false.`, and periodic boundary conditions
+   (`igb = 0`) are required.
 
 We recommend using one of the following two settings:
 - *mlmm_coupling = 'simple-polarizable'* and *use_mlip_atomic_charges=.true.* (variable
@@ -334,19 +334,14 @@ A template for the first setting (simple polarizable with variable charges) is:
 
 ```raw
 &cntrl
-    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ifmlmm = 1  ! Required for all ML/MM TorchANI-Amber dynamics
     ! ... Add extra simulation settings here
 /
-&qmmm
-    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
-    qmmask = ':1',  ! Select the first molecule as the QM-region
-    qmcharge = 0  ! Charge of the ML region
-    spin = 1  ! Spin multiplicity of the ML region
-    qmcut = 15.0  ! Recommended
-/
-&mlip
+&mlmm
+    ml_mask = ':1'  ! Select the first molecule as the ML region
+    ml_charge = 0  ! Charge of the ML region
+    ml_spin_mult = 1  ! Spin multiplicity of the ML region
+    mm_cutoff = 15.0  ! Recommended
     model_type = 'animbis'  ! Charge-predicting model, 'animbis' or 'aimnet2-*-mbis-*'
     use_mlip_atomic_charges = .true.  ! Use geometry dependent, nn-predicted charges
     mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
@@ -358,17 +353,12 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 
 ```raw
 &cntrl
-    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ifmlmm = 1  ! Required for all ML/MM TorchANI-Amber dynamics
     ! ... Add extra simulation settings here
 /
-&qmmm
-    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
-    qmmask = ':1'  ! Select the first molecule as the QM-region
-    qmcut = 15.0  ! Recommended
-/
-&mlip
+&mlmm
+    ml_mask = ':1'  ! Select the first molecule as the ML region
+    mm_cutoff = 15.0  ! Recommended
     model_type = 'ani2x'  ! Select any model
     use_mlip_atomic_charges = .false.  ! Use fixed topology charges
     mlmm_coupling = 'coulombic'  ! Coulombic coupling

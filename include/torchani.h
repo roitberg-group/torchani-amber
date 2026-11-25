@@ -6,26 +6,53 @@ extern "C" {
 #else
 #include <stdbool.h>
 #endif
-// Read the config from the first &mlip namelist of the file at config_path (the
-// mdin, relative paths are resolved wrt the current working directory), and load
-// the MLIP. The ML/MM options are only read if read_mlmm_config.
-// calling_program is the md engine, "none", "sander" or "pmemd". If it is "sander"
-// and read_mlmm_config, the &qmmm namelist is also read, and the config is validated
-// against it. If print_config_info, the config is printed to stdout.
-// In Fortran, calling_program and print_config_info are optional, default "none"
-// and false
+// Read the config from the file at config_path (the mdin, relative paths are
+// resolved wrt the current working directory), and load the MLIP. from_namelist is
+// (case-insensitive):
+// - "mlip": read the first &mlip namelist, without the ML/MM options
+// - "qmmm-and-mlip" (deprecated): read the first &mlip namelist, with the ML/MM
+//   options. If calling_program is "sander", the &qmmm namelist is also read, and
+//   the config is validated against it
+// - "mlmm": read the first &mlmm namelist, with the ML/MM options. A &qmmm
+//   namelist is an error
+// calling_program is the md engine, "none", "sander" or "pmemd".
+// In Fortran, from_namelist and calling_program are optional, default "mlip" and
+// "none"
 void mlip_initialize(
+    const char* config_path,
+    const char* from_namelist,
+    const char* calling_program
+);
+
+// Print the config read by mlip_initialize to stdout. Exits if mlip_initialize was
+// not called
+void mlip_print_config_info(
+);
+
+// Whether mlip_initialize has been called. Can be called before mlip_initialize
+void mlip_is_init(
+    /* outputs */
+    bool* out_is_init
+);
+
+// Set the atomic numbers of the atoms. Required by mlip_set_no_eval_atoms_mask and
+// the mlip_calc_* functions, which exit if they are not set. Can only be called once
+// after each mlip_initialize, exits otherwise. The extra features file
+// (extra_features_file_path) is read here, and must have one value per atom. With
+// use_mlip_atomic_volumes, exits if an element has no kz. If print_info and
+// mlmm_coupling is 'simple-polarizable', the polarizabilities (or kz factors) in use
+// are printed to stdout. In Fortran, num_atoms is size(atomic_nums), and print_info
+// is optional, default false
+void mlip_set_atomic_numbers(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
-    const char* config_path,
-    bool read_mlmm_config,
-    const char* calling_program,
-    bool print_config_info
+    bool print_info
 );
 
 // Exclude the atoms with value 1 from the evaluation: they feel no forces, and don't
 // contribute to the energy. values has one 0 or 1 per atom passed to
-// mlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
+// mlip_set_atomic_numbers. Exits if any value is not 0 or 1, or if num_atoms doesn't
+// match.
 // Not supported by the ML/MM functions. In Fortran, num_atoms is size(values)
 void mlip_set_no_eval_atoms_mask(
     int num_atoms,
@@ -122,7 +149,7 @@ void mlip_calc_energy_atomic_charges_vjp(
     double forces[][3]  // Shape (num_atoms, 3)
 );
 
-// Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
+// Requires the ML/MM config (mlip_initialize with from_namelist "mlmm"), exits
 // otherwise. The coupling is its mlmm_coupling option: 'coulombic',
 // 'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
 // 0. With 'simple-polarizable', the atomic polarizabilities and the inverse

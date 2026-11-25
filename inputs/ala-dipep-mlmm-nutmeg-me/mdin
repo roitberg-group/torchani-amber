@@ -1,6 +1,6 @@
 ! TorchANI-Amber test input (ML/MM)
 &cntrl
-    ifqnt = 1  ! Use QM/MM
+    ifmlmm = 1  ! Use ML/MM
     imin = 0  ! Dynamics
     nstlim = 2000  ! Total num of dynamics steps (2 ps)
     ntx = 1  ! Only read input coords, not vels
@@ -14,13 +14,9 @@
     ig = 5541  ! Manual seed for reproducibility
     cut = 10.0  ! Non-bonded neighborlist cutoff
 /
-&qmmm
-    qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmask = ":1-3"  ! Select the first 3 residues as the QM-region
-    qmcut = 8.0  ! 15.0 is recommended, 8.0 used for this example
-/
-&mlip
+&mlmm
+    ml_mask = ":1-3"  ! Select the first 3 residues as the ML region
+    mm_cutoff = 8.0  ! 15.0 is recommended, 8.0 used for this example
     cuda_device_index = 0
     use_cuda_device = .True.
     use_cuaev = .False.

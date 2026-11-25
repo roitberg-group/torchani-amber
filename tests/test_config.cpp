@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "config.h"
@@ -12,6 +13,7 @@
 // c10 defines a CHECK macro, which must not replace the one from Catch2
 #undef CHECK
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 using config::GlobalConfig;
@@ -156,6 +158,104 @@ TEST_CASE("GlobalConfig from deprecated ani namelist", "[config]") {
     std::filesystem::remove(path);
 }
 
+TEST_CASE("GlobalConfig ML/MM mm_cutoff, ml_mask and ml_shake", "[config]") {
+    std::filesystem::path path = writeTmpFile(
+        "torchani_test_config_mlmm_cutoff_mask.in",
+        "&mlmm mm_cutoff = 10.0, ml_mask = ':1-2', ml_shake = F /\n"
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getDouble("mm_cutoff") == 10.0);
+    CHECK(config.getString("ml_mask") == ":1-2");
+    CHECK_FALSE(config.getBool("ml_shake"));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig ML/MM mechanical embedding", "[config]") {
+    auto [alias, mlmm_coupling] = GENERATE(
+        std::make_pair(std::string{"ME"}, std::string{"mechanical-embedding"}),
+        std::make_pair(
+            std::string{"ME-no-electrostatics"},
+            std::string{"mechanical-embedding-no-electrostatics"}
+        )
+    );
+    const std::string fname = "torchani_test_config_mechanical_embedding.in";
+    std::filesystem::path path =
+        writeTmpFile(fname, "&mlmm mlmm_coupling = '" + alias + "' /\n");
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getString("mlmm_coupling") == mlmm_coupling);
+    CHECK(config.getDouble("mm_cutoff") == 0.1);
+    writeTmpFile(fname, "&mlmm mlmm_coupling = '" + mlmm_coupling + "' /\n");
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getString("mlmm_coupling") == mlmm_coupling);
+
+    const std::string coupling_line = "&mlmm mlmm_coupling = '" + mlmm_coupling + "', ";
+    const std::vector<std::string> invalid_texts = {
+        coupling_line + "mm_cutoff = 0.1 /\n",
+        coupling_line + "use_mlip_atomic_charges = T, allow_untested_protocols = T /\n",
+        coupling_line + "use_mlip_atomic_volumes = T /\n",
+        coupling_line + "use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
+        coupling_line + "use_hybrid_mlqm = T, hybrid_mlqm_method = 'orca' /\n",
+    };
+    for (const std::string& text : invalid_texts) {
+        writeTmpFile(fname, text);
+        INFO(text);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+            config::config_validation_error
+        );
+    }
+    // Only supported with the &mlmm namelist
+    writeTmpFile(fname, "&mlip mlmm_coupling = '" + alias + "' /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "none"),
+        config::config_validation_error
+    );
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig from_namelist", "[config]") {
+    const std::string fname = "torchani_test_config_from_namelist.in";
+    std::filesystem::path path =
+        writeTmpFile(fname, "&mlip model_type = 'ani1x' /\n&mlmm model_type = 'animbis' /\n");
+    // "mlmm" reads &mlmm, case-insensitive
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "MLMM", "sander");
+    CHECK(config.getString("model_type") == "animbis");
+    CHECK(config.getInt("ml_charge") == 0);
+    // "mlip" and "qmmm-and-mlip" read &mlip, only "qmmm-and-mlip" warns
+    std::stringstream captured;
+    std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlip", "none");
+    CHECK(captured.str().empty());
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "none");
+    std::cerr.rdbuf(cerr_buf);
+    CHECK(config.getString("model_type") == "ani1x");
+    CHECK(captured.str().find("use the &mlmm namelist instead") != std::string::npos);
+
+    CHECK(config.hasMlmmConfig());
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlip", "sander");
+    CHECK_FALSE(config.hasMlmmConfig());
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm", "sander"),
+        std::runtime_error
+    );
+    writeTmpFile(fname, "&mlip /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+        std::runtime_error
+    );
+    // &qmmm can't be used with &mlmm, for any calling program
+    writeTmpFile(fname, "&mlmm /\n&qmmm qmcharge = 1 /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+        config::config_validation_error
+    );
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "mlmm", "none"),
+        config::config_validation_error
+    );
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     std::filesystem::path path = writeTmpFile(
         "torchani_test_config_mlmm.in",
@@ -168,7 +268,7 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     );
     std::stringstream captured_int;
     std::streambuf* int_cerr_buf = std::cerr.rdbuf(captured_int.rdbuf());
-    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true, "sander");
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander");
     std::cerr.rdbuf(int_cerr_buf);
     CHECK(
         captured_int.str().find("use mlmm_coupling = 'simple-polarizable'")
@@ -179,6 +279,9 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     CHECK_FALSE(config.getBool("use_numerical_mlmm_forces"));
     CHECK_FALSE(config.getBool("allow_untested_protocols"));
     CHECK(config.getDouble("inv_pol_dielectric") == 1.0);
+    CHECK(config.getDouble("mm_cutoff") == 15.0);
+    CHECK(config.getString("ml_mask").empty());
+    CHECK(config.getBool("ml_shake"));
     CHECK(config.getDouble("pol_h") == 2.5);
     CHECK(config.getDouble("pol_c") == 11.3);
     CHECK(config.getDouble("pol_ar") == 10.0);
@@ -201,12 +304,12 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         "torchani_test_config_mlmm.in",
         "&mlip use_extcoupling = T, extcoupling_program = 'orca', mlmm_coupling = 'none' /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getBool("use_qm_coupling"));
     CHECK(config.getString("qm_coupling_method") == "orca");
     writeTmpFile("torchani_test_config_mlmm.in", "&mlip /\n");
     CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()).mlmm(), std::logic_error);
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getString("mlmm_coupling") == "coulombic");
 
     writeTmpFile(
@@ -215,7 +318,7 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         "  write_charges = T, write_charges_grad = T, write_forces = T,\n"
         "  use_hybrid_mlqm = T, hybrid_mlqm_method = 'gau', hybrid_mlqm_switch_high = 0.5 /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getString("mlmm_coupling") == "simple-polarizable");
     CHECK(config.getBool("use_mlip_atomic_charges"));
     CHECK(config.getBool("write_atomic_charges"));
@@ -266,7 +369,7 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
     for (const std::string& text : invalid_texts) {
         std::filesystem::path path = writeTmpFile(fname, text);
         CHECK_THROWS_AS(
-            GlobalConfig::fromNamelistFile(path.string(), true),
+            GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"),
             config::config_validation_error
         );
         std::filesystem::remove(path);
@@ -279,7 +382,7 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
     );
     std::stringstream captured;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
-    GlobalConfig::fromNamelistFile(path.string(), true);
+    GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     std::cerr.rdbuf(cerr_buf);
     CHECK(captured.str().find("untested protocol") != std::string::npos);
     std::filesystem::remove(path);
@@ -292,7 +395,7 @@ TEST_CASE("GlobalConfig deprecated no-op options", "[config]") {
     );
     std::stringstream captured;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
-    GlobalConfig::fromNamelistFile(path.string(), true);
+    GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     std::cerr.rdbuf(cerr_buf);
     CHECK(captured.str().find("use_torch_coupling is deprecated") != std::string::npos);
     CHECK(captured.str().find("write_charges_grad is deprecated") != std::string::npos);
@@ -306,16 +409,16 @@ TEST_CASE("GlobalConfig deprecated no-op options", "[config]") {
 TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     const std::string fname = "torchani_test_config_qmmm.in";
     std::filesystem::path path = writeTmpFile(fname, "&mlip /\n");
-    CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string(), true, "sander"), std::runtime_error);
-    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true));
+    CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"), std::runtime_error);
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"));
     writeTmpFile(fname, "&mlip /\n&qmmm qmmm_int = 2 /\n");
-    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true));
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"));
     writeTmpFile(
         fname,
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca', mlmm_coupling = 'none' /\n"
         "&qmmm qmcharge = 1 /\n"
     );
-    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     writeTmpFile(
         fname,
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca', use_mlip_atomic_charges = T,\n"
@@ -323,14 +426,14 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     );
     std::stringstream captured_charges;
     std::streambuf* charges_cerr_buf = std::cerr.rdbuf(captured_charges.rdbuf());
-    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     std::cerr.rdbuf(charges_cerr_buf);
     CHECK(
         captured_charges.str().find("use_mlip_atomic_charges has no effect") != std::string::npos
     );
     writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = 'a' /\n");
     CHECK_THROWS_AS(
-        GlobalConfig::fromNamelistFile(path.string(), true, "sander"),
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
         fortran_utils::namelist_type_error
     );
 
@@ -351,7 +454,7 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     for (const std::string& text : invalid_texts) {
         writeTmpFile(fname, text);
         CHECK_THROWS_AS(
-            GlobalConfig::fromNamelistFile(path.string(), true, "sander"),
+            GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
             config::config_validation_error
         );
     }
@@ -361,7 +464,7 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     );
     std::stringstream captured;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
-    GlobalConfig::fromNamelistFile(path.string(), true, "sander");
+    GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander");
     std::cerr.rdbuf(cerr_buf);
     CHECK(captured.str().find("qmmm_int = 0") != std::string::npos);
     std::filesystem::remove(path);
@@ -394,7 +497,7 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
         "  write_xyz = T /\n&qmmm /\n"
     );
-    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     CHECK(info.find("write_coords") != std::string::npos);
     CHECK(info.find("write_xyz") == std::string::npos);
     CHECK(info.find("simple-polarizable") != std::string::npos);
@@ -410,7 +513,7 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     );
     std::stringstream captured_cerr;
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured_cerr.rdbuf());
-    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     std::cerr.rdbuf(cerr_buf);
     CHECK(info.find("INTERNAL OPTIONS") != std::string::npos);
     CHECK(info.find("hybrid_mlqm_switch_low") != std::string::npos);
@@ -418,7 +521,7 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     CHECK(info.find("calculated by MLIP Interface") == std::string::npos);
 
     writeTmpFile(fname, "&mlip mlmm_coupling = 'none' /\n&qmmm /\n");
-    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     CHECK(info.find("only the in vacuo ML energy") != std::string::npos);
     CHECK(info.find("calculated by MLIP Interface") == std::string::npos);
     std::filesystem::remove(path);
@@ -477,7 +580,7 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
         "  use_mlip_atomic_volumes = T, volume_kzs = 0.5, , 1 /\n"
     );
-    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true);
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getVolumeKz(1L) == 0.5);
     CHECK(config.getVolumeKz(3L) == 1.0);
     CHECK_THROWS_AS(config.getVolumeKz(2L), std::runtime_error);
@@ -489,7 +592,7 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
         "  use_mlip_atomic_volumes = T, volume_kzs = 'builtin-mbis-charges' /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getVolumeKz(1L) == 0.0);
     CHECK(config.getVolumeKz(6L) == 0.7190062581351027);
     CHECK(config.getVolumeKz(16L) == 0.0);
@@ -503,7 +606,7 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
         "  use_mlip_atomic_volumes = T /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getVolumeKz(1L) == 0.0);
     CHECK(config.getVolumeKz(6L) == 0.7190062581351027);
 
@@ -512,7 +615,7 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', allow_untested_protocols = T,\n"
         "  use_mlip_atomic_volumes = T /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getVolumeKz(1L) == 0.7659661617582175);
     CHECK(config.getVolumeKz(6L) == 0.36055843774225754);
 
@@ -521,7 +624,7 @@ TEST_CASE("GlobalConfig volume kzs", "[config]") {
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
         "  use_mlip_atomic_volumes = T, volume_kzs = 'builtin-fixed-resp-charges' /\n"
     );
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getVolumeKz(1L) == 0.7659661617582175);
     CHECK(config.getVolumeKz(16L) == 0.030818228617190933);
     CHECK_THROWS_AS(config.getVolumeKz(3L), std::runtime_error);
@@ -533,35 +636,35 @@ TEST_CASE("GlobalConfig charge and spin from &qmmm", "[config]") {
     // Only in &qmmm: copied to &mlip
     std::filesystem::path path =
         writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = -1, spin = 2 /\n");
-    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true, "sander");
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander");
     CHECK(config.getInt("ml_charge") == -1);
     CHECK(config.getInt("ml_spin_mult") == 2);
     // &qmmm is only read if the calling program is sander
-    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip");
     CHECK(config.getInt("ml_charge") == 0);
     CHECK(config.getInt("ml_spin_mult") == 1);
     // Only in &mlip: kept, but a nonzero charge must also be set in &qmmm
     writeTmpFile(fname, "&mlip ml_charge = 0, ml_spin_mult = 3 /\n&qmmm /\n");
-    config = GlobalConfig::fromNamelistFile(path.string(), true, "sander");
+    config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander");
     CHECK(config.getInt("ml_charge") == 0);
     CHECK(config.getInt("ml_spin_mult") == 3);
     writeTmpFile(fname, "&mlip ml_charge = 1 /\n&qmmm /\n");
     CHECK_THROWS_WITH(
-        GlobalConfig::fromNamelistFile(path.string(), true, "sander"),
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
         Catch::Matchers::ContainsSubstring("ml_charge = 1 in &mlip requires the same qmcharge")
     );
     // In both, consistent
     writeTmpFile(fname, "&mlip ml_charge = 1, ml_spin_mult = 3 /\n&qmmm qmcharge = 1, spin = 3 /\n");
-    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"));
     // In both, inconsistent
     writeTmpFile(fname, "&mlip ml_charge = 1 /\n&qmmm qmcharge = 0 /\n");
     CHECK_THROWS_WITH(
-        GlobalConfig::fromNamelistFile(path.string(), true, "sander"),
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
         Catch::Matchers::ContainsSubstring("ml_charge = 1 in &mlip doesn't match qmcharge = 0")
     );
     writeTmpFile(fname, "&mlip ml_spin_mult = 1 /\n&qmmm spin = 2 /\n");
     CHECK_THROWS_WITH(
-        GlobalConfig::fromNamelistFile(path.string(), true, "sander"),
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
         Catch::Matchers::ContainsSubstring("ml_spin_mult = 1 in &mlip doesn't match spin = 2")
     );
     std::filesystem::remove(path);
@@ -572,11 +675,11 @@ TEST_CASE("GlobalConfig calling program", "[config]") {
     std::filesystem::path path =
         writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = -1 /\n");
     // Case-insensitive, and &qmmm is only read for sander
-    CHECK(GlobalConfig::fromNamelistFile(path.string(), true, "SANDER").getInt("ml_charge") == -1);
-    CHECK(GlobalConfig::fromNamelistFile(path.string(), true, "pmemd").getInt("ml_charge") == 0);
-    CHECK(GlobalConfig::fromNamelistFile(path.string(), true).getInt("ml_charge") == 0);
+    CHECK(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "SANDER").getInt("ml_charge") == -1);
+    CHECK(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "pmemd").getInt("ml_charge") == 0);
+    CHECK(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip").getInt("ml_charge") == 0);
     CHECK_THROWS_WITH(
-        GlobalConfig::fromNamelistFile(path.string(), true, "gromacs"),
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "gromacs"),
         Catch::Matchers::ContainsSubstring("calling_program must be")
     );
     std::filesystem::remove(path);

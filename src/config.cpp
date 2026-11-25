@@ -171,13 +171,27 @@ std::vector<double> resolvedVolumeKzs(const ConfigDict& mlmm) {
     return kzs;
 }
 
-// mlmm_coupling may be one of the deprecated integers, or a string in any case
+// With mechanical embedding the MD engine calculates the ML/MM coupling
+bool isMechanicalEmbedding(const std::string& mlmm_coupling) {
+    return mlmm_coupling == "mechanical-embedding"
+        || mlmm_coupling == "mechanical-embedding-no-electrostatics";
+}
+
+// mlmm_coupling may be one of the deprecated integers, or a string in any case. 'me' and
+// 'me-no-electrostatics' are aliases of 'mechanical-embedding' and
+// 'mechanical-embedding-no-electrostatics'
 std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
     if (std::holds_alternative<std::string>(value)) {
         std::string mlmm_coupling = std::get<std::string>(value);
         std::transform(
             mlmm_coupling.begin(), mlmm_coupling.end(), mlmm_coupling.begin(), ::tolower
         );
+        if (mlmm_coupling == "me") {
+            return "mechanical-embedding";
+        }
+        if (mlmm_coupling == "me-no-electrostatics") {
+            return "mechanical-embedding-no-electrostatics";
+        }
         return mlmm_coupling;
     }
     const std::vector<std::string> names{
@@ -237,6 +251,10 @@ auto defaultMlmmConfig() -> ConfigDict {
         // Debug option, should always be False
         {"allow_untested_protocols", {false, NamelistType::BOOL}},
         {"inv_pol_dielectric", {0.5, NamelistType::FLOAT}},
+        // Used by sander as qmcut, qmmask and qmshake, if ifmlmm = 1
+        {"mm_cutoff", {15.0, NamelistType::FLOAT}},
+        {"ml_mask", {std::string{""}, NamelistType::STR}},
+        {"ml_shake", {true, NamelistType::BOOL}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -325,7 +343,7 @@ GlobalConfig::GlobalConfig(
 
 auto GlobalConfig::fromNamelistFile(
     const std::string& fpath,
-    bool read_mlmm_config,
+    const std::string& from_namelist,
     const std::string& calling_program
 ) -> GlobalConfig {
     std::string program = calling_program;
@@ -336,6 +354,15 @@ auto GlobalConfig::fromNamelistFile(
             + calling_program + "'"
         );
     }
+    std::string source = from_namelist;
+    std::transform(source.begin(), source.end(), source.begin(), ::tolower);
+    if (!isOneOf(source, {"mlip", "qmmm-and-mlip", "mlmm"})) {
+        throw std::runtime_error(
+            "from_namelist must be 'mlip', 'qmmm-and-mlip' or 'mlmm', but it is '"
+            + from_namelist + "'"
+        );
+    }
+    bool read_mlmm_config = source != "mlip";
     // Relative paths are resolved wrt the current working directory
     std::string abs_fpath = std::filesystem::absolute(fpath).string();
     std::ifstream file(abs_fpath);
@@ -347,22 +374,43 @@ auto GlobalConfig::fromNamelistFile(
     std::string text = buffer.str();
 
     std::vector<std::string> group_names = fortran_utils::listNamelistGroupNames(text);
-    bool file_has_mlip = std::count(group_names.begin(), group_names.end(), "mlip") > 0;
-    bool file_has_ani = std::count(group_names.begin(), group_names.end(), "ani") > 0;
-    if (file_has_mlip && file_has_ani) {
-        throw std::runtime_error(
-            "Both &mlip and &ani namelists found in " + abs_fpath + ", only one can be used"
-        );
+    bool file_has_qmmm = std::count(group_names.begin(), group_names.end(), "qmmm") > 0;
+    std::string group_name = "mlmm";
+    if (source == "mlmm") {
+        if (std::count(group_names.begin(), group_names.end(), "mlmm") == 0) {
+            throw std::runtime_error("No &mlmm namelist found in " + abs_fpath);
+        }
+        if (file_has_qmmm) {
+            throw config_validation_error(
+                "A &qmmm namelist was found in " + abs_fpath
+                + ", it can't be used together with &mlmm"
+            );
+        }
+    } else {
+        bool file_has_mlip = std::count(group_names.begin(), group_names.end(), "mlip") > 0;
+        bool file_has_ani = std::count(group_names.begin(), group_names.end(), "ani") > 0;
+        if (file_has_mlip && file_has_ani) {
+            throw std::runtime_error(
+                "Both &mlip and &ani namelists found in " + abs_fpath
+                + ", only one can be used"
+            );
+        }
+        if (!file_has_mlip && !file_has_ani) {
+            throw std::runtime_error("No &mlip namelist found in " + abs_fpath);
+        }
+        if (file_has_ani) {
+            std::cerr << "WARNING (libtorchani)\n"
+                      << "The &ani namelist in " << abs_fpath << " is deprecated,"
+                      << " use &mlip instead" << std::endl;
+        }
+        group_name = file_has_mlip ? "mlip" : "ani";
+        if (source == "qmmm-and-mlip") {
+            printWarning(
+                "Reading the ML/MM options from the &" + group_name + " and &qmmm"
+                " namelists is deprecated, use the &mlmm namelist instead"
+            );
+        }
     }
-    if (!file_has_mlip && !file_has_ani) {
-        throw std::runtime_error("No &mlip namelist found in " + abs_fpath);
-    }
-    if (file_has_ani) {
-        std::cerr << "WARNING (libtorchani)\n"
-                  << "The &ani namelist in " << abs_fpath << " is deprecated,"
-                  << " use &mlip instead" << std::endl;
-    }
-    std::string group_name = file_has_mlip ? "mlip" : "ani";
 
     ConfigDict mlip_config = defaultMlipConfig();
     std::optional<ConfigDict> mlmm_config;
@@ -423,13 +471,31 @@ auto GlobalConfig::fromNamelistFile(
                 " charges are no longer written"
             );
         }
+        // With mechanical embedding mm_cutoff is set internally
+        std::string mlmm_coupling = mlmm_config->getString("mlmm_coupling");
+        if (isMechanicalEmbedding(mlmm_coupling)) {
+            if (source != "mlmm") {
+                throw config_validation_error(
+                    "mlmm_coupling = '" + mlmm_coupling + "' is only supported with the"
+                    " &mlmm namelist"
+                );
+            }
+            if (group.values.count("mm_cutoff") > 0) {
+                throw config_validation_error(
+                    "mm_cutoff can't be set with mlmm_coupling = '" + mlmm_coupling
+                    + "', it is set internally"
+                );
+            }
+            mlmm_config = mlmm_config->withValue("mm_cutoff", 0.1);
+        }
     }
     validateConfig(mlip_config, mlmm_config);
 
     std::optional<ConfigDict> amber_qmmm_config;
-    // Only sander supports ML/MM, through its &qmmm namelist
-    if (read_mlmm_config && program == "sander") {
-        if (std::count(group_names.begin(), group_names.end(), "qmmm") == 0) {
+    // With the deprecated qmmm-and-mlip, sander also reads the ML/MM config from its
+    // &qmmm namelist
+    if (source == "qmmm-and-mlip" && program == "sander") {
+        if (!file_has_qmmm) {
             throw std::runtime_error("No &qmmm namelist found in " + abs_fpath);
         }
         ConfigDict qmmm_defaults = defaultAmberQmmmConfig();
@@ -505,11 +571,39 @@ auto GlobalConfig::validateConfig(
     const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
     bool inv_pol_dielectric_is_default = isDefault(mlmm, defaults, "inv_pol_dielectric");
 
-    if (!isOneOf(mlmm_coupling, {"coulombic", "simple-polarizable", "custom", "none"})) {
+    if (!isOneOf(mlmm_coupling, {"coulombic", "simple-polarizable", "custom", "none"})
+        && !isMechanicalEmbedding(mlmm_coupling)) {
         throw config_validation_error(
-            "Valid mlmm_coupling values are 'coulombic', 'simple-polarizable', 'custom' and"
-            " 'none'"
+            "Valid mlmm_coupling values are 'coulombic', 'simple-polarizable', 'custom',"
+            " 'none', 'mechanical-embedding' (or 'me') and"
+            " 'mechanical-embedding-no-electrostatics' (or 'me-no-electrostatics')"
         );
+    }
+    if (isMechanicalEmbedding(mlmm_coupling)) {
+        if (use_mlip_atomic_charges) {
+            throw config_validation_error(
+                "mlmm_coupling = '" + mlmm_coupling + "' requires"
+                " use_mlip_atomic_charges = F, the MD engine uses the topology charges"
+            );
+        }
+        if (mlmm.getBool("use_mlip_atomic_volumes")) {
+            throw config_validation_error(
+                "use_mlip_atomic_volumes is not supported with mlmm_coupling = '"
+                + mlmm_coupling + "'"
+            );
+        }
+        if (use_qm_coupling) {
+            throw config_validation_error(
+                "use_qm_coupling is not supported with mlmm_coupling = '" + mlmm_coupling
+                + "'"
+            );
+        }
+        if (use_hybrid_mlqm) {
+            throw config_validation_error(
+                "use_hybrid_mlqm is not supported with mlmm_coupling = '" + mlmm_coupling
+                + "'"
+            );
+        }
     }
     if (!mlmm.getBool("use_charges_derivatives")) {
         throw config_validation_error(
@@ -816,6 +910,21 @@ auto GlobalConfig::printInfo() const -> void {
     }
     out << "ML/MM ELECTROSTATIC COUPLING AND CHARGE CONFIG:\n";
     if (m_amber_qmmm_int != 1) {
+        std::cout << out.str() << std::flush;
+        return;
+    }
+    if (mlmm_coupling == "mechanical-embedding") {
+        out << "ML/MM: Will use mechanical embedding, the QM/MM interaction energy is"
+            << " calculated by the MD engine\n"
+            << "     with fixed charges read from the topology file for the QM-region\n";
+        std::cout << out.str() << std::flush;
+        return;
+    }
+    if (mlmm_coupling == "mechanical-embedding-no-electrostatics") {
+        out << "ML/MM: Will use mechanical embedding without QM/MM electrostatic"
+            << " interaction energy\n"
+            << "     only the van der Waals and bonded QM/MM interactions are calculated"
+            << " by the MD engine\n";
         std::cout << out.str() << std::flush;
         return;
     }
