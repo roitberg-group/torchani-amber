@@ -7,14 +7,16 @@
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - mlip_interface_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of mlip_interface_initialize
+! - ifmlip_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of ifmlip_initialize
 !   change in the yaml, that call must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - The ifmlip_store_*_tensor wrappers call the bind(c) interfaces
+!   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
-subroutine mlip_interface_initialize( &
+subroutine ifmlip_initialize( &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
@@ -212,7 +214,82 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     endif
 endfunction
 
-subroutine mlip_interface_dump_walltime()
+subroutine ifmlip_set_no_eval_atoms_mask(values)
+    integer(c_int), contiguous, intent(in) :: values(:)
+    call internal_set_no_eval_atoms_mask(int(size(values), c_int), values)
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_float_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_float_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_int_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_int_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_mask_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_mask_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Dims in C (row-major) order, from the shape of a Fortran (column-major) array
+pure function c_order_dims(fortran_shape) result(dims)
+    integer, intent(in) :: fortran_shape(:)
+    integer(c_int) :: dims(size(fortran_shape))
+    dims = int(fortran_shape(size(fortran_shape):1:-1), c_int)
+endfunction
+
+subroutine ifmlip_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls
     logical, save :: first_call = .true.
     character(len=1), save :: need_walltime = "0"  ! Only set once

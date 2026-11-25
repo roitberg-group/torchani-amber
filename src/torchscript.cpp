@@ -318,19 +318,17 @@ auto TorchScriptMlipModel::useOnlyEnsembleMember(std::int64_t member_idx) -> voi
     m_module.get_method("set_active_members")({torch::List<std::int64_t>{member_idx}});
 }
 
-auto TorchScriptMlipModel::readExtraFeaturesFromFile(const std::string& fpath) -> void {
+auto TorchScriptMlipModel::setExtraFeatures(torch::Tensor extra_features) -> void {
     if (not m_module.find_method("set_extra_features").has_value()) {
         throw std::runtime_error(
             "Model doesn't export a method 'set_extra_features(list[float]) -> None'"
         );
     }
-    // TODO: This is ugly, it would be better to fail gracefully if the file can't
-    // be parsed
-    std::ifstream features_file(fpath);
+    extra_features = extra_features.to(torch::kCPU, torch::kDouble).contiguous();
+    auto extra_features_a = extra_features.accessor<double, 1>();
     torch::List<double> features;
-    double val;
-    while (features_file >> val) {
-        features.push_back(val);
+    for (std::int64_t i = 0; i != extra_features.size(0); ++i) {
+        features.push_back(extra_features_a[i]);
     }
     m_module.get_method("set_extra_features")({features});
 }

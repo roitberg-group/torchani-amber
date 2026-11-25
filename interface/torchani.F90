@@ -5,23 +5,40 @@ use, intrinsic :: iso_fortran_env
 use, intrinsic :: iso_c_binding
 implicit none (type, external)
 public :: &
-    mlip_interface_initialize, &
-    mlip_interface_calc_energy_force, &
-    mlip_interface_calc_energy_force_from_external_neighbors, &
-    mlip_interface_calc_energy_force_atomic_charges, &
-    mlip_interface_energy_atomic_charges_retain, &
-    mlip_interface_energy_atomic_charges_vjp, &
-    mlip_interface_calc_energy_force_mlmm, &
-    mlip_interface_calc_energy_force_mlmm_qbc, &
-    mlip_interface_store_float_tensor, &
-    mlip_interface_store_int_tensor, &
-    mlip_interface_get_config_int_option, &
-    mlip_interface_get_config_bool_option, &
-    mlip_interface_get_config_float_option, &
-    mlip_interface_get_config_str_option, &
+    ifmlip_initialize, &
+    ifmlip_set_no_eval_atoms_mask, &
+    ifmlip_calc_energy_force, &
+    ifmlip_calc_energy_force_from_external_neighbors, &
+    ifmlip_calc_energy_force_atomic_charges, &
+    ifmlip_energy_atomic_charges_retain, &
+    ifmlip_energy_atomic_charges_vjp, &
+    ifmlip_calc_energy_force_mlmm, &
+    ifmlip_calc_energy_force_mlmm_qbc, &
+    ifmlip_store_mask_tensor, &
+    ifmlip_store_tensor, &
+    ifmlip_get_config_option, &
     convert_sander_neighborlist_to_ani_fmt, &
-    mlip_interface_dump_walltime, &
+    ifmlip_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
+private :: &
+    ifmlip_store_float_tensor, &
+    ifmlip_store_int_tensor, &
+    ifmlip_get_config_int_option, &
+    ifmlip_get_config_bool_option, &
+    ifmlip_get_config_float_option, &
+    ifmlip_get_config_str_option
+
+interface ifmlip_store_tensor
+    procedure ifmlip_store_float_tensor
+    procedure ifmlip_store_int_tensor
+endinterface
+
+interface ifmlip_get_config_option
+    procedure ifmlip_get_config_int_option
+    procedure ifmlip_get_config_bool_option
+    procedure ifmlip_get_config_float_option
+    procedure ifmlip_get_config_str_option
+endinterface
 
 interface
 ! Read the config from the first &mlip namelist of the file at config_path (the
@@ -36,7 +53,7 @@ subroutine internal_initialize( &
     read_mlmm_config, &
     validate_amber_config, &
     print_config_info &
-) bind(c, name="mlip_interface_initialize")
+) bind(c, name="ifmlip_initialize")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), intent(in) :: atomic_nums(*)
@@ -44,6 +61,19 @@ subroutine internal_initialize( &
     logical(c_bool), value, intent(in) :: read_mlmm_config
     logical(c_bool), value, intent(in) :: validate_amber_config
     logical(c_bool), value, intent(in) :: print_config_info
+endsubroutine
+
+! Exclude the atoms with value 1 from the evaluation: they feel no forces, and don't
+! contribute to the energy. values has one 0 or 1 per atom passed to
+! ifmlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
+! Not supported by the ML/MM functions. In Fortran, num_atoms is size(values)
+subroutine internal_set_no_eval_atoms_mask( &
+    num_atoms, &
+    values &
+) bind(c, name="ifmlip_set_no_eval_atoms_mask")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), intent(in) :: values(*)
 endsubroutine
 
 subroutine internal_calc_energy_force( &
@@ -56,7 +86,7 @@ subroutine internal_calc_energy_force( &
     charge, &
     forces, &
     potential_energy &
-) bind(c, name="mlip_interface_calc_energy_force")
+) bind(c, name="ifmlip_calc_energy_force")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
@@ -81,7 +111,7 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     charge, &
     forces, &
     potential_energy &
-) bind(c, name="mlip_interface_calc_energy_force_from_external_neighbors")
+) bind(c, name="ifmlip_calc_energy_force_from_external_neighbors")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), value, intent(in) :: num_neighbors
@@ -107,7 +137,7 @@ subroutine internal_calc_energy_force_atomic_charges( &
     forces, &
     atomic_charges, &
     potential_energy &
-) bind(c, name="mlip_interface_calc_energy_force_atomic_charges")
+) bind(c, name="ifmlip_calc_energy_force_atomic_charges")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
@@ -130,22 +160,22 @@ endsubroutine
 ! charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 ! single call (not currently implemented).
 ! For an md engine that uses the predicted charges in its own electrostatics
-! (e.g. PME). mlip_interface_energy_atomic_charges_retain returns the in-vacuo energy
+! (e.g. PME). ifmlip_energy_atomic_charges_retain returns the in-vacuo energy
 ! and the charges (forward pass only) and keeps the graph. Then
-! mlip_interface_energy_atomic_charges_vjp, given
+! ifmlip_energy_atomic_charges_vjp, given
 ! ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
 ! the in-vacuo forces plus the forces due to the charges
 ! changing with the geometry (ml_electrostatic_potential held fixed)
 !   forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
 ! with a single backward pass, and frees the graph (zero potential gives the
 ! in-vacuo forces).
-subroutine mlip_interface_energy_atomic_charges_retain( &
+subroutine ifmlip_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
     charge, &
     atomic_charges, &
     potential_energy &
-) bind(c, name="mlip_interface_energy_atomic_charges_retain")
+) bind(c, name="ifmlip_energy_atomic_charges_retain")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
@@ -166,11 +196,11 @@ endsubroutine
 ! The returned forces don't include the electrostatic force at fixed charges on the
 ! ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 ! otherwise the forces on the ML atoms are incomplete.
-subroutine mlip_interface_energy_atomic_charges_vjp( &
+subroutine ifmlip_energy_atomic_charges_vjp( &
     num_atoms, &
     ml_electrostatic_potential, &
     forces &
-) bind(c, name="mlip_interface_energy_atomic_charges_vjp")
+) bind(c, name="ifmlip_energy_atomic_charges_vjp")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: ml_electrostatic_potential(*)
@@ -208,7 +238,7 @@ subroutine internal_calc_energy_force_mlmm( &
     mm_forces, &
     ml_atomic_charges, &
     ene_pot_total &
-) bind(c, name="mlip_interface_calc_energy_force_mlmm")
+) bind(c, name="ifmlip_calc_energy_force_mlmm")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: ml_atoms_num
     integer(c_int), value, intent(in) :: mm_atoms_num
@@ -230,7 +260,7 @@ subroutine internal_calc_energy_force_mlmm( &
     real(c_double), intent(out) :: ene_pot_total
 endsubroutine
 
-! Same as mlip_interface_calc_energy_force_mlmm, but also outputs the QBC of the
+! Same as ifmlip_calc_energy_force_mlmm, but also outputs the QBC of the
 ! ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
 ! not supported
 subroutine internal_calc_energy_force_mlmm_qbc( &
@@ -253,7 +283,7 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     ene_pot_total, &
     qbc, &
     qbc_grad &
-) bind(c, name="mlip_interface_calc_energy_force_mlmm_qbc")
+) bind(c, name="ifmlip_calc_energy_force_mlmm_qbc")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: ml_atoms_num
     integer(c_int), value, intent(in) :: mm_atoms_num
@@ -279,15 +309,17 @@ endsubroutine
 
 ! Store a copy of values, with shape dims, as a tensor named name, with the dtype
 ! and device of the MLIP Interface. A tensor stored with the same name is replaced.
-! Stored tensors persist until mlip_interface_initialize is called again. dims is in
+! Stored tensors persist until ifmlip_initialize is called again. dims is in
 ! C (row-major) order, so a Fortran array of shape (3, n) has dims (n, 3). Exits if
-! dims_num or any dim is negative, or if name starts with "__" (reserved)
+! dims_num or any dim is negative, or if name starts with "__" (reserved).
+! In Fortran, call ifmlip_store_tensor(name, values), with values a
+! contiguous array of any rank, or a scalar. dims is taken from its shape
 subroutine internal_store_float_tensor( &
     name, &
     values, &
     dims, &
     dims_num &
-) bind(c, name="mlip_interface_store_float_tensor")
+) bind(c, name="ifmlip_store_float_tensor")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     real(c_double), intent(in) :: values(*)
@@ -295,13 +327,30 @@ subroutine internal_store_float_tensor( &
     integer(c_int), value, intent(in) :: dims_num
 endsubroutine
 
-! Same as mlip_interface_store_float_tensor, but the tensor is int64
+! Same as ifmlip_store_float_tensor, but the tensor is int64
 subroutine internal_store_int_tensor( &
     name, &
     values, &
     dims, &
     dims_num &
-) bind(c, name="mlip_interface_store_int_tensor")
+) bind(c, name="ifmlip_store_int_tensor")
+    use, intrinsic :: iso_c_binding
+    character(len=1, kind=c_char), intent(in) :: name(*)
+    integer(c_int), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
+endsubroutine
+
+! Same as ifmlip_store_int_tensor, but the values must be 0 or 1, and the
+! tensor is bool. Exits if any value is not 0 or 1. In Fortran, call
+! ifmlip_store_mask_tensor(name, values), with values as in
+! ifmlip_store_tensor
+subroutine internal_store_mask_tensor( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+) bind(c, name="ifmlip_store_mask_tensor")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     integer(c_int), intent(in) :: values(*)
@@ -314,7 +363,7 @@ endsubroutine
 subroutine internal_get_config_int_option( &
     name, &
     out_value &
-) bind(c, name="mlip_interface_get_config_int_option")
+) bind(c, name="ifmlip_get_config_int_option")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     ! Outputs
@@ -326,7 +375,7 @@ endsubroutine
 subroutine internal_get_config_bool_option( &
     name, &
     out_value &
-) bind(c, name="mlip_interface_get_config_bool_option")
+) bind(c, name="ifmlip_get_config_bool_option")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     ! Outputs
@@ -338,7 +387,7 @@ endsubroutine
 subroutine internal_get_config_float_option( &
     name, &
     out_value &
-) bind(c, name="mlip_interface_get_config_float_option")
+) bind(c, name="ifmlip_get_config_float_option")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     ! Outputs
@@ -352,7 +401,7 @@ subroutine internal_get_config_str_option( &
     name, &
     out_value_len, &
     out_value &
-) bind(c, name="mlip_interface_get_config_str_option")
+) bind(c, name="ifmlip_get_config_str_option")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     integer(c_int), value, intent(in) :: out_value_len
@@ -366,7 +415,7 @@ contains
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_interface_calc_energy_force( &
+subroutine ifmlip_calc_energy_force( &
     num_atoms, &
     coords, &
     cell, &
@@ -402,7 +451,7 @@ endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_interface_calc_energy_force_from_external_neighbors( &
+subroutine ifmlip_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
     coords, &
@@ -441,7 +490,7 @@ endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_interface_calc_energy_force_atomic_charges( &
+subroutine ifmlip_calc_energy_force_atomic_charges( &
     num_atoms, &
     coords, &
     cell, &
@@ -481,7 +530,7 @@ endsubroutine
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_calc_energy_force_mlmm( &
+subroutine ifmlip_calc_energy_force_mlmm( &
     ml_atoms_num, &
     mm_atoms_num, &
     ml_coords, &
@@ -544,7 +593,7 @@ endsubroutine
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_calc_energy_force_mlmm_qbc( &
+subroutine ifmlip_calc_energy_force_mlmm_qbc( &
     ml_atoms_num, &
     mm_atoms_num, &
     ml_coords, &
@@ -611,49 +660,7 @@ subroutine mlip_interface_calc_energy_force_mlmm_qbc( &
 endsubroutine
 
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_store_float_tensor( &
-    name, &
-    values, &
-    dims, &
-    dims_num &
-)
-    character(len=*, kind=kind("a")), intent(in) :: name
-    real(c_double), intent(in) :: values(*)
-    integer(c_int), intent(in) :: dims(*)
-    integer(c_int), value, intent(in) :: dims_num
-    character(len=len_trim(name) + 1, kind=c_char) :: c_name
-    c_name = trim(name) // c_null_char
-    call internal_store_float_tensor( &
-        c_name, &
-        values, &
-        dims, &
-        dims_num &
-    )
-endsubroutine
-
-! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_store_int_tensor( &
-    name, &
-    values, &
-    dims, &
-    dims_num &
-)
-    character(len=*, kind=kind("a")), intent(in) :: name
-    integer(c_int), intent(in) :: values(*)
-    integer(c_int), intent(in) :: dims(*)
-    integer(c_int), value, intent(in) :: dims_num
-    character(len=len_trim(name) + 1, kind=c_char) :: c_name
-    c_name = trim(name) // c_null_char
-    call internal_store_int_tensor( &
-        c_name, &
-        values, &
-        dims, &
-        dims_num &
-    )
-endsubroutine
-
-! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_get_config_int_option( &
+subroutine ifmlip_get_config_int_option( &
     name, &
     out_value &
 )
@@ -671,7 +678,7 @@ endsubroutine
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_get_config_bool_option( &
+subroutine ifmlip_get_config_bool_option( &
     name, &
     out_value &
 )
@@ -689,7 +696,7 @@ subroutine mlip_interface_get_config_bool_option( &
 endsubroutine
 
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_get_config_float_option( &
+subroutine ifmlip_get_config_float_option( &
     name, &
     out_value &
 )
@@ -705,7 +712,7 @@ subroutine mlip_interface_get_config_float_option( &
 endsubroutine
 
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
-subroutine mlip_interface_get_config_str_option( &
+subroutine ifmlip_get_config_str_option( &
     name, &
     out_value &
 )
@@ -737,14 +744,16 @@ endsubroutine
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - mlip_interface_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of mlip_interface_initialize
+! - ifmlip_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of ifmlip_initialize
 !   change in the yaml, that call must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - The ifmlip_store_*_tensor wrappers call the bind(c) interfaces
+!   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
-subroutine mlip_interface_initialize( &
+subroutine ifmlip_initialize( &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
@@ -942,7 +951,82 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     endif
 endfunction
 
-subroutine mlip_interface_dump_walltime()
+subroutine ifmlip_set_no_eval_atoms_mask(values)
+    integer(c_int), contiguous, intent(in) :: values(:)
+    call internal_set_no_eval_atoms_mask(int(size(values), c_int), values)
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_float_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_float_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_int_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_int_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine ifmlip_store_mask_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_mask_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Dims in C (row-major) order, from the shape of a Fortran (column-major) array
+pure function c_order_dims(fortran_shape) result(dims)
+    integer, intent(in) :: fortran_shape(:)
+    integer(c_int) :: dims(size(fortran_shape))
+    dims = int(fortran_shape(size(fortran_shape):1:-1), c_int)
+endfunction
+
+subroutine ifmlip_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls
     logical, save :: first_call = .true.
     character(len=1), save :: need_walltime = "0"  ! Only set once

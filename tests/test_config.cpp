@@ -39,14 +39,14 @@ TEST_CASE("GlobalConfig from namelist file defaults", "[config]") {
     CHECK(config.dtype() == torch::kFloat64);
     CHECK_FALSE(config.useNoEvalAtoms());
     CHECK_FALSE(config.mlipInterfaceIsInit());
-    CHECK(config.mlip().getBool("use_cuaev"));
-    CHECK(config.mlip().getString("model_type") == "ani2x");
-    CHECK_FALSE(config.mlip().getBool("use_external_nonbond"));
-    CHECK(config.mlip().getInt("model_index") == -1);
-    CHECK_FALSE(config.mlip().getBool("use_external_neighborlist"));
-    CHECK(config.mlip().getInt("ml_charge") == 0);
-    CHECK(config.mlip().getInt("ml_spin_mult") == 1);
-    CHECK(config.mlip().getString("no_eval_mask").empty());
+    CHECK(config.getBool("use_cuaev"));
+    CHECK(config.getString("model_type") == "ani2x");
+    CHECK_FALSE(config.getBool("use_external_nonbond"));
+    CHECK(config.getInt("model_index") == -1);
+    CHECK_FALSE(config.getBool("use_external_neighborlist"));
+    CHECK(config.getInt("ml_charge") == 0);
+    CHECK(config.getInt("ml_spin_mult") == 1);
+    CHECK(config.getString("no_eval_mask").empty());
     std::filesystem::remove(path);
 }
 
@@ -77,18 +77,19 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         "&mlip model_type = 'ignored' /\n"
     );
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
-    CHECK(config.mlip().getInt("cuda_device_index") == 1);
+    CHECK(config.getInt("cuda_device_index") == 1);
     CHECK(config.dtype() == torch::kFloat32);
-    CHECK(config.useNoEvalAtoms());
-    CHECK_FALSE(config.mlip().getBool("use_cuaev"));
-    CHECK(config.mlip().getString("model_type") == "animbis");
-    CHECK(config.mlip().getBool("use_external_nonbond"));
-    CHECK(config.mlip().getInt("model_index") == 3);
-    CHECK(config.mlip().getBool("use_external_neighborlist"));
-    CHECK(config.mlip().getInt("ml_charge") == -1);
-    CHECK(config.mlip().getInt("ml_spin_mult") == 2);
-    CHECK(config.mlip().getString("no_eval_mask") == ":WAT");
-    CHECK(config.mlip().getString("extra_features_file_path") == "features.txt");
+    // Only ifmlip_set_no_eval_atoms_mask enables the no-eval atoms
+    CHECK_FALSE(config.useNoEvalAtoms());
+    CHECK_FALSE(config.getBool("use_cuaev"));
+    CHECK(config.getString("model_type") == "animbis");
+    CHECK(config.getBool("use_external_nonbond"));
+    CHECK(config.getInt("model_index") == 3);
+    CHECK(config.getBool("use_external_neighborlist"));
+    CHECK(config.getInt("ml_charge") == -1);
+    CHECK(config.getInt("ml_spin_mult") == 2);
+    CHECK(config.getString("no_eval_mask") == ":WAT");
+    CHECK(config.getString("extra_features_file_path") == "features.txt");
     std::filesystem::remove(path);
 
     path = writeTmpFile("torchani_test_config_values.in", "&mlip use_cuda_device = F /\n");
@@ -99,8 +100,8 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         "&mlip ml_charge = 2, use_external_neighborlist = T /\n"
     );
     config = GlobalConfig::fromNamelistFile(path.string());
-    CHECK(config.mlip().getInt("ml_charge") == 2);
-    CHECK(config.mlip().getBool("use_external_neighborlist"));
+    CHECK(config.getInt("ml_charge") == 2);
+    CHECK(config.getBool("use_external_neighborlist"));
     std::filesystem::remove(path);
 }
 
@@ -148,7 +149,7 @@ TEST_CASE("GlobalConfig from deprecated ani namelist", "[config]") {
     std::streambuf* cerr_buf = std::cerr.rdbuf(captured.rdbuf());
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
     std::cerr.rdbuf(cerr_buf);
-    CHECK(config.mlip().getString("model_type") == "animbis");
+    CHECK(config.getString("model_type") == "animbis");
     CHECK(captured.str().find("&ani namelist") != std::string::npos);
     CHECK(captured.str().find("use &mlip instead") != std::string::npos);
     std::filesystem::remove(path);
@@ -172,25 +173,24 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         captured_int.str().find("use mlmm_coupling = 'simple-polarizable'")
         != std::string::npos
     );
-    const config::ConfigDict& mlmm = config.mlmm();
-    CHECK(mlmm.getString("mlmm_coupling") == "simple-polarizable");
-    CHECK(mlmm.getBool("use_mlip_atomic_charges"));
-    CHECK_FALSE(mlmm.getBool("use_numerical_mlmm_forces"));
-    CHECK_FALSE(mlmm.getBool("allow_untested_protocols"));
-    CHECK(mlmm.getDouble("inv_pol_dielectric") == 1.0);
-    CHECK(mlmm.getDouble("pol_h") == 2.5);
-    CHECK(mlmm.getDouble("pol_c") == 11.3);
-    CHECK(mlmm.getDouble("pol_ar") == 10.0);
-    CHECK(mlmm.getDouble("pol_fe") == 50.0);
-    CHECK(std::isnan(mlmm.getDouble("pol_og")));
-    CHECK(mlmm.getBool("write_ml_coords"));
-    CHECK_FALSE(mlmm.getBool("write_ml_forces"));
-    CHECK(mlmm.getBool("use_hybrid_mlqm"));
-    CHECK(mlmm.getString("hybrid_mlqm_method") == "orca");
-    CHECK(mlmm.getDouble("hybrid_mlqm_switch_low") == 0.1);
-    CHECK(mlmm.getDouble("hybrid_mlqm_switch_high") == 0.3);
-    CHECK_FALSE(mlmm.getBool("use_qm_coupling"));
-    CHECK(mlmm.getString("qm_coupling_method") == "none");
+    CHECK(config.getString("mlmm_coupling") == "simple-polarizable");
+    CHECK(config.getBool("use_mlip_atomic_charges"));
+    CHECK_FALSE(config.getBool("use_numerical_mlmm_forces"));
+    CHECK_FALSE(config.getBool("allow_untested_protocols"));
+    CHECK(config.getDouble("inv_pol_dielectric") == 1.0);
+    CHECK(config.getDouble("pol_h") == 2.5);
+    CHECK(config.getDouble("pol_c") == 11.3);
+    CHECK(config.getDouble("pol_ar") == 10.0);
+    CHECK(config.getDouble("pol_fe") == 50.0);
+    CHECK(std::isnan(config.getDouble("pol_og")));
+    CHECK(config.getBool("write_ml_coords"));
+    CHECK_FALSE(config.getBool("write_ml_forces"));
+    CHECK(config.getBool("use_hybrid_mlqm"));
+    CHECK(config.getString("hybrid_mlqm_method") == "orca");
+    CHECK(config.getDouble("hybrid_mlqm_switch_low") == 0.1);
+    CHECK(config.getDouble("hybrid_mlqm_switch_high") == 0.3);
+    CHECK_FALSE(config.getBool("use_qm_coupling"));
+    CHECK(config.getString("qm_coupling_method") == "none");
 
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string()),
@@ -201,12 +201,12 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         "&mlip use_extcoupling = T, extcoupling_program = 'orca' /\n"
     );
     config = GlobalConfig::fromNamelistFile(path.string(), true);
-    CHECK(config.mlmm().getBool("use_qm_coupling"));
-    CHECK(config.mlmm().getString("qm_coupling_method") == "orca");
+    CHECK(config.getBool("use_qm_coupling"));
+    CHECK(config.getString("qm_coupling_method") == "orca");
     writeTmpFile("torchani_test_config_mlmm.in", "&mlip /\n");
     CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()).mlmm(), std::logic_error);
     config = GlobalConfig::fromNamelistFile(path.string(), true);
-    CHECK(config.mlmm().getString("mlmm_coupling") == "coulombic");
+    CHECK(config.getString("mlmm_coupling") == "coulombic");
 
     writeTmpFile(
         "torchani_test_config_mlmm.in",
@@ -215,15 +215,15 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
         "  use_hybrid_mlqm = T, hybrid_mlqm_method = 'gau', hybrid_mlqm_switch_high = 0.5 /\n"
     );
     config = GlobalConfig::fromNamelistFile(path.string(), true);
-    CHECK(config.mlmm().getString("mlmm_coupling") == "simple-polarizable");
-    CHECK(config.mlmm().getBool("use_mlip_atomic_charges"));
-    CHECK(config.mlmm().getBool("write_ml_atomic_charges"));
-    CHECK_FALSE(config.mlmm().getBool("write_ml_coords"));
-    CHECK(config.mlmm().getBool("write_ml_forces"));
-    CHECK(config.mlmm().getBool("use_hybrid_mlqm"));
-    CHECK(config.mlmm().getString("hybrid_mlqm_method") == "gau");
-    CHECK(config.mlmm().getDouble("hybrid_mlqm_switch_high") == 0.5);
-    CHECK(config.mlmm().getString("qm_coupling_method") == "none");
+    CHECK(config.getString("mlmm_coupling") == "simple-polarizable");
+    CHECK(config.getBool("use_mlip_atomic_charges"));
+    CHECK(config.getBool("write_ml_atomic_charges"));
+    CHECK_FALSE(config.getBool("write_ml_coords"));
+    CHECK(config.getBool("write_ml_forces"));
+    CHECK(config.getBool("use_hybrid_mlqm"));
+    CHECK(config.getString("hybrid_mlqm_method") == "gau");
+    CHECK(config.getDouble("hybrid_mlqm_switch_high") == 0.5);
+    CHECK(config.getString("qm_coupling_method") == "none");
     std::filesystem::remove(path);
 }
 
@@ -425,7 +425,7 @@ TEST_CASE("GlobalConfig from config dicts", "[config]") {
     CHECK_THROWS_AS(config.mlmm(), std::logic_error);
 
     mlip_config = mlip_config.withValue("no_eval_mask", std::string{":WAT"});
-    CHECK(GlobalConfig{mlip_config}.useNoEvalAtoms());
+    CHECK_FALSE(GlobalConfig{mlip_config}.useNoEvalAtoms());
 }
 
 TEST_CASE("Config dict getters", "[config]") {

@@ -205,10 +205,6 @@ GlobalConfig::GlobalConfig(
     std::optional<ConfigDict> mlmm_config,
     std::optional<ConfigDict> amber_qmmm_config
 ):
-    m_use_no_eval_atoms{
-        mlip_config.getString("no_eval_mask").find_first_not_of(' ')
-        != std::string::npos
-    },
     m_mlip_config{std::move(mlip_config)},
     m_mlmm_config{std::move(mlmm_config)}
 {
@@ -216,7 +212,7 @@ GlobalConfig::GlobalConfig(
         m_amber_qmmm_int = amber_qmmm_config->getInt("qmmm_int");
     }
 #ifndef TORCHANI_BUILD_CUDA
-    if (m_mlip_config->getBool("use_cuda_device")) {
+    if (getBool("use_cuda_device")) {
         throw unsupported_device_error(
             "A CUDA device was requested, but libtorchani was built\n"
             "without CUDA support (TORCHANI_BUILD_CUDA=OFF).\n"
@@ -224,11 +220,10 @@ GlobalConfig::GlobalConfig(
         );
     }
 #endif
-    setDeviceAndPrecision(
-        m_mlip_config->getBool("use_cuda_device"),
-        static_cast<torch::DeviceIndex>(m_mlip_config->getInt("cuda_device_index")),
-        m_mlip_config->getBool("use_double_precision")
-    );
+    torch::DeviceType device_type = getBool("use_cuda_device") ? torch::kCUDA : torch::kCPU;
+    auto device_idx = static_cast<torch::DeviceIndex>(getInt("cuda_device_index"));
+    torch::ScalarType dtype = getBool("use_double_precision") ? torch::kFloat64 : torch::kFloat32;
+    m_opts = torch::TensorOptions().device(torch::Device{device_type, device_idx}).dtype(dtype);
 }
 
 auto GlobalConfig::fromNamelistFile(
@@ -546,13 +541,21 @@ auto GlobalConfig::usesInternalOptions(const ConfigDict& mlmm_config) -> bool {
         || !isDefault(mlmm_config, defaults, "qm_coupling_method");
 }
 
+auto GlobalConfig::configDictWithOption(const std::string& key) const
+    -> const ConfigDict& {
+    if (mlip().hasOption(key)) {
+        return mlip();
+    }
+    if (mlmm().hasOption(key)) {
+        return mlmm();
+    }
+    throw std::out_of_range("Unknown config option " + key);
+}
+
 auto GlobalConfig::getPolarizability(const std::string& element_symbol) const -> double {
     std::string key = "pol_" + element_symbol;
     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-    if (!mlmm().hasOption(key)) {
-        throw std::out_of_range("Unknown element symbol " + element_symbol);
-    }
-    double polarizability = mlmm().getDouble(key);
+    double polarizability = getDouble(key);
     if (std::isnan(polarizability)) {
         throw std::runtime_error(
             "The polarizability " + key
@@ -582,7 +585,7 @@ auto GlobalConfig::printInfo() const -> void {
          }) {
         out << configLine(mlip(), key);
     }
-    if (!mlip().getString("extra_features_file_path").empty()) {
+    if (!getString("extra_features_file_path").empty()) {
         out << configLine(mlip(), "extra_features_file_path");
     }
     if (!m_mlmm_config) {
@@ -590,22 +593,21 @@ auto GlobalConfig::printInfo() const -> void {
         std::cout << out.str() << std::flush;
         return;
     }
-    const ConfigDict& mlmm = *m_mlmm_config;
-    const std::string& mlmm_coupling = mlmm.getString("mlmm_coupling");
-    bool use_qm_coupling = mlmm.getBool("use_qm_coupling");
-    const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
+    const std::string& mlmm_coupling = getString("mlmm_coupling");
+    bool use_qm_coupling = getBool("use_qm_coupling");
+    const std::string& qm_coupling_method = getString("qm_coupling_method");
     for (const char* key : {
              "write_ml_coords",
              "write_ml_forces",
              "write_ml_atomic_charges",
              "use_mlip_atomic_charges",
          }) {
-        out << configLine(mlmm, key);
+        out << configLine(mlmm(), key);
     }
     if (m_amber_qmmm_int == 1) {
-        out << configLine(mlmm, "mlmm_coupling");
+        out << configLine(mlmm(), "mlmm_coupling");
     }
-    if (usesInternalOptions(mlmm)) {
+    if (usesInternalOptions(mlmm())) {
         out << "ML/MM:------WARNING! INTERNAL OPTIONS, DO NOT USE------\n";
         for (const char* key : {
                  "hybrid_mlqm_method",
@@ -616,7 +618,7 @@ auto GlobalConfig::printInfo() const -> void {
                  "use_qm_coupling",
                  "qm_coupling_method",
              }) {
-            out << configLine(mlmm, key);
+            out << configLine(mlmm(), key);
         }
     }
     out << "ML/MM:--------------end config-------------------\n";
@@ -626,11 +628,11 @@ auto GlobalConfig::printInfo() const -> void {
             << "     QM coupling functionality of MLIP Interface is ON\n"
             << "     The selected method for QM coupling is: " << qm_coupling_method << "\n";
     }
-    if (mlmm.getBool("use_hybrid_mlqm")) {
+    if (getBool("use_hybrid_mlqm")) {
         out << "ML/MM: This is an EXPERIMENTAL feature, don't use in production code!\n"
             << "     Hybrid ML-QM functionality of MLIP Interface is ON\n"
             << "     The selected hybrid ML-QM method is: "
-            << mlmm.getString("hybrid_mlqm_method") << "\n";
+            << getString("hybrid_mlqm_method") << "\n";
     }
     out << "ML/MM ELECTROSTATIC COUPLING AND CHARGE CONFIG:\n";
     if (m_amber_qmmm_int != 1) {
@@ -669,7 +671,7 @@ auto GlobalConfig::printInfo() const -> void {
             << "     and computes the coupling internally.\n"
             << "     Only models exposing custom_mlmm() support this kind of coupling.\n";
     }
-    if (mlmm_coupling != "custom" && mlmm.getBool("use_mlip_atomic_charges")) {
+    if (mlmm_coupling != "custom" && getBool("use_mlip_atomic_charges")) {
         out << "ML/MM: Will use position-dependent NN-predicted charges for the QM-region,"
             << " taking into account dq/dr\n";
     } else if (mlmm_coupling != "custom") {

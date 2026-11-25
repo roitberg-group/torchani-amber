@@ -17,7 +17,7 @@ constexpr double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
 // double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
 
-constexpr std::array<std::string_view, 36> mlip_interface_builtin_models{
+constexpr std::array<std::string_view, 36> ifmlip_builtin_models{
     "ani1x",
     "ani1x-infer",
     "ani1ccx",

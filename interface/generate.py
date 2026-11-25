@@ -114,7 +114,7 @@ def prepare_arg(arg: dict) -> dict:
 
 
 def prepare_function(fn: dict) -> dict:
-    fn = {"comment": "", "fortran_wrapper": "auto", **fn}
+    fn = {"comment": "", "fortran_wrapper": "auto", "fortran_generic": "", **fn}
     fn["args"] = [prepare_arg(arg) for arg in fn["args"]]
     args_by_name = {arg["name"]: arg for arg in fn["args"]}
     for arg in fn["args"]:
@@ -134,14 +134,18 @@ def prepare_function(fn: dict) -> dict:
     fn["generate_f_wrapper"] = needs_wrapper and fn["fortran_wrapper"] != "manual"
     fn["f_wrapper_args"] = [arg for arg in fn["args"] if arg["f_is_wrapper_arg"]]
     fn["f_binding_name"] = fn["name"]
-    if needs_wrapper:
-        fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("mlip_interface_")
+    if needs_wrapper or fn["fortran_wrapper"] == "manual":
+        fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("ifmlip_")
     return fn
 
 
 def main() -> None:
     spec = yaml.safe_load((INTERFACE_DIR / "interface.yaml").read_text())
     functions = [prepare_function(fn) for fn in spec["functions"]]
+    fortran_generics: dict[str, list[str]] = {}
+    for fn in functions:
+        if fn["fortran_generic"]:
+            fortran_generics.setdefault(fn["fortran_generic"], []).append(fn["name"])
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(INTERFACE_DIR / "templates"),
         undefined=jinja2.StrictUndefined,
@@ -151,7 +155,9 @@ def main() -> None:
         keep_trailing_newline=True,
     )
     for template_name, output_path in TEMPLATE_TO_OUTPUT.items():
-        text = env.get_template(template_name).render(functions=functions)
+        text = env.get_template(template_name).render(
+            functions=functions, fortran_generics=fortran_generics
+        )
         if not output_path.exists() or output_path.read_text() != text:
             output_path.write_text(text)
             print(f"Regenerated {output_path.relative_to(REPO_DIR)}")

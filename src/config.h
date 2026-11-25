@@ -115,6 +115,9 @@ class GlobalConfig {
         const ConfigDict& amber_qmmm_config
     ) -> void;
 
+    // The general or ML/MM config dict that holds the option. Throws if there is none
+    auto configDictWithOption(const std::string& key) const -> const ConfigDict&;
+
     public:
     GlobalConfig() = default;
 
@@ -175,6 +178,24 @@ class GlobalConfig {
         return *m_mlmm_config;
     }
 
+    // Value of an option, from the general or the ML/MM config. Throws if the option
+    // doesn't exist, or is not of the requested type
+    auto getBool(const std::string& key) const -> bool {
+        return configDictWithOption(key).getBool(key);
+    }
+
+    auto getInt(const std::string& key) const -> int {
+        return configDictWithOption(key).getInt(key);
+    }
+
+    auto getDouble(const std::string& key) const -> double {
+        return configDictWithOption(key).getDouble(key);
+    }
+
+    auto getString(const std::string& key) const -> const std::string& {
+        return configDictWithOption(key).getString(key);
+    }
+
     // Polarizability (AU) of an element, from the ML/MM config. Throws if the ML/MM
     // config was not read, or if the element has no polarizability
     auto getPolarizability(const std::string& element_symbol) const -> double;
@@ -183,13 +204,6 @@ class GlobalConfig {
     // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
     // was read
     auto printInfo() const -> void;
-
-    auto setDeviceAndPrecision(bool use_cuda_device, torch::DeviceIndex device_idx, bool use_double_precision) -> void {
-        torch::DeviceType dev_type{use_cuda_device ? torch::kCUDA : torch::kCPU};
-        torch::Device dev{torch::Device{dev_type, device_idx}};
-        torch::ScalarType dtype{use_double_precision ? torch::kFloat64 : torch::kFloat32};
-        m_opts = torch::TensorOptions().device(dev).dtype(dtype);
-    }
 
     auto tensorToTorchaniDevice(torch::Tensor x) const -> torch::Tensor {
         return x.to(m_opts.device());

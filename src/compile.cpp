@@ -88,7 +88,7 @@ auto CompiledMlipModel::useOnlyEnsembleMember(std::int64_t /* member_idx */) -> 
     throw std::runtime_error("Compiled models don't support selecting ensemble members");
 }
 
-auto CompiledMlipModel::readExtraFeaturesFromFile(const std::string& /* fpath */) -> void {
+auto CompiledMlipModel::setExtraFeatures(torch::Tensor /* extra_features */) -> void {
     throw std::runtime_error("Compiled models don't support extra features");
 }
 

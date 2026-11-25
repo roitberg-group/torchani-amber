@@ -5,12 +5,29 @@ use, intrinsic :: iso_fortran_env
 use, intrinsic :: iso_c_binding
 implicit none (type, external)
 public :: &
-{% for fn in functions %}
+{% for fn in functions if not fn.fortran_generic %}
     {{ fn.name }}, &
 {% endfor %}
+{% for generic_name in fortran_generics %}
+    {{ generic_name }}, &
+{% endfor %}
     convert_sander_neighborlist_to_ani_fmt, &
-    mlip_interface_dump_walltime, &
+    ifmlip_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
+{% for fn in functions if fn.fortran_generic %}
+{% if loop.first %}
+private :: &
+{% endif %}
+    {{ fn.name }}{{ ", &" if not loop.last }}
+{% endfor %}
+{% for generic_name, fn_names in fortran_generics.items() %}
+
+interface {{ generic_name }}
+{% for fn_name in fn_names %}
+    procedure {{ fn_name }}
+{% endfor %}
+endinterface
+{% endfor %}
 
 interface
 {% for fn in functions %}
