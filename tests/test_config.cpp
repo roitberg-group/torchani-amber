@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -167,6 +169,38 @@ TEST_CASE("GlobalConfig ML/MM mm_cutoff, ml_mask and ml_shake", "[config]") {
     CHECK(config.getDouble("mm_cutoff") == 10.0);
     CHECK(config.getString("ml_mask") == ":1-2");
     CHECK_FALSE(config.getBool("ml_shake"));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig ML/MM mm_cutoff_kind", "[config]") {
+    // Only one value is supported for each mlmm_coupling, which is the default
+    auto [mlmm_coupling, supported_kind, unsupported_kind] = GENERATE(
+        std::make_tuple(std::string{"coulombic"}, std::string{"hard"}, std::string{"none"}),
+        std::make_tuple(std::string{"none"}, std::string{"hard"}, std::string{"none"}),
+        std::make_tuple(std::string{"me"}, std::string{"none"}, std::string{"hard"}),
+        std::make_tuple(
+            std::string{"me-no-electrostatics"}, std::string{"none"}, std::string{"hard"}
+        )
+    );
+    const std::string fname = "torchani_test_config_mm_cutoff_kind.in";
+    const std::string coupling_line = "&mlmm mlmm_coupling = '" + mlmm_coupling + "'";
+    std::filesystem::path path = writeTmpFile(fname, coupling_line + " /\n");
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getString("mm_cutoff_kind") == supported_kind);
+    // Case-insensitive
+    std::string upper_kind = supported_kind;
+    std::transform(upper_kind.begin(), upper_kind.end(), upper_kind.begin(), ::toupper);
+    writeTmpFile(fname, coupling_line + ", mm_cutoff_kind = '" + upper_kind + "' /\n");
+    config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+    CHECK(config.getString("mm_cutoff_kind") == supported_kind);
+    for (const std::string& kind : {unsupported_kind, std::string{"switched"}}) {
+        writeTmpFile(fname, coupling_line + ", mm_cutoff_kind = '" + kind + "' /\n");
+        INFO(kind);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+            config::config_validation_error
+        );
+    }
     std::filesystem::remove(path);
 }
 

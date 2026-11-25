@@ -255,6 +255,8 @@ auto defaultMlmmConfig() -> ConfigDict {
         {"mm_cutoff", {15.0, NamelistType::FLOAT}},
         {"ml_mask", {std::string{""}, NamelistType::STR}},
         {"ml_shake", {true, NamelistType::BOOL}},
+        // Set from mlmm_coupling if empty, it only supports one value for each coupling
+        {"mm_cutoff_kind", {std::string{""}, NamelistType::STR}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -488,6 +490,20 @@ auto GlobalConfig::fromNamelistFile(
             }
             mlmm_config = mlmm_config->withValue("mm_cutoff", 0.1);
         }
+        std::string mm_cutoff_kind = mlmm_config->getString("mm_cutoff_kind");
+        std::transform(
+            mm_cutoff_kind.begin(), mm_cutoff_kind.end(), mm_cutoff_kind.begin(), ::tolower
+        );
+        std::string supported_mm_cutoff_kind =
+            isMechanicalEmbedding(mlmm_coupling) ? "none" : "hard";
+        if (!mm_cutoff_kind.empty() && mm_cutoff_kind != supported_mm_cutoff_kind) {
+            throw config_validation_error(
+                "mm_cutoff_kind = '" + mm_cutoff_kind + "' is not supported with"
+                " mlmm_coupling = '" + mlmm_coupling + "', the only supported value is '"
+                + supported_mm_cutoff_kind + "'"
+            );
+        }
+        mlmm_config = mlmm_config->withValue("mm_cutoff_kind", supported_mm_cutoff_kind);
     }
     validateConfig(mlip_config, mlmm_config);
 
