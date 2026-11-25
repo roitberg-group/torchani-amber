@@ -12,6 +12,8 @@
 #include <tuple>
 #include <vector>
 
+#include <unistd.h>
+
 #include <torch/all.h>
 
 #include "constants.h"
@@ -52,7 +54,8 @@ static std::string writeMlipConfig(
     const std::string& extra_options = ""
 ) {
     std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "torchani_test_mlip_config.in";
+        std::filesystem::temp_directory_path()
+        / ("torchani_test_mlip_config_" + std::to_string(getpid()) + ".in");
     std::ofstream file(path);
     file << "&mlip\n"
          << "  model_type = '" << model_type << "',\n"
@@ -178,7 +181,7 @@ TEST_CASE("C bindings") {
         // tests for the cell too
 
         // output
-        double potential_energy;
+        double pot_energy;
 
         mlip_initialize(
             size,
@@ -224,9 +227,9 @@ TEST_CASE("C bindings") {
                     molecule_idxs_buf,
                     false,
                     forces,
-                    &potential_energy
+                    &pot_energy
                 );
-                FLOAT_EQ(potential_energy, test_values[0], use_double);
+                FLOAT_EQ(pot_energy, test_values[0], use_double);
                 FLOAT_EQ(forces[0][0], test_values[1], use_double);
                 FLOAT_EQ(forces[0][1], test_values[2], use_double);
                 FLOAT_EQ(forces[0][2], test_values[3], use_double);
@@ -260,14 +263,14 @@ TEST_CASE("C bindings") {
                     /* outputs */
                     forces,
                     /* mm_forces= */ nullptr,
-                    &potential_energy
+                    &pot_energy
                 );
-                int qbc_grads_dims[2] = {size, 3};
+                int qbc_grad_dims[2] = {size, 3};
                 int charges_dims[1] = {size};
                 mlip_fetch_result("qbc", &qbc, nullptr, 0);
-                mlip_fetch_result("qbc_grads", &qbc_deriv[0][0], qbc_grads_dims, 2);
+                mlip_fetch_result("qbc_grad", &qbc_deriv[0][0], qbc_grad_dims, 2);
                 mlip_fetch_result("atomic_charges", atomic_charges, charges_dims, 1);
-                FLOAT_EQ(potential_energy, test_values[0], use_double);
+                FLOAT_EQ(pot_energy, test_values[0], use_double);
                 FLOAT_EQ(forces[0][0], test_values[1], use_double);
                 FLOAT_EQ(forces[0][1], test_values[2], use_double);
                 FLOAT_EQ(forces[0][2], test_values[3], use_double);
@@ -308,7 +311,7 @@ struct CouplingOutput {
     double ml_forces[2][3];
     double mm_forces[2][3];
     double ml_atomic_charges[2];
-    double ene_pot_total;
+    double pot_energy;
 };
 
 static CouplingOutput calc_coupling(
@@ -329,7 +332,7 @@ static CouplingOutput calc_coupling(
         verbose,
         out.ml_forces,
         out.mm_forces,
-        &out.ene_pot_total
+        &out.pot_energy
     );
     int charges_dims[1] = {2};
     mlip_fetch_result("atomic_charges", out.ml_atomic_charges, charges_dims, 1);
@@ -343,7 +346,7 @@ TEST_CASE("C bindings for other entry points") {
     int atomic_numbers[size] = {1, 6};
     int no_eval_atoms[size] = {0, 0};
     double forces[size][3];
-    double potential_energy;
+    double pot_energy;
     int use_double = GENERATE(0, 1);
     INFO("Comparing with double precision: " << use_double);
 
@@ -392,9 +395,9 @@ TEST_CASE("C bindings for other entry points") {
     std::ostringstream mlmm_options;
     mlmm_options << std::setprecision(17)
                  << "  pol_H = "
-                 << COUPLING_ATOMIC_ALPHAS[0] / constants::POLARIZABILITY_AU_TO_ANG3 << ",\n"
+                 << COUPLING_ATOMIC_ALPHAS[0] << ",\n"
                  << "  pol_C = "
-                 << COUPLING_ATOMIC_ALPHAS[1] / constants::POLARIZABILITY_AU_TO_ANG3 << ",\n"
+                 << COUPLING_ATOMIC_ALPHAS[1] << ",\n"
                  << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC << ",\n"
                  << "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n";
     mlip_initialize(
@@ -434,9 +437,9 @@ TEST_CASE("C bindings for other entry points") {
             molecule_idxs_buf,
             false,
             forces,
-            &potential_energy
+            &pot_energy
         );
-        FLOAT_EQ(potential_energy, test_values[0], use_double);
+        FLOAT_EQ(pot_energy, test_values[0], use_double);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
@@ -472,12 +475,12 @@ TEST_CASE("C bindings for other entry points") {
                 /* verbose= */ false,
                 forces,
                 /* mm_forces= */ nullptr,
-                &potential_energy
+                &pot_energy
             );
-            int qbc_grads_dims[2] = {size, 3};
+            int qbc_grad_dims[2] = {size, 3};
             mlip_fetch_result("qbc", &qbc, nullptr, 0);
-            mlip_fetch_result("qbc_grads", &qbc_deriv[0][0], qbc_grads_dims, 2);
-            FLOAT_EQ(potential_energy, test_values[0], use_double);
+            mlip_fetch_result("qbc_grad", &qbc_deriv[0][0], qbc_grad_dims, 2);
+            FLOAT_EQ(pot_energy, test_values[0], use_double);
             for (int j = 0; j != size; ++j) {
                 for (int c = 0; c != 3; ++c) {
                     FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
@@ -500,11 +503,11 @@ TEST_CASE("C bindings for other entry points") {
             double atomic_charges[size];
             double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
             mlip_calc_energy_force(
-                size, coords, cell, false, molecule_idxs_buf, false, forces, &potential_energy
+                size, coords, cell, false, molecule_idxs_buf, false, forces, &pot_energy
             );
             int charges_dims[1] = {size};
             mlip_fetch_result("atomic_charges", atomic_charges, charges_dims, 1);
-            FLOAT_EQ(potential_energy, test_values[0], use_double);
+            FLOAT_EQ(pot_energy, test_values[0], use_double);
             for (int j = 0; j != size; ++j) {
                 FLOAT_EQ(atomic_charges[j], test_values[charges_offset + j], use_double);
                 for (int c = 0; c != 3; ++c) {
@@ -547,12 +550,12 @@ TEST_CASE("C bindings for other entry points") {
                 double efield_sq =
                     efield[0] * efield[0] + efield[1] * efield[1] + efield[2] * efield[2];
                 expect_pol -= COUPLING_INV_POL_DIELECTRIC * COUPLING_ATOMIC_ALPHAS[j]
-                    * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 3) * efield_sq;
+                    * efield_sq;
             }
             // The in vacuo energy is the reference energy of the model
             double expect_embed = expect_coulomb + expect_pol - 0.5 * expect_pol;
             FLOAT_EQ(
-                out.ene_pot_total,
+                out.pot_energy,
                 test_values[0] + expect_embed * constants::HARTREE_TO_KCALMOL,
                 use_double
             );
@@ -577,10 +580,10 @@ TEST_CASE("C bindings for other entry points") {
                         std::memcpy(displaced, coords, sizeof(displaced));
                         displaced[j][c] += step;
                         double ene_plus =
-                            calc_coupling(displaced, mm_coords).ene_pot_total;
+                            calc_coupling(displaced, mm_coords).pot_energy;
                         displaced[j][c] -= 2 * step;
                         double ene_minus =
-                            calc_coupling(displaced, mm_coords).ene_pot_total;
+                            calc_coupling(displaced, mm_coords).pot_energy;
                         CHECK_THAT(
                             out.ml_forces[j][c],
                             WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
@@ -588,9 +591,9 @@ TEST_CASE("C bindings for other entry points") {
 
                         std::memcpy(displaced, mm_coords, sizeof(displaced));
                         displaced[j][c] += step;
-                        ene_plus = calc_coupling(coords, displaced).ene_pot_total;
+                        ene_plus = calc_coupling(coords, displaced).pot_energy;
                         displaced[j][c] -= 2 * step;
-                        ene_minus = calc_coupling(coords, displaced).ene_pot_total;
+                        ene_minus = calc_coupling(coords, displaced).pot_energy;
                         CHECK_THAT(
                             out.mm_forces[j][c],
                             WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
@@ -608,7 +611,7 @@ TEST_CASE("C bindings for other entry points") {
         };
         double ml_forces[size][3];
         double mm_forces[2][3];
-        double ene_pot_total;
+        double pot_energy;
         // Case-insensitive
         mlip_initialize(
             size,
@@ -632,9 +635,9 @@ TEST_CASE("C bindings for other entry points") {
             /* verbose= */ false,
             ml_forces,
             mm_forces,
-            &ene_pot_total
+            &pot_energy
         );
-        FLOAT_EQ(ene_pot_total, test_values[0], use_double);
+        FLOAT_EQ(pot_energy, test_values[0], use_double);
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
                 FLOAT_EQ(ml_forces[j][c], test_values[1 + 3 * j + c], use_double);
@@ -676,7 +679,7 @@ TEST_CASE("C bindings for other entry points") {
                 /* verbose= */ false,
                 expect.ml_forces,
                 expect.mm_forces,
-                &expect.ene_pot_total
+                &expect.pot_energy
             );
 
             mlip_initialize(
@@ -692,7 +695,7 @@ TEST_CASE("C bindings for other entry points") {
             );
             double ml_forces[size][3];
             double mm_forces[2][3];
-            double ene_pot_total;
+            double pot_energy;
             mlip_calc_energy_force_mlmm(
                 size,
                 2,
@@ -704,9 +707,9 @@ TEST_CASE("C bindings for other entry points") {
                 /* verbose= */ false,
                 ml_forces,
                 mm_forces,
-                &ene_pot_total
+                &pot_energy
             );
-            FLOAT_EQ(ene_pot_total, expect.ene_pot_total, use_double);
+            FLOAT_EQ(pot_energy, expect.pot_energy, use_double);
             for (int j = 0; j != size; ++j) {
                 for (int c = 0; c != 3; ++c) {
                     FLOAT_EQ(ml_forces[j][c], expect.ml_forces[j][c], use_double);
@@ -1005,6 +1008,62 @@ TEST_CASE("Models without spin_mult only support spin_mult = 1", "[spin_mult]") 
     );
 }
 
+TEST_CASE("Output files", "[io]") {
+    const int size = 2;
+    int atomic_numbers[size] = {1, 6};
+    double coords[size][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    double cell[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    int molecule_idxs[size] = {0, 0};
+    double forces[size][3];
+    double energy;
+    std::filesystem::path output_dir =
+        std::filesystem::temp_directory_path() / "torchani_test_outputs";
+    std::filesystem::remove_all(output_dir);
+    mlip_initialize(
+        size,
+        atomic_numbers,
+        writeMlipConfig(
+            "animbis", 0, true, false, false, 0,
+            "  write_coords = T, write_forces = T, write_atomic_charges = T,\n"
+            "  write_interval = 2, output_dir = '" + output_dir.string() + "',\n"
+        ).c_str(),
+        false,
+        "none",
+        false
+    );
+    // Outputs are written at steps 2 and 4
+    for (int step = 1; step != 6; ++step) {
+        mlip_update_md_step(step);
+        mlip_calc_energy_force(size, coords, cell, false, molecule_idxs, false, forces, &energy);
+    }
+    // Outputs are written only once per step
+    mlip_update_md_step(4);
+    mlip_calc_energy_force(size, coords, cell, false, molecule_idxs, false, forces, &energy);
+    auto read_lines = [](const std::filesystem::path& path) {
+        std::ifstream file(path);
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) {
+            lines.push_back(line);
+        }
+        return lines;
+    };
+    // Two frames of: atom count, comment, one line per atom
+    std::vector<std::string> xyz = read_lines(output_dir / "coords.xyz");
+    REQUIRE(xyz.size() == 8);
+    CHECK(xyz[0] == "       2");
+    CHECK(xyz[2] == "  1      3.0000000      3.0000000      4.0000000");
+    // Two frames of: one line per atom, and an empty line
+    std::vector<std::string> forces_lines = read_lines(output_dir / "forces.mlip.dat");
+    REQUIRE(forces_lines.size() == 6);
+    CHECK(forces_lines[2].empty());
+    double fx = std::stod(forces_lines[0].substr(0, 15));
+    CHECK_THAT(fx, Catch::Matchers::WithinAbs(forces[0][0], 1e-6));
+    CHECK(read_lines(output_dir / "atomic_charges.mlip.dat").size() == 6);
+    CHECK_FALSE(std::filesystem::exists(output_dir / "ml_region.xyz"));
+    std::filesystem::remove_all(output_dir);
+}
+
 TEST_CASE("ML/MM output files", "[io]") {
     const int size = 2;
     int atomic_numbers[size] = {1, 6};
@@ -1023,14 +1082,15 @@ TEST_CASE("ML/MM output files", "[io]") {
         writeMlipConfig(
             "animbis", 0, true, false, false, 0,
             "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
-            "  write_mlmm_coords = T, write_mlmm_forces = T, write_mlmm_atomic_charges = T,\n"
+            "  write_coords = T, write_forces = T, write_atomic_charges = T,\n"
             "  output_dir = '" + output_dir.string() + "',\n"
         ).c_str(),
         true,
         "none",
         false
     );
-    for (int step = 0; step != 2; ++step) {
+    for (int step = 1; step != 3; ++step) {
+        mlip_update_md_step(step);
         mlip_calc_energy_force_mlmm(
             size, 1, coords, mm_coords, mm_atomic_charges, nullptr, false, false,
             ml_forces, mm_forces, &energy

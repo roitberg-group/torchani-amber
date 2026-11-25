@@ -10,7 +10,7 @@
 
 namespace mlip {
 
-// Keys: "energy", "forces", "qbc", "qbc_grads", "mm_forces", and the extra outputs of
+// Keys: "energy", "forces", "qbc", "qbc_grad", "mm_forces", and the extra outputs of
 // the model, if any (e.g. "atomic_charges"). All values are in Hartree and Angstrom.
 using MlipOutput = std::unordered_map<std::string, torch::Tensor>;
 

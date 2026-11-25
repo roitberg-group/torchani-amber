@@ -7,17 +7,18 @@ implicit none (type, external)
 public :: &
     mlip_initialize, &
     mlip_set_no_eval_atoms_mask, &
+    mlip_update_md_step, &
     mlip_set_ml_charge_and_spin_mult, &
     mlip_calc_energy_force, &
     mlip_calc_energy_force_from_external_neighbors, &
     mlip_calc_energy_atomic_charges_retain, &
     mlip_calc_energy_atomic_charges_vjp, &
     mlip_calc_energy_force_mlmm, &
-    mlip_calc_energy_force_mlmm_qbc, &
     mlip_store_mask_tensor, &
     mlip_fetch_result, &
     mlip_store_tensor, &
     mlip_get_config_option, &
+    mlip_calc_energy_force_assumed_size, &
     convert_sander_neighborlist_to_ani_fmt, &
     mlip_dump_walltime, &
     convert_pmemd_neighborlist_to_ani_fmt
@@ -80,6 +81,16 @@ subroutine internal_set_no_eval_atoms_mask( &
     integer(c_int), intent(in) :: values(*)
 endsubroutine
 
+! Set the current MD step. The outputs requested by the write_* options are written
+! only at steps that are multiples of write_interval, once per step. Can be called
+! before mlip_initialize
+subroutine mlip_update_md_step( &
+    md_step &
+) bind(c, name="mlip_update_md_step")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: md_step
+endsubroutine
+
 ! Set the ml_charge and ml_spin_mult options of the config, which can change between
 ! calls. Exits if called between mlip_calc_energy_atomic_charges_retain and
 ! mlip_calc_energy_atomic_charges_vjp
@@ -92,6 +103,9 @@ subroutine mlip_set_ml_charge_and_spin_mult( &
     integer(c_int), value, intent(in) :: spin_mult
 endsubroutine
 
+! The outputs requested by the write_coords, write_forces and write_atomic_charges
+! options are appended to their files, every write_interval steps (see
+! mlip_update_md_step)
 subroutine internal_calc_energy_force( &
     num_atoms, &
     coords, &
@@ -99,8 +113,8 @@ subroutine internal_calc_energy_force( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    forces, &
-    potential_energy &
+    out_forces, &
+    out_pot_energy &
 ) bind(c, name="mlip_calc_energy_force")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
@@ -110,10 +124,13 @@ subroutine internal_calc_energy_force( &
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
     ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
+    real(c_double), intent(out) :: out_forces(*)
+    real(c_double), intent(out) :: out_pot_energy
 endsubroutine
 
+! The outputs requested by the write_coords, write_forces and write_atomic_charges
+! options are appended to their files, every write_interval steps (see
+! mlip_update_md_step)
 subroutine internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
@@ -122,8 +139,8 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     shifts, &
     molecule_idxs, &
     calc_only_bonded, &
-    forces, &
-    potential_energy &
+    out_forces, &
+    out_pot_energy &
 ) bind(c, name="mlip_calc_energy_force_from_external_neighbors")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
@@ -134,8 +151,8 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
     ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
+    real(c_double), intent(out) :: out_forces(*)
+    real(c_double), intent(out) :: out_pot_energy
 endsubroutine
 
 ! This two-call API (retain + vjp) is only needed if the md engine's energy includes
@@ -159,14 +176,14 @@ subroutine mlip_calc_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
     atomic_charges, &
-    potential_energy &
+    pot_energy &
 ) bind(c, name="mlip_calc_energy_atomic_charges_retain")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
     ! Outputs
     real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: potential_energy
+    real(c_double), intent(out) :: pot_energy
 endsubroutine
 
 ! This two-call API (retain + vjp) is only needed if the md engine's energy includes
@@ -176,7 +193,8 @@ endsubroutine
 ! charges left out of the grid and the real-space pair list), the potential of the MM
 ! charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 ! single call (not currently implemented).
-! ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+! ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
+! and must be passed in kcal/mol/e
 ! The returned forces don't include the electrostatic force at fixed charges on the
 ! ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 ! otherwise the forces on the ML atoms are incomplete.
@@ -217,7 +235,7 @@ subroutine internal_calc_energy_force_mlmm( &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ene_pot_total &
+    pot_energy &
 ) bind(c, name="mlip_calc_energy_force_mlmm")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: ml_atoms_num
@@ -231,12 +249,12 @@ subroutine internal_calc_energy_force_mlmm( &
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(out) :: ene_pot_total
+    real(c_double), intent(out) :: pot_energy
 endsubroutine
 
 ! Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
 ! ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
-! fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+! fetched as the results 'qbc' and 'qbc_grad'. The 'custom' mlmm_coupling is not
 ! supported
 subroutine internal_calc_energy_force_mlmm_qbc( &
     ml_atoms_num, &
@@ -249,7 +267,7 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ene_pot_total &
+    pot_energy &
 ) bind(c, name="mlip_calc_energy_force_mlmm_qbc")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: ml_atoms_num
@@ -263,7 +281,7 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(out) :: ene_pot_total
+    real(c_double), intent(out) :: pot_energy
 endsubroutine
 
 ! Store a copy of values, with shape dims, as a tensor named name, with the dtype
@@ -319,7 +337,7 @@ endsubroutine
 
 ! Copy a result of the last calculation into values, with shape dims (C order). The
 ! results are the outputs of the model other than the energy and the forces (e.g.
-! 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+! 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
 ! the molecules dim. Exits if there is no such result, or if the shapes don't match.
 ! In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
 ! of any rank, or a scalar. dims is taken from its shape
@@ -391,159 +409,6 @@ endsubroutine
 endinterface
 
 contains
-
-! Wrapper needed in case fortran logicals don't have the same binary
-! representation as c_bool
-subroutine mlip_calc_energy_force( &
-    num_atoms, &
-    coords, &
-    cell, &
-    use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    forces, &
-    potential_energy &
-)
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: cell(*)
-    logical, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical, intent(in) :: calc_only_bonded
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
-    call internal_calc_energy_force( &
-        num_atoms, &
-        coords, &
-        cell, &
-        fbool_to_cbool(use_pbc), &
-        molecule_idxs, &
-        fbool_to_cbool(calc_only_bonded), &
-        forces, &
-        potential_energy &
-    )
-endsubroutine
-
-! Wrapper needed in case fortran logicals don't have the same binary
-! representation as c_bool
-subroutine mlip_calc_energy_force_from_external_neighbors( &
-    num_atoms, &
-    num_neighbors, &
-    coords, &
-    neighborlist, &
-    shifts, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    forces, &
-    potential_energy &
-)
-    integer(c_int), value, intent(in) :: num_atoms
-    integer(c_int), value, intent(in) :: num_neighbors
-    real(c_double), intent(in) :: coords(*)
-    integer(c_int), intent(in) :: neighborlist(*)
-    real(c_double), intent(in) :: shifts(*)
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical, intent(in) :: calc_only_bonded
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: potential_energy
-    call internal_calc_energy_force_from_external_neighbors( &
-        num_atoms, &
-        num_neighbors, &
-        coords, &
-        neighborlist, &
-        shifts, &
-        molecule_idxs, &
-        fbool_to_cbool(calc_only_bonded), &
-        forces, &
-        potential_energy &
-    )
-endsubroutine
-
-! Wrapper needed in case fortran logicals don't have the same binary
-! representation as c_bool
-subroutine mlip_calc_energy_force_mlmm( &
-    ml_atoms_num, &
-    mm_atoms_num, &
-    ml_coords, &
-    mm_coords, &
-    mm_atomic_charges, &
-    cell, &
-    use_pbc, &
-    verbose, &
-    ml_forces, &
-    mm_forces, &
-    ene_pot_total &
-)
-    integer(c_int), value, intent(in) :: ml_atoms_num
-    integer(c_int), value, intent(in) :: mm_atoms_num
-    real(c_double), intent(in) :: ml_coords(*)
-    real(c_double), intent(in) :: mm_coords(*)
-    real(c_double), intent(in) :: mm_atomic_charges(*)
-    real(c_double), intent(in) :: cell(*)
-    logical, intent(in) :: use_pbc
-    logical, intent(in) :: verbose
-    ! Outputs
-    real(c_double), intent(out) :: ml_forces(*)
-    real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(out) :: ene_pot_total
-    call internal_calc_energy_force_mlmm( &
-        ml_atoms_num, &
-        mm_atoms_num, &
-        ml_coords, &
-        mm_coords, &
-        mm_atomic_charges, &
-        cell, &
-        fbool_to_cbool(use_pbc), &
-        fbool_to_cbool(verbose), &
-        ml_forces, &
-        mm_forces, &
-        ene_pot_total &
-    )
-endsubroutine
-
-! Wrapper needed in case fortran logicals don't have the same binary
-! representation as c_bool
-subroutine mlip_calc_energy_force_mlmm_qbc( &
-    ml_atoms_num, &
-    mm_atoms_num, &
-    ml_coords, &
-    mm_coords, &
-    mm_atomic_charges, &
-    cell, &
-    use_pbc, &
-    verbose, &
-    ml_forces, &
-    mm_forces, &
-    ene_pot_total &
-)
-    integer(c_int), value, intent(in) :: ml_atoms_num
-    integer(c_int), value, intent(in) :: mm_atoms_num
-    real(c_double), intent(in) :: ml_coords(*)
-    real(c_double), intent(in) :: mm_coords(*)
-    real(c_double), intent(in) :: mm_atomic_charges(*)
-    real(c_double), intent(in) :: cell(*)
-    logical, intent(in) :: use_pbc
-    logical, intent(in) :: verbose
-    ! Outputs
-    real(c_double), intent(out) :: ml_forces(*)
-    real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(out) :: ene_pot_total
-    call internal_calc_energy_force_mlmm_qbc( &
-        ml_atoms_num, &
-        mm_atoms_num, &
-        ml_coords, &
-        mm_coords, &
-        mm_atomic_charges, &
-        cell, &
-        fbool_to_cbool(use_pbc), &
-        fbool_to_cbool(verbose), &
-        ml_forces, &
-        mm_forces, &
-        ene_pot_total &
-    )
-endsubroutine
 
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
 subroutine mlip_get_config_int_option( &
@@ -633,6 +498,14 @@ endsubroutine
 ! - mlip_initialize calls internal_initialize, the bind(c) interface
 !   generated from interface/interface.yaml. If the args of mlip_initialize
 !   change in the yaml, that call must be updated.
+! - mlip_calc_energy_force_assumed_size and
+!   mlip_calc_energy_force_from_external_neighbors call internal_calc_energy_force and
+!   internal_calc_energy_force_from_external_neighbors,
+!   generated from interface/interface.yaml. If their args change in the yaml, those
+!   calls must be updated.
+! - mlip_calc_energy_force_mlmm calls internal_calc_energy_force_mlmm or
+!   internal_calc_energy_force_mlmm_qbc, generated from interface/interface.yaml. If
+!   their args change in the yaml, those calls must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
@@ -673,6 +546,247 @@ subroutine mlip_initialize( &
         c_calling_program, &
         fbool_to_cbool(do_print_config_info) &
     )
+endsubroutine
+
+! PBC are used only if cell is present. molecule_idxs and calc_only_bonded must be both
+! present or both absent, if absent calc_only_bonded is false
+subroutine mlip_calc_energy_force( &
+    coords, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy, &
+    cell &
+)
+    real(c_double), contiguous, intent(in) :: coords(:, :)  ! Shape (3, atoms)
+    integer(c_int), optional, contiguous, intent(in) :: molecule_idxs(:)  ! Shape (atoms,)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), contiguous, intent(out) :: out_forces(:, :)  ! Shape (3, atoms)
+    real(c_double), intent(out) :: out_pot_energy
+    real(c_double), optional, intent(in) :: cell(3, 3)
+
+    if (size(coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force: coords must have shape (3, atoms)")
+    endif
+    if (any(shape(out_forces) /= shape(coords))) then
+        call exit_with_error("mlip_calc_energy_force: out_forces and coords shapes differ")
+    endif
+    if (present(molecule_idxs)) then
+        if (size(molecule_idxs) /= size(coords, 2)) then
+            call exit_with_error("mlip_calc_energy_force: molecule_idxs and coords sizes differ")
+        endif
+    endif
+    call mlip_calc_energy_force_assumed_size( &
+        size(coords, 2), &
+        coords, &
+        molecule_idxs, &
+        calc_only_bonded, &
+        out_forces, &
+        out_pot_energy, &
+        cell &
+    )
+endsubroutine
+
+! Same as mlip_calc_energy_force, for arrays whose size is not known (e.g. assumed-size)
+subroutine mlip_calc_energy_force_assumed_size( &
+    num_atoms, &
+    coords, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy, &
+    cell &
+)
+    integer(c_int), intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), optional, intent(in) :: molecule_idxs(*)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), intent(out) :: out_forces(*)
+    real(c_double), intent(out) :: out_pot_energy
+    real(c_double), optional, intent(in) :: cell(3, 3)
+
+    real(c_double) :: pbc_cell(3, 3)
+    integer(c_int) :: used_molecule_idxs(num_atoms)
+    logical :: do_calc_only_bonded
+    if (present(molecule_idxs) .neqv. present(calc_only_bonded)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force: molecule_idxs and calc_only_bonded must be both" &
+            // " present or both absent" &
+        )
+    endif
+    used_molecule_idxs = 0
+    do_calc_only_bonded = .false.
+    if (present(molecule_idxs)) then
+        used_molecule_idxs = molecule_idxs(1:num_atoms)
+        do_calc_only_bonded = calc_only_bonded
+    endif
+    pbc_cell = 0.0d0
+    if (present(cell)) then
+        pbc_cell = cell
+    endif
+    call internal_calc_energy_force( &
+        num_atoms, &
+        coords, &
+        pbc_cell, &
+        fbool_to_cbool(present(cell)), &
+        used_molecule_idxs, &
+        fbool_to_cbool(do_calc_only_bonded), &
+        out_forces, &
+        out_pot_energy &
+    )
+endsubroutine
+
+! molecule_idxs and calc_only_bonded must be both present or both absent, if absent
+! calc_only_bonded is false
+subroutine mlip_calc_energy_force_from_external_neighbors( &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy &
+)
+    real(c_double), contiguous, intent(in) :: coords(:, :)  ! Shape (3, atoms)
+    integer(c_int), contiguous, intent(in) :: neighborlist(:, :)  ! Shape (neighbors, 2)
+    real(c_double), contiguous, intent(in) :: shifts(:, :)  ! Shape (3, neighbors)
+    integer(c_int), optional, contiguous, intent(in) :: molecule_idxs(:)  ! Shape (atoms,)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), intent(out) :: out_forces(*)  ! 3 * atoms values
+    real(c_double), intent(out) :: out_pot_energy
+
+    integer(c_int) :: used_molecule_idxs(size(coords, 2))
+    logical :: do_calc_only_bonded
+    if (size(coords, 1) /= 3 .or. size(shifts, 1) /= 3 .or. size(neighborlist, 2) /= 2) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: coords, shifts or" &
+            // " neighborlist have the wrong shape" &
+        )
+    endif
+    if (size(shifts, 2) /= size(neighborlist, 1)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: shifts and neighborlist" &
+            // " sizes differ" &
+        )
+    endif
+    if (present(molecule_idxs) .neqv. present(calc_only_bonded)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: molecule_idxs and" &
+            // " calc_only_bonded must be both present or both absent" &
+        )
+    endif
+    used_molecule_idxs = 0
+    do_calc_only_bonded = .false.
+    if (present(molecule_idxs)) then
+        if (size(molecule_idxs) /= size(coords, 2)) then
+            call exit_with_error( &
+                "mlip_calc_energy_force_from_external_neighbors: molecule_idxs and coords" &
+                // " sizes differ" &
+            )
+        endif
+        used_molecule_idxs = molecule_idxs
+        do_calc_only_bonded = calc_only_bonded
+    endif
+    call internal_calc_energy_force_from_external_neighbors( &
+        size(coords, 2), &
+        size(neighborlist, 1), &
+        coords, &
+        neighborlist, &
+        shifts, &
+        used_molecule_idxs, &
+        fbool_to_cbool(do_calc_only_bonded), &
+        out_forces, &
+        out_pot_energy &
+    )
+endsubroutine
+
+! If calc_qbc_and_qbc_grad, calls mlip_calc_energy_force_mlmm_qbc instead of
+! mlip_calc_energy_force_mlmm
+! If return_grads_instead_of_forces, out_ml_forces and out_mm_forces hold the energy grads
+! PBC are used only if cell is present
+subroutine mlip_calc_energy_force_mlmm( &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
+    cell, &
+    calc_qbc_and_qbc_grad, &
+    return_grads_instead_of_forces, &
+    verbose, &
+    out_ml_forces, &
+    out_mm_forces, &
+    out_pot_energy &
+)
+    real(c_double), contiguous, intent(in) :: ml_coords(:, :)  ! Shape (3, ML)
+    real(c_double), contiguous, intent(in) :: mm_coords(:, :)  ! Shape (3, MM)
+    real(c_double), contiguous, intent(in) :: mm_atomic_charges(:)  ! Shape (MM,)
+    real(c_double), optional, intent(in) :: cell(3, 3)
+    logical, optional, intent(in) :: calc_qbc_and_qbc_grad
+    logical, optional, intent(in) :: return_grads_instead_of_forces
+    logical, intent(in) :: verbose
+    ! Outputs
+    real(c_double), contiguous, intent(out) :: out_ml_forces(:, :)  ! Shape (3, ML)
+    real(c_double), contiguous, intent(out) :: out_mm_forces(:, :)  ! Shape (3, MM)
+    real(c_double), intent(out) :: out_pot_energy
+
+    real(c_double) :: pbc_cell(3, 3)
+    logical :: do_calc_qbc_and_qbc_grad
+    if (any(shape(out_ml_forces) /= shape(ml_coords))) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: out_ml_forces and ml_coords shapes differ")
+    endif
+    if (any(shape(out_mm_forces) /= shape(mm_coords))) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: out_mm_forces and mm_coords shapes differ")
+    endif
+    if (size(mm_atomic_charges) /= size(mm_coords, 2)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_mlmm: mm_atomic_charges and mm_coords sizes differ" &
+        )
+    endif
+    pbc_cell = 0.0d0
+    if (present(cell)) then
+        pbc_cell = cell
+    endif
+    do_calc_qbc_and_qbc_grad = .false.
+    if (present(calc_qbc_and_qbc_grad)) then
+        do_calc_qbc_and_qbc_grad = calc_qbc_and_qbc_grad
+    endif
+    if (do_calc_qbc_and_qbc_grad) then
+        call internal_calc_energy_force_mlmm_qbc( &
+            size(ml_coords, 2), &
+            size(mm_coords, 2), &
+            ml_coords, &
+            mm_coords, &
+            mm_atomic_charges, &
+            pbc_cell, &
+            fbool_to_cbool(present(cell)), &
+            fbool_to_cbool(verbose), &
+            out_ml_forces, &
+            out_mm_forces, &
+            out_pot_energy &
+        )
+    else
+        call internal_calc_energy_force_mlmm( &
+            size(ml_coords, 2), &
+            size(mm_coords, 2), &
+            ml_coords, &
+            mm_coords, &
+            mm_atomic_charges, &
+            pbc_cell, &
+            fbool_to_cbool(present(cell)), &
+            fbool_to_cbool(verbose), &
+            out_ml_forces, &
+            out_mm_forces, &
+            out_pot_energy &
+        )
+    endif
+    if (present(return_grads_instead_of_forces)) then
+        if (return_grads_instead_of_forces) then
+            out_ml_forces = -out_ml_forces
+            out_mm_forces = -out_mm_forces
+        endif
+    endif
 endsubroutine
 
 ! Coordinates must be mapped to central cell in sander!!!
@@ -827,6 +941,14 @@ subroutine get_pmemd_img_neighbors_num(pmemd_neighborlist, img_neighbors_num)
         idx = idx + 2 + total_neighbors + 1
     end do
 end subroutine
+
+! Same format and exit code as the errors of libtorchani
+subroutine exit_with_error(message)
+    character(len=*), intent(in) :: message
+    write(error_unit, "(a)") "ERROR (libtorchani)"
+    write(error_unit, "(a)") message
+    error stop 2
+endsubroutine
 
 logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     logical, intent(in) :: fbool

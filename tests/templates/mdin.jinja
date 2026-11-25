@@ -62,10 +62,10 @@
     {% else %}
     use_mlip_atomic_charges = .True.
     mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
-    write_mlmm_atomic_charges = .True.  ! Only predicted charges are written
+    write_atomic_charges = .True.  ! Only predicted charges are written
     {% endif %}
-    write_mlmm_forces = .True.
-    write_mlmm_coords = .True.
+    write_forces = .True.
+    write_coords = .True.
 {% endif %}
     model_index = -1
     use_external_neighborlist = .{{ use_amber_neighborlist }}.

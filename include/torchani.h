@@ -32,6 +32,13 @@ void mlip_set_no_eval_atoms_mask(
     int values[]  // Shape (num_atoms,)
 );
 
+// Set the current MD step. The outputs requested by the write_* options are written
+// only at steps that are multiples of write_interval, once per step. Can be called
+// before mlip_initialize
+void mlip_update_md_step(
+    int md_step
+);
+
 // Set the ml_charge and ml_spin_mult options of the config, which can change between
 // calls. Exits if called between mlip_calc_energy_atomic_charges_retain and
 // mlip_calc_energy_atomic_charges_vjp
@@ -40,6 +47,9 @@ void mlip_set_ml_charge_and_spin_mult(
     int spin_mult
 );
 
+// The outputs requested by the write_coords, write_forces and write_atomic_charges
+// options are appended to their files, every write_interval steps (see
+// mlip_update_md_step)
 void mlip_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -48,10 +58,13 @@ void mlip_calc_energy_force(
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
     /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
+    double out_forces[][3],  // Shape (num_atoms, 3)
+    double* out_pot_energy
 );
 
+// The outputs requested by the write_coords, write_forces and write_atomic_charges
+// options are appended to their files, every write_interval steps (see
+// mlip_update_md_step)
 void mlip_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
@@ -61,8 +74,8 @@ void mlip_calc_energy_force_from_external_neighbors(
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
     /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
+    double out_forces[][3],  // Shape (num_atoms, 3)
+    double* out_pot_energy
 );
 
 // This two-call API (retain + vjp) is only needed if the md engine's energy includes
@@ -87,7 +100,7 @@ void mlip_calc_energy_atomic_charges_retain(
     double coords[][3],  // Shape (num_atoms, 3)
     /* outputs */
     double atomic_charges[],  // Shape (num_atoms,)
-    double* potential_energy
+    double* pot_energy
 );
 
 // This two-call API (retain + vjp) is only needed if the md engine's energy includes
@@ -97,7 +110,8 @@ void mlip_calc_energy_atomic_charges_retain(
 // charges left out of the grid and the real-space pair list), the potential of the MM
 // charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 // single call (not currently implemented).
-// ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+// ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
+// and must be passed in kcal/mol/e
 // The returned forces don't include the electrostatic force at fixed charges on the
 // ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 // otherwise the forces on the ML atoms are incomplete.
@@ -134,12 +148,12 @@ void mlip_calc_energy_force_mlmm(
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)
     double mm_forces[][3],  // Shape (mm_atoms_num, 3)
-    double* ene_pot_total
+    double* pot_energy
 );
 
 // Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
 // ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
-// fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+// fetched as the results 'qbc' and 'qbc_grad'. The 'custom' mlmm_coupling is not
 // supported
 void mlip_calc_energy_force_mlmm_qbc(
     int ml_atoms_num,
@@ -153,7 +167,7 @@ void mlip_calc_energy_force_mlmm_qbc(
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)
     double mm_forces[][3],  // Shape (mm_atoms_num, 3)
-    double* ene_pot_total
+    double* pot_energy
 );
 
 // Store a copy of values, with shape dims, as a tensor named name, with the dtype
@@ -191,7 +205,7 @@ void mlip_store_mask_tensor(
 
 // Copy a result of the last calculation into values, with shape dims (C order). The
 // results are the outputs of the model other than the energy and the forces (e.g.
-// 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+// 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
 // the molecules dim. Exits if there is no such result, or if the shapes don't match.
 // In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
 // of any rank, or a scalar. dims is taken from its shape

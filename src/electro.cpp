@@ -43,13 +43,9 @@ auto calcEfield(
 auto polarizableEmbeddingEnergyFromField(
     torch::Tensor atomic_alphas, torch::Tensor efield, double inv_pol_dielectric
 ) -> torch::Tensor {
-    // Input atomic alphas are in Ang and Efield in AU
-    // Output in AU, so perform the conversion:
-    // Alphas_AU = Alphas_Angstrom * A2B**3
-    torch::Tensor atomic_alphas_bohr =
-        atomic_alphas * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 3);
+    // Input atomic alphas and Efield are in AU
     return -inv_pol_dielectric *
-        torch::sum(atomic_alphas_bohr * torch::sum(efield.pow(2), 1));
+        torch::sum(atomic_alphas * torch::sum(efield.pow(2), 1));
 }
 }  // namespace
 

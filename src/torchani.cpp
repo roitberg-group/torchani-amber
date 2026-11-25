@@ -43,6 +43,10 @@ std::unique_ptr<mlip::MlipModel> model;
 // Cleared by mlip_initialize.
 // Names starting with "__" are reserved for internal use
 tensor_utils::TensorContainer tensor_container;
+// Set by mlip_update_md_step. The write_* outputs are written once per step, if it is a
+// multiple of write_interval
+int current_md_step = 0;
+std::optional<int> last_written_md_step;  // Reset by mlip_initialize
 
 void populateEmbeddingForces(
     torch::Tensor ml_forces,
@@ -181,7 +185,7 @@ std::vector<long> mlAtomicNumbers() {
     );
 }
 
-// Polarizabilities of the ML atoms (Ang^3), from the ML/MM config. Exits if the
+// Polarizabilities of the ML atoms (AU), from the ML/MM config. Exits if the
 // ML/MM config was not read, or if an element has no polarizability
 torch::Tensor mlAtomicPolarizabilities() {
     std::vector<double> alphas;
@@ -193,7 +197,7 @@ torch::Tensor mlAtomicPolarizabilities() {
             std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
             std::exit(2);
         }
-        alphas.push_back(alpha * constants::POLARIZABILITY_AU_TO_ANG3);
+        alphas.push_back(alpha);
     }
     return global_config.tensorToTorchaniDtypeAndDevice(
         torch::tensor(alphas, torch::TensorOptions().dtype(torch::kDouble))
@@ -313,7 +317,7 @@ void storeResults(const mlip::MlipOutput& output) {
             continue;
         }
         torch::Tensor result = value.detach();
-        if (name == "qbc" or name == "qbc_grads") {
+        if (name == "qbc" or name == "qbc_grad") {
             result = result * constants::HARTREE_TO_KCALMOL;
         }
         if (result.dim() > 0 and result.size(0) == 1) {
@@ -323,12 +327,31 @@ void storeResults(const mlip::MlipOutput& output) {
     }
 }
 
-// Output files of the write_mlmm_* options. The forces are only the ones calculated by
+// Output files of the write_* options. The forces are only the ones calculated by
 // the MLIP Interface, they don't include contributions added later by the md engine
-const std::string ML_COORDS_FILE = "ml_region.xyz";
-const std::string ML_FORCES_FILE = "forces_ml_region.mlip.dat";
-const std::string MM_FORCES_FILE = "forces_mlmm_mm_region.mlip.dat";
-const std::string ML_ATOMIC_CHARGES_FILE = "atomic_charges_ml_region.mlip.dat";
+struct OutputFiles {
+    std::string coords;
+    std::string forces;
+    std::string mm_forces;  // Empty if there is no MM region
+    std::string atomic_charges;
+    std::string coords_comment;
+};
+
+const OutputFiles OUTPUT_FILES{
+    "coords.xyz",
+    "forces.mlip.dat",
+    "",
+    "atomic_charges.mlip.dat",
+    "MLIP: .xyz trajectory file",
+};
+
+const OutputFiles MLMM_OUTPUT_FILES{
+    "ml_region.xyz",
+    "forces_ml_region.mlip.dat",
+    "forces_mlmm_mm_region.mlip.dat",
+    "atomic_charges_ml_region.mlip.dat",
+    "ML/MM: .xyz trajectory file of the ML region",
+};
 
 // Path of an output file, in the output_dir option, or the current working directory if
 // it is empty
@@ -340,12 +363,12 @@ std::string outputPath(const std::string& fname) {
     return (std::filesystem::path(output_dir) / fname).string();
 }
 
-// Create empty output files for the write_mlmm_* options that are set, and output_dir if
+// Create empty output files for the write_* options that are set, and output_dir if
 // it doesn't exist
-void createMlmmOutputFiles() {
-    bool writes_outputs = global_config.getBool("write_mlmm_coords")
-        or global_config.getBool("write_mlmm_forces")
-        or global_config.getBool("write_mlmm_atomic_charges");
+void createOutputFiles(const OutputFiles& files) {
+    bool writes_outputs = global_config.getBool("write_coords")
+        or global_config.getBool("write_forces")
+        or global_config.getBool("write_atomic_charges");
     if (not writes_outputs) {
         return;
     }
@@ -354,15 +377,17 @@ void createMlmmOutputFiles() {
         if (not output_dir.empty()) {
             std::filesystem::create_directories(output_dir);
         }
-        if (global_config.getBool("write_mlmm_coords")) {
-            io::createEmptyFile(outputPath(ML_COORDS_FILE));
+        if (global_config.getBool("write_coords")) {
+            io::createEmptyFile(outputPath(files.coords));
         }
-        if (global_config.getBool("write_mlmm_forces")) {
-            io::createEmptyFile(outputPath(ML_FORCES_FILE));
-            io::createEmptyFile(outputPath(MM_FORCES_FILE));
+        if (global_config.getBool("write_forces")) {
+            io::createEmptyFile(outputPath(files.forces));
+            if (not files.mm_forces.empty()) {
+                io::createEmptyFile(outputPath(files.mm_forces));
+            }
         }
-        if (global_config.getBool("write_mlmm_atomic_charges")) {
-            io::createEmptyFile(outputPath(ML_ATOMIC_CHARGES_FILE));
+        if (global_config.getBool("write_atomic_charges")) {
+            io::createEmptyFile(outputPath(files.atomic_charges));
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
@@ -370,44 +395,53 @@ void createMlmmOutputFiles() {
     }
 }
 
-// Append the outputs of an ML/MM calculation requested by the write_mlmm_* options.
-// Forces are in Hartree/Angstrom, and are written in kcal/mol/Angstrom
-void writeMlmmOutputs(
+// Append the outputs of a calculation requested by the write_* options, if the current
+// MD step is a multiple of write_interval, and they weren't written yet for it. Forces are in
+// Hartree/Angstrom, and are written in kcal/mol/Angstrom. mm_forces is only written if
+// files has an mm_forces file
+void writeOutputs(
+    const OutputFiles& files,
     const torch::Tensor& atomic_numbers,
-    const torch::Tensor& ml_coords,
-    const torch::Tensor& ml_forces,
+    const torch::Tensor& coords,
+    const torch::Tensor& forces,
     const torch::Tensor& mm_forces,
     const mlip::MlipOutput& output
 ) {
+    bool is_write_step = current_md_step % global_config.getInt("write_interval") == 0
+        and last_written_md_step != current_md_step;
+    if (not is_write_step) {
+        return;
+    }
+    last_written_md_step = current_md_step;
     try {
-        if (global_config.getBool("write_mlmm_coords")) {
+        if (global_config.getBool("write_coords")) {
             io::appendXyzFrame(
-                outputPath(ML_COORDS_FILE),
+                outputPath(files.coords),
                 atomic_numbers.view({-1}),
-                ml_coords.view({-1, 3}),
-                "ML/MM: .xyz trajectory file of the ML region"
+                coords.view({-1, 3}),
+                files.coords_comment
             );
         }
-        if (global_config.getBool("write_mlmm_forces")) {
+        if (global_config.getBool("write_forces")) {
             io::appendDatFrame(
-                outputPath(ML_FORCES_FILE),
-                ml_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
+                outputPath(files.forces),
+                forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
             );
-            if (mm_forces.numel() > 0) {
+            if (not files.mm_forces.empty() and mm_forces.numel() > 0) {
                 io::appendDatFrame(
-                    outputPath(MM_FORCES_FILE),
+                    outputPath(files.mm_forces),
                     mm_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
                 );
             }
         }
-        if (global_config.getBool("write_mlmm_atomic_charges")) {
+        if (global_config.getBool("write_atomic_charges")) {
             if (output.count("atomic_charges") == 0) {
                 throw std::runtime_error(
-                    "write_mlmm_atomic_charges = T, but the model doesn't predict atomic charges"
+                    "write_atomic_charges = T, but the model doesn't predict atomic charges"
                 );
             }
             io::appendDatFrame(
-                outputPath(ML_ATOMIC_CHARGES_FILE), output.at("atomic_charges").view({-1})
+                outputPath(files.atomic_charges), output.at("atomic_charges").view({-1})
             );
         }
     } catch (const std::runtime_error& e) {
@@ -450,7 +484,7 @@ void calcEnergyForceCustomMlmm(
     /* outputs */
     double ml_forces_buf[][3],
     double mm_forces_buf[][3],
-    double* ene_pot_total_buf
+    double* pot_energy_buf
 ) {
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     if (!model->supportsCustomMlmm()) {
@@ -495,12 +529,15 @@ void calcEnergyForceCustomMlmm(
         output.at("forces"), output.at("mm_forces"), ml_atoms_num, mm_atoms_num,
         ml_forces_buf, mm_forces_buf
     );
-    writeMlmmOutputs(atomic_numbers, ml_coords, output.at("forces"), output.at("mm_forces"), output);
-    populateEnergyScalar(energy, ene_pot_total_buf);
+    writeOutputs(
+        MLMM_OUTPUT_FILES, atomic_numbers, ml_coords, output.at("forces"),
+        output.at("mm_forces"), output
+    );
+    populateEnergyScalar(energy, pot_energy_buf);
     if (verbose) {
         std::cout << std::fixed << std::setprecision(4)
                   << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
-                  << *ene_pot_total_buf << std::defaultfloat << std::endl;
+                  << *pot_energy_buf << std::defaultfloat << std::endl;
     }
 }
 
@@ -523,7 +560,7 @@ void calcEnergyForceMlmm(
     /* outputs */
     double ml_forces_buf[][3],  // shape (ml_atoms_num, 3)
     double mm_forces_buf[][3],  // shape (mm_atoms_num, 3)
-    double* ene_pot_total_buf
+    double* pot_energy_buf
 ) {
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     const std::string& mlmm_coupling = global_config.getString("mlmm_coupling");
@@ -549,7 +586,7 @@ void calcEnergyForceMlmm(
             verbose,
             ml_forces_buf,
             mm_forces_buf,
-            ene_pot_total_buf
+            pot_energy_buf
         );
         return;
     }
@@ -651,8 +688,8 @@ void calcEnergyForceMlmm(
         ml_forces_buf,
         mm_forces_buf
     );
-    writeMlmmOutputs(atomic_numbers, ml_coords, ml_forces, mm_forces, output);
-    populateEnergyScalar(ene_pot_total, ene_pot_total_buf);
+    writeOutputs(MLMM_OUTPUT_FILES, atomic_numbers, ml_coords, ml_forces, mm_forces, output);
+    populateEnergyScalar(ene_pot_total, pot_energy_buf);
     if (verbose) {
         double ene_pot_invacuo_kcal = 0.0;
         double ene_pot_pol_kcal = 0.0;
@@ -870,9 +907,8 @@ void mlip_initialize(
         setModelExtraFeatures(extra_features);
     }
 
-    if (read_mlmm_config) {
-        createMlmmOutputFiles();
-    }
+    createOutputFiles(read_mlmm_config ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
+    last_written_md_step.reset();
 
     // (7) Epilogue
     global_config.setMlipInterfaceIsInit(true);
@@ -918,6 +954,10 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
     }
 }
 
+void mlip_update_md_step(int md_step) {
+    current_md_step = md_step;
+}
+
 void mlip_set_ml_charge_and_spin_mult(int charge, int spin_mult) {
     exitIfNotInitialized(global_config);
     exitIfChargesGraphIsRetained();
@@ -934,7 +974,7 @@ void mlip_calc_energy_force_from_external_neighbors(
     bool calc_only_bonded,
     /* outputs */
     double forces_buf[][3],
-    double* potential_energy_buf
+    double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
@@ -988,7 +1028,10 @@ void mlip_calc_energy_force_from_external_neighbors(
     storeResults(output);
     torch::Tensor energy = output.at("energy");
     populateForces(output.at("forces"), forces_buf, num_atoms);
-    populateEnergyScalar(energy, potential_energy_buf);
+    populateEnergyScalar(energy, pot_energy_buf);
+    writeOutputs(
+        OUTPUT_FILES, atomic_numbers, coords, output.at("forces"), torch::Tensor{}, output
+    );
 }
 
 void mlip_calc_energy_force(
@@ -999,7 +1042,7 @@ void mlip_calc_energy_force(
     int* molecule_idxs_buf,
     bool calc_only_bonded,
     double forces_buf[][3],
-    double* potential_energy
+    double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
@@ -1038,7 +1081,10 @@ void mlip_calc_energy_force(
     storeResults(output);
     torch::Tensor energy = output.at("energy");
     populateForces(output.at("forces"), forces_buf, num_atoms);
-    populateEnergyScalar(energy, potential_energy);
+    populateEnergyScalar(energy, pot_energy_buf);
+    writeOutputs(
+        OUTPUT_FILES, atomic_numbers, coords, output.at("forces"), torch::Tensor{}, output
+    );
 }
 
 void mlip_calc_energy_force_mlmm(
@@ -1053,7 +1099,7 @@ void mlip_calc_energy_force_mlmm(
     /* outputs */
     double ml_forces_buf[][3],
     double mm_forces_buf[][3],
-    double* ene_pot_total_buf
+    double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
     exitIfNoMlmmConfig(global_config);
@@ -1070,7 +1116,7 @@ void mlip_calc_energy_force_mlmm(
         /*calc_qbc=*/false,
         ml_forces_buf,
         mm_forces_buf,
-        ene_pot_total_buf
+        pot_energy_buf
     );
 }
 
@@ -1086,7 +1132,7 @@ void mlip_calc_energy_force_mlmm_qbc(
     /* outputs */
     double ml_forces_buf[][3],
     double mm_forces_buf[][3],
-    double* ene_pot_total_buf
+    double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
     exitIfNoMlmmConfig(global_config);
@@ -1103,7 +1149,7 @@ void mlip_calc_energy_force_mlmm_qbc(
         /*calc_qbc=*/true,
         ml_forces_buf,
         mm_forces_buf,
-        ene_pot_total_buf
+        pot_energy_buf
     );
 }
 
@@ -1112,7 +1158,7 @@ void mlip_calc_energy_atomic_charges_retain(
     double coords_buf[][3],
     /* outputs */
     double atomic_charges_buf[],
-    double* potential_energy
+    double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
     exitIfNoEvalAtoms(global_config);
@@ -1144,7 +1190,7 @@ void mlip_calc_energy_atomic_charges_retain(
     torch::Tensor energy = output.at("energy");
     torch::Tensor atomic_charges = output.at("atomic_charges");
 
-    populateEnergyScalar(energy, potential_energy);
+    populateEnergyScalar(energy, pot_energy_buf);
     // populateAtomicCharges converts its argument to CPU double, keep the
     // original tensor (and its graph) for the backward pass
     torch::Tensor charges_copy = atomic_charges;

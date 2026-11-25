@@ -213,6 +213,24 @@ There are also some advanced options:
    set to a (0-indexed) device integer. By default it is set to `0`. It only makes sense
    to change this flag if you can access more than one CUDA enabled GPU in your machine.
 
+Output related options:
+- `write_coords` (*bool*)
+   Dump the coordinates of the atoms evaluated by the model as a `.xyz` file
+- `write_forces` (*bool*)
+   Dump the forces calculated by the model as a `.dat` file
+- `write_atomic_charges` (*bool*)
+   Dump the atomic charges predicted by the model as a `.dat` file. Requires a
+   charge-predicting model
+- `write_interval` (*int*)
+   The outputs are written every `write_interval` MD steps. Default is `1`
+- `output_dir` (*string*)
+   Directory of the output files. Default is the current working directory
+
+The files are `coords.xyz`, `forces.mlip.dat` and `atomic_charges.mlip.dat`. For
+ML/MM, they are named `ml_region.xyz`,
+`forces_ml_region.mlip.dat` (and `forces_mlmm_mm_region.mlip.dat` for the MM atoms)
+and `atomic_charges_ml_region.mlip.dat`.
+
 An example `mdin` input file with the correct format:
 
 ```
@@ -290,15 +308,8 @@ For ML/MM, set the charge and spin multiplicity of the ML region with `qmcharge`
 `&mlip` namelist. TorchANI-Amber takes them from `&qmmm`, and Sander also uses
 `qmcharge` (e.g. to adjust the MM charges, see `adjust_q`).
 
-The `&mlip` namelist remains the same, with the following extra available options:
-
-Output related options:
-- `write_mlmm_coords` (bool)
-   Dump xyz coordinates of QM region as a `.xyz` file
-- `write_mlmm_forces` (bool)
-   Dump forces acting on QM atoms as a `.dat` file
-- `write_mlmm_atomic_charges` (bool)
-   Dump charges of the QM atoms as a `.dat` file
+The `&mlip` namelist remains the same, with the following extra available options.
+`write_atomic_charges` requires `use_mlip_atomic_charges = .true.` for ML/MM.
 
 ML/MM and electrostatic related options:
 - `use_mlip_atomic_charges` (bool)

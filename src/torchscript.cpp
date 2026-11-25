@@ -276,7 +276,7 @@ auto computeOutput(
         }
     }
     if (calc_qbc_and_qbc_grad) {
-        output["qbc_grads"] = torch::autograd::grad(
+        output["qbc_grad"] = torch::autograd::grad(
             {output.at("qbc").sum()},
             {coords},
             /* grad_outputs= */ {},

@@ -184,8 +184,8 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     CHECK(config.getDouble("pol_ar") == 10.0);
     CHECK(config.getDouble("pol_fe") == 50.0);
     CHECK(std::isnan(config.getDouble("pol_og")));
-    CHECK(config.getBool("write_mlmm_coords"));
-    CHECK_FALSE(config.getBool("write_mlmm_forces"));
+    CHECK(config.getBool("write_coords"));
+    CHECK_FALSE(config.getBool("write_forces"));
     CHECK(config.getBool("use_hybrid_mlqm"));
     CHECK(config.getString("hybrid_mlqm_method") == "orca");
     CHECK(config.getDouble("hybrid_mlqm_switch_low") == 0.1);
@@ -218,9 +218,9 @@ TEST_CASE("GlobalConfig ML/MM config", "[config]") {
     config = GlobalConfig::fromNamelistFile(path.string(), true);
     CHECK(config.getString("mlmm_coupling") == "simple-polarizable");
     CHECK(config.getBool("use_mlip_atomic_charges"));
-    CHECK(config.getBool("write_mlmm_atomic_charges"));
-    CHECK_FALSE(config.getBool("write_mlmm_coords"));
-    CHECK(config.getBool("write_mlmm_forces"));
+    CHECK(config.getBool("write_atomic_charges"));
+    CHECK_FALSE(config.getBool("write_coords"));
+    CHECK(config.getBool("write_forces"));
     CHECK(config.getBool("use_hybrid_mlqm"));
     CHECK(config.getString("hybrid_mlqm_method") == "gau");
     CHECK(config.getDouble("hybrid_mlqm_switch_high") == 0.5);
@@ -242,8 +242,9 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
         "&mlip mlmm_coupling = 'custom', use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
         "&mlip mlmm_coupling = 'custom', use_mlip_atomic_charges = T,\n"
         "  allow_untested_protocols = T /\n",
-        "&mlip mlmm_coupling = 'custom', write_mlmm_atomic_charges = T /\n",
-        "&mlip write_mlmm_atomic_charges = T /\n",
+        "&mlip mlmm_coupling = 'custom', write_atomic_charges = T /\n",
+        "&mlip write_atomic_charges = T /\n",
+        "&mlip write_interval = 0 /\n",
         "&mlip use_qm_coupling = T /\n",
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
         "&mlip use_hybrid_mlqm = T /\n",
@@ -388,7 +389,7 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
         "  write_xyz = T /\n&qmmm /\n"
     );
     info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string(), true, "sander"));
-    CHECK(info.find("write_mlmm_coords") != std::string::npos);
+    CHECK(info.find("write_coords") != std::string::npos);
     CHECK(info.find("write_xyz") == std::string::npos);
     CHECK(info.find("simple-polarizable") != std::string::npos);
     CHECK(info.find("calculated by MLIP Interface") != std::string::npos);

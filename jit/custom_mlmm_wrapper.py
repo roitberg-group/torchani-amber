@@ -7,9 +7,6 @@ from torchani.tuples import SpeciesEnergiesAtomicCharges
 # Same constant as src/electro.cpp
 ANGSTROM_TO_BOHR = 1.8897261328727875
 
-# Same as in AmberTools/src/sander/qm2_extern_torchani_module.F90 (amber source)
-AU_TO_ANG3 = 0.1481847
-
 # Default atomic polarizabilities in AU (H to Ar), and default inverse dielectric.
 # Same as in AmberTools/src/sander/qm2_extern_torchani_module.F90 (amber source)
 DEFAULT_ALPHAS_AU = (
@@ -53,11 +50,8 @@ class CustomMLMMANImbis(torch.nn.Module):
         self._scale_pairs = scale_pairs
         self.model = torchani.models.ANImbis(**kwargs)
         # Index 0 is a dummy so that the buffer can be indexed by atomic number.
-        # Float64 so that the Ang**3 alphas round exactly as the ones sent by Amber
-        alphas_ang3 = (
-            torch.tensor((0.0,) + DEFAULT_ALPHAS_AU, dtype=torch.double) * AU_TO_ANG3
-        )
-        self.register_buffer("_znum_to_alpha", alphas_ang3)
+        alphas_au = torch.tensor((0.0,) + DEFAULT_ALPHAS_AU, dtype=torch.double)
+        self.register_buffer("_znum_to_alpha", alphas_au)
         self._inv_pol_dielectric = DEFAULT_INV_POL_DIELECTRIC
         self._angstrom_to_bohr = ANGSTROM_TO_BOHR
         self.cutoff = self.model.cutoff
@@ -137,8 +131,8 @@ class CustomMLMMANImbis(torch.nn.Module):
 
         pair_efield = pair_charges.unsqueeze(-1) * delta / distances.unsqueeze(-1) ** 3
         efield = pair_efield.sum(1) / self._angstrom_to_bohr**2
-        alphas_bohr = self._znum_to_alpha[species] * self._angstrom_to_bohr**3
-        atomic_pol = -self._inv_pol_dielectric * alphas_bohr * efield.pow(2).sum(-1)
+        alphas = self._znum_to_alpha[species]
+        atomic_pol = -self._inv_pol_dielectric * alphas * efield.pow(2).sum(-1)
         atomic_dist = -0.5 * atomic_pol
 
         atomic_coupling = atomic_dist + atomic_pol + atomic_coulomb

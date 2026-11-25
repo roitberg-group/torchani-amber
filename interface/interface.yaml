@@ -7,7 +7,9 @@
 #   name: C symbol name
 #   comment: (optional) emitted above the declaration in both languages
 #   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
-#       in templates/torchani_fortran_utils.F90. Otherwise, functions with bool or str
+#       in templates/torchani_fortran_utils.F90. "none" if the function is not exposed
+#       in Fortran by its own name, only through the hand-written wrapper of another
+#       function. Otherwise, functions with bool or str
 #       args get an auto-generated Fortran wrapper that converts logical <-> logical(c_bool)
 #       and fortran strings <-> null-terminated C strings
 #   fortran_generic: (optional) name of a Fortran generic interface the function is
@@ -55,6 +57,14 @@ functions:
       - {name: num_atoms, dtype: int}
       - {name: values, dtype: int, shape: [num_atoms]}
 
+  - name: mlip_update_md_step
+    comment: |
+      Set the current MD step. The outputs requested by the write_* options are written
+      only at steps that are multiples of write_interval, once per step. Can be called
+      before mlip_initialize
+    args:
+      - {name: md_step, dtype: int}
+
   - name: mlip_set_ml_charge_and_spin_mult
     comment: |
       Set the ml_charge and ml_spin_mult options of the config, which can change between
@@ -65,6 +75,11 @@ functions:
       - {name: spin_mult, dtype: int}
 
   - name: mlip_calc_energy_force
+    fortran_wrapper: manual
+    comment: |
+      The outputs requested by the write_coords, write_forces and write_atomic_charges
+      options are appended to their files, every write_interval steps (see
+      mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -72,10 +87,15 @@ functions:
       - {name: use_pbc, dtype: bool}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
+      - {name: out_forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: out_pot_energy, dtype: double, intent: out}
 
   - name: mlip_calc_energy_force_from_external_neighbors
+    fortran_wrapper: manual
+    comment: |
+      The outputs requested by the write_coords, write_forces and write_atomic_charges
+      options are appended to their files, every write_interval steps (see
+      mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_neighbors, dtype: int}
@@ -84,8 +104,8 @@ functions:
       - {name: shifts, dtype: double, shape: [num_neighbors, 3]}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
+      - {name: out_forces, dtype: double, shape: [num_atoms, 3], intent: out}
+      - {name: out_pot_energy, dtype: double, intent: out}
 
   - name: mlip_calc_energy_atomic_charges_retain
     comment: |
@@ -110,7 +130,7 @@ functions:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
+      - {name: pot_energy, dtype: double, intent: out}
 
   - name: mlip_calc_energy_atomic_charges_vjp
     comment: |
@@ -121,7 +141,8 @@ functions:
       charges left out of the grid and the real-space pair list), the potential of the MM
       charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
       single call (not currently implemented).
-      ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms
+      ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
+      and must be passed in kcal/mol/e
       The returned forces don't include the electrostatic force at fixed charges on the
       ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
       otherwise the forces on the ML atoms are incomplete.
@@ -131,6 +152,7 @@ functions:
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
 
   - name: mlip_calc_energy_force_mlmm
+    fortran_wrapper: manual
     comment: |
       Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
       otherwise. The coupling is its mlmm_coupling option: 'coulombic',
@@ -157,13 +179,14 @@ functions:
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
-      - {name: ene_pot_total, dtype: double, intent: out}
+      - {name: pot_energy, dtype: double, intent: out}
 
   - name: mlip_calc_energy_force_mlmm_qbc
+    fortran_wrapper: none
     comment: |
       Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
       ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
-      fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+      fetched as the results 'qbc' and 'qbc_grad'. The 'custom' mlmm_coupling is not
       supported
     args:
       - {name: ml_atoms_num, dtype: int}
@@ -176,7 +199,7 @@ functions:
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
-      - {name: ene_pot_total, dtype: double, intent: out}
+      - {name: pot_energy, dtype: double, intent: out}
 
   - name: mlip_store_float_tensor
     fortran_wrapper: manual
@@ -224,7 +247,7 @@ functions:
     comment: |
       Copy a result of the last calculation into values, with shape dims (C order). The
       results are the outputs of the model other than the energy and the forces (e.g.
-      'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+      'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
       the molecules dim. Exits if there is no such result, or if the shapes don't match.
       In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
       of any rank, or a scalar. dims is taken from its shape

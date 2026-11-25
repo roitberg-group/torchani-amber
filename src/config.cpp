@@ -126,6 +126,13 @@ auto defaultMlipConfig() -> ConfigDict {
         {"use_external_neighborlist", {false, NamelistType::BOOL}},
         {"use_external_nonbond", {false, NamelistType::BOOL}},
         {"use_cuaev", {true, NamelistType::BOOL}},
+        {"write_coords", {false, NamelistType::BOOL}},
+        {"write_forces", {false, NamelistType::BOOL}},
+        {"write_atomic_charges", {false, NamelistType::BOOL}},
+        // The write_* outputs are written at MD steps that are multiples of write_interval
+        {"write_interval", {1L, NamelistType::INT}},
+        // Dir of the write_* output files, the current working directory if empty
+        {"output_dir", {std::string{""}, NamelistType::STR}},
     }};
 }
 
@@ -140,11 +147,6 @@ auto defaultMlmmConfig() -> ConfigDict {
         // Debug option, should always be False
         {"allow_untested_protocols", {false, NamelistType::BOOL}},
         {"inv_pol_dielectric", {0.5, NamelistType::FLOAT}},
-        {"write_mlmm_coords", {false, NamelistType::BOOL}},
-        {"write_mlmm_forces", {false, NamelistType::BOOL}},
-        {"write_mlmm_atomic_charges", {false, NamelistType::BOOL}},
-        // Dir of the write_mlmm_* output files, the current working directory if empty
-        {"output_dir", {std::string{""}, NamelistType::STR}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -295,9 +297,11 @@ auto GlobalConfig::fromNamelistFile(
         {"use_amber_neighborlist", "use_external_neighborlist"},
         {"use_all_amber_nonbond", "use_external_nonbond"},
         {"use_torchani_charges", "use_mlip_atomic_charges"},
-        {"write_xyz", "write_mlmm_coords"},
-        {"write_forces", "write_mlmm_forces"},
-        {"write_charges", "write_mlmm_atomic_charges"},
+        {"write_xyz", "write_coords"},
+        {"write_mlmm_coords", "write_coords"},
+        {"write_mlmm_forces", "write_forces"},
+        {"write_charges", "write_atomic_charges"},
+        {"write_mlmm_atomic_charges", "write_atomic_charges"},
         {"use_numerical_qmmm_forces", "use_numerical_mlmm_forces"},
         {"use_switching_function", "use_hybrid_mlqm"},
         {"switching_program", "hybrid_mlqm_method"},
@@ -394,6 +398,9 @@ auto GlobalConfig::validateConfig(
             " extra features file"
         );
     }
+    if (mlip_config.getInt("write_interval") < 1) {
+        throw config_validation_error("write_interval must be at least 1");
+    }
     if (!mlmm_config) {
         return;
     }
@@ -473,16 +480,16 @@ auto GlobalConfig::validateConfig(
                 " set use_mlip_atomic_charges = F"
             );
         }
-        if (mlmm.getBool("write_mlmm_atomic_charges")) {
+        if (mlip_config.getBool("write_atomic_charges")) {
             throw config_validation_error(
-                "mlmm_coupling = 'custom' returns no charges, set write_mlmm_atomic_charges = F"
+                "mlmm_coupling = 'custom' returns no charges, set write_atomic_charges = F"
             );
         }
     }
-    if (mlmm.getBool("write_mlmm_atomic_charges") && !use_mlip_atomic_charges) {
+    if (mlip_config.getBool("write_atomic_charges") && !use_mlip_atomic_charges) {
         throw config_validation_error(
-            "write_mlmm_atomic_charges = T requires use_mlip_atomic_charges = T, only the"
-            " charges predicted by the model are written"
+            "write_atomic_charges = T requires use_mlip_atomic_charges = T for ML/MM, only"
+            " the charges predicted by the model are written"
         );
     }
     if (use_qm_coupling && !isOneOf(qm_coupling_method, {"amber-dftb", "orca", "gau", "lio"})) {
@@ -636,8 +643,15 @@ auto GlobalConfig::printInfo() const -> void {
              "use_double_precision",
              "use_cuaev",
              "cuda_device_index",
+             "write_coords",
+             "write_forces",
+             "write_atomic_charges",
+             "write_interval",
          }) {
         out << configLine(mlip(), key);
+    }
+    if (!getString("output_dir").empty()) {
+        out << configLine(mlip(), "output_dir");
     }
     if (!getString("extra_features_file_path").empty()) {
         out << configLine(mlip(), "extra_features_file_path");
@@ -650,17 +664,7 @@ auto GlobalConfig::printInfo() const -> void {
     const std::string& mlmm_coupling = getString("mlmm_coupling");
     bool use_qm_coupling = getBool("use_qm_coupling");
     const std::string& qm_coupling_method = getString("qm_coupling_method");
-    for (const char* key : {
-             "write_mlmm_coords",
-             "write_mlmm_forces",
-             "write_mlmm_atomic_charges",
-             "use_mlip_atomic_charges",
-         }) {
-        out << configLine(mlmm(), key);
-    }
-    if (!getString("output_dir").empty()) {
-        out << configLine(mlmm(), "output_dir");
-    }
+    out << configLine(mlmm(), "use_mlip_atomic_charges");
     if (m_amber_qmmm_int == 1) {
         out << configLine(mlmm(), "mlmm_coupling");
     }

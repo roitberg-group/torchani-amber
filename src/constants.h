@@ -9,9 +9,6 @@ namespace constants {
 // Factor used by Amber
 constexpr double CODATA08_ANGSTROM_TO_BOHR = 1.8897261328727875;
 
-// The pol_<symbol> options of the ML/MM config are in atomic units
-constexpr double POLARIZABILITY_AU_TO_ANG3 = 0.1481847;
-
 // This factor should come straight from torchani.units and be consistent with ASE
 constexpr double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
