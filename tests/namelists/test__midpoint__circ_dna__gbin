@@ -1,0 +1,9 @@
+  minimization
+ &cntrl                                                                        
+   imin=1, maxcyc=5,
+   cut=12.0, igb=1, rgbmax=15.,
+   ntpr=1, ntwr=100000,
+   ntx=1, 
+   ntc=1, ntf=1, tol=0.000001,
+   dt=0.001, ntb=0, ig=71277,
+ /

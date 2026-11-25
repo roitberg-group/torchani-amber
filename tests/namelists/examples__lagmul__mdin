@@ -1,0 +1,16 @@
+LM constraints
+ &cntrl                                                                        
+        imin = 0, ntx = 5, nstlim = 10000,
+        ntc = 2, ntf = 1, tol = 0.0000001, ntt = 1, dt = 0.001,
+        ntb = 2, ntp = 1, tautp = 0.5, taup = 2.0,
+        ntwx = 100, ntwe = 0, ntwr = 1000, ntpr = 100,
+        scee = 1.2, cut = 10, npscal = 1,
+        ntr = 0, temp0 = 300.0, iwrap = 0, tempi = 100.0,
+        nscm = 1000, irest = 1, vrand = 0, nmropt = 1,
+ &end
+ &wt
+        TYPE = "END",
+ &end
+DISANG=disang.rst
+LISTIN=POUT
+LISTOUT=POUT

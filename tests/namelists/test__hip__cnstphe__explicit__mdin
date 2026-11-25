@@ -1,0 +1,16 @@
+Explicit solvent molecular dynamics constant E MD
+ &cntrl
+   imin=0, irest=1, ntx=5,
+   ntpr=1, ntwx=0, nstlim=100,
+   dt=0.002, ntt=1, tempi=300,
+   temp0=300, ig=45,
+   ntp=0, ntc=2, ntf=2, cut=8,
+   iwrap=1, ioutfm=1,
+   icnstph=2, ntcnstph=10, solvph=6.5,
+   ntrelax=10,
+   icnste=2, ntcnste=10, solve=-0.203,
+   ntrelaxe=10, saltcon=0.1,
+   /
+ &ewald
+   netfrc=0,
+ /

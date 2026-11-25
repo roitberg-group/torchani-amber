@@ -3,10 +3,10 @@ r"""TorchANI-Amber integration tests
 If the envvar TORCHANI_AMBER_KEEP_TEST_DIRS=1, then the inputs and outputs
 are not removed after the tests are run, this may be useful for debugging.
 
-If the envvar TORCHANI_AMBER_OVERWRITE_EXPECTED=1 then the ``.dat``, ``.xyz``,``.mdcrd``
+If the envvar TORCHANI_AMBER_OVERWRITE_EXPECTED=1 then the ``.dat``, ``.xyz``, ``mdcrd``
 outputs of the test are saved into the `expect/` directory
 
-If you are debugging old branches use TORCHANI_AMBER_LEGACY_TEST=1
+If the envvar TORCHANI_SKIP_CUDA_TESTS is set, the tests that use CUDA are skipped
 """
 
 from numpy.typing import NDArray
@@ -32,7 +32,6 @@ this_dir = Path(__file__).parent
 @dataclass
 class MlmmConfig:
     protocol: tp.Literal["me", "mbispol"] = "me"
-    use_torch_coupling: bool = False
 
 
 @dataclass
@@ -42,8 +41,8 @@ class CudaConfig:
 
 @dataclass
 class RunConfig:
-    cuda: tp.Optional[CudaConfig]
-    mlmm: tp.Optional[MlmmConfig]
+    cuda: CudaConfig | None
+    mlmm: MlmmConfig | None
     shake: bool
     vacuum: bool
     float64: bool
@@ -81,17 +80,12 @@ mlmm_configs = (
     None,
     MlmmConfig("me"),
     MlmmConfig("mbispol"),
-    MlmmConfig("me", True),
-    MlmmConfig("mbispol", True),
 )
-configs: tp.List[RunConfig] = []
+configs: list[RunConfig] = []
 for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools, bools):
     config = RunConfig(*tup)
-    if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
-        if config.fullml:
-            continue
-        if config.cuda and config.cuda.cuaev:
-            continue
+    if config.cuda and "TORCHANI_SKIP_CUDA_TESTS" in os.environ:
+        continue
 
     # Only test Float 64 in a few Mlmm cases, never on FullML. Its too slow.
     if config.float64 and not (
@@ -126,7 +120,7 @@ def name_func(fn, idx, param) -> str:
 
 class AmberIntegration(unittest.TestCase):
     def setUp(self) -> None:
-        self.d: tp.Optional[tempfile.TemporaryDirectory] = None
+        self.d: tempfile.TemporaryDirectory | None = None
 
     def cleanUp(self) -> None:
         if self.d is not None:
@@ -155,30 +149,15 @@ class AmberIntegration(unittest.TestCase):
         else:
             self.d = tempfile.TemporaryDirectory()
             test_dir = Path(self.d.name)
-        if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
-            string = env.get_template("input.mdin.jinja").render(
-                legacy=True, **asdict(config)
-            )
-        else:
-            string = env.get_template("input.mdin.jinja").render(
-                legacy=False, **asdict(config)
-            )
-        (test_dir / "input.mdin").write_text(string)
+        string = env.get_template("mdin.jinja").render(**asdict(config))
+        (test_dir / "mdin").write_text(string)
         self._run_engine("pmemd", test_dir)
 
         # Generate expected values
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".mdcrd", ".xyz"]:
-                # These ones are not output by torch coupling
-                if (
-                    config.mlmm
-                    and config.mlmm.use_torch_coupling
-                    and "charges_grad_qm_region" in f.name
-                    or "forces_qmmm_qm_region" in f.name
-                ):
-                    continue
+            if f.suffix in [".dat", ".xyz"] or f.name == "mdcrd":
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
                 if not config.shake and config.use_amber_neighborlist:
                     # Lots of slack for amber neighborlist, since it uses slightly ops
@@ -193,18 +172,14 @@ class AmberIntegration(unittest.TestCase):
                     rtol = 1e-7
                     atol = 1e-5
                 if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    # Never overwrite with amber's neighborlist or torch coupling
-                    if (
-                        not config.use_amber_neighborlist
-                        or config.mlmm
-                        and config.mlmm.use_torch_coupling
-                    ):
+                    # Never overwrite with amber's neighborlist
+                    if not config.use_amber_neighborlist:
                         shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
-                    expect_arr = self.parse_amber_output(expect_text, f.suffix)
+                    expect_arr = self.parse_amber_output(expect_text, f.name)
                     this_text = f.read_text()
-                    this_arr = self.parse_amber_output(this_text, f.suffix)
+                    this_arr = self.parse_amber_output(this_text, f.name)
                     assert_allclose(
                         this_arr,
                         expect_arr,
@@ -221,21 +196,7 @@ class AmberIntegration(unittest.TestCase):
         self._testSander(config, f"sander_from_neighbors_{config.name}")
 
     @parameterized.expand(
-        [c for c in configs if (c.mlmm and c.mlmm.use_torch_coupling)],
-        name_func=name_func,
-    )
-    def testSanderTorchCoupledMLMM(self, config: RunConfig) -> None:
-        self._testSander(config, f"sander_torch_coupled_{config.name}")
-
-    @parameterized.expand(
-        [
-            c
-            for c in configs
-            if (
-                not c.use_amber_neighborlist
-                and not (c.mlmm and c.mlmm.use_torch_coupling)
-            )
-        ],
+        [c for c in configs if not c.use_amber_neighborlist],
         name_func=name_func,
     )
     def testSander(self, config: RunConfig) -> None:
@@ -252,14 +213,12 @@ class AmberIntegration(unittest.TestCase):
             use_amber_neighborlist=True,
             netcdf=True,
         )
-        string = env.get_template("input.mdin.jinja").render(
-            legacy=False, **asdict(config)
-        )
+        string = env.get_template("mdin.jinja").render(**asdict(config))
         self.d = tempfile.TemporaryDirectory()
         test_dir = Path(self.d.name)
-        (test_dir / "input.mdin").write_text(string)
+        (test_dir / "mdin").write_text(string)
         self._run_engine(engine, test_dir)
-        path = test_dir / "system.mdcrd"
+        path = test_dir / "mdcrd"
         ds = netcdf.Dataset(str(path), "r", format="NETCDF3_64BIT_OFFSET")
         coordinates = ds["coordinates"][:].data
         self.assertTrue((coordinates > 1e-3).any())
@@ -273,30 +232,15 @@ class AmberIntegration(unittest.TestCase):
             test_dir = Path(self.d.name)
 
         # Fix amber neighborlist
-        if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
-            string = env.get_template("input.mdin.jinja").render(
-                legacy=True, **asdict(config)
-            )
-        else:
-            string = env.get_template("input.mdin.jinja").render(
-                legacy=False, **asdict(config)
-            )
-        (test_dir / "input.mdin").write_text(string)
+        string = env.get_template("mdin.jinja").render(**asdict(config))
+        (test_dir / "mdin").write_text(string)
         self._run_engine("sander", test_dir)
 
         # Generate expected values
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
         for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".mdcrd", ".xyz"]:
-                # These ones are not output by torch coupling
-                if (
-                    config.mlmm
-                    and config.mlmm.use_torch_coupling
-                    and "charges_grad_qm_region" in f.name
-                    or "forces_qmmm_qm_region" in f.name
-                ):
-                    continue
+            if f.suffix in [".dat", ".xyz"] or f.name == "mdcrd":
                 expect_file = (expect / config.name).with_suffix(f".{f.name}")
                 if not config.shake and config.use_amber_neighborlist:
                     # Lots of slack for amber neighborlist, since it uses slightly
@@ -311,17 +255,13 @@ class AmberIntegration(unittest.TestCase):
                     rtol = 1e-7
                     atol = 1e-5
                 if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    if (
-                        not config.use_amber_neighborlist
-                        or config.mlmm
-                        and config.mlmm.use_torch_coupling
-                    ):
+                    if not config.use_amber_neighborlist:
                         shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
                 if expect_file.exists():
                     expect_text = expect_file.read_text()
-                    expect_arr = self.parse_amber_output(expect_text, f.suffix)
+                    expect_arr = self.parse_amber_output(expect_text, f.name)
                     this_text = f.read_text()
-                    this_arr = self.parse_amber_output(this_text, f.suffix)
+                    this_arr = self.parse_amber_output(this_text, f.name)
                     assert_allclose(
                         this_arr,
                         expect_arr,
@@ -332,37 +272,39 @@ class AmberIntegration(unittest.TestCase):
                     )
 
     @staticmethod
-    def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
-        if suffix == ".xyz":
+    def parse_amber_output(text: str, fname: str) -> NDArray[np.float32]:
+        if fname.endswith(".xyz"):
             lines = text.split("\n")
-            non_comment = [line for line in lines if "TORCHANI" not in line]
+            non_comment = [
+                line for line in lines if "ML/MM" not in line and "TORCHANI" not in line
+            ]
             text = " ".join(non_comment)
-        if suffix == ".mdcrd":
+        if fname == "mdcrd":
             text = " ".join(text.split("\n")[1:])  # Get rid of file name
         return np.array([float(s) for s in text.split() if s.strip()], dtype=np.float32)
 
     def _run_engine(self, name: str, dir: Path) -> None:
         # prmtop and inpcrd correspond to a solvated ALA dipeptide
         this_dir = Path(__file__).parent
-        shutil.copy(this_dir / "system.prmtop", dir / "system.prmtop")
-        shutil.copy(this_dir / "system.inpcrd", dir / "system.inpcrd")
+        shutil.copy(this_dir / "prmtop", dir / "prmtop")
+        shutil.copy(this_dir / "inpcrd", dir / "inpcrd")
         out = subprocess.run(
             [
                 name,
                 "-i",
-                "input.mdin",
+                "mdin",
                 "-p",
-                "system.prmtop",
+                "prmtop",
                 "-c",
-                "system.inpcrd",
+                "inpcrd",
                 "-o",
-                "system.mdout",
+                "mdout",
                 "-r",
-                "system.restart",
+                "restart",
                 "-x",
-                "system.mdcrd",
+                "mdcrd",
                 "-inf",
-                "system.mdinfo",
+                "mdinfo",
                 "-O",  # Overwrite
             ],
             cwd=dir,
@@ -373,7 +315,7 @@ class AmberIntegration(unittest.TestCase):
         if out.returncode != 0:
             print("Process stdout: ", out.stdout)
             print("Process stderr: ", out.stderr)
-            mdout = dir / "system.mdout"
+            mdout = dir / "mdout"
             if mdout.exists():
                 print("Amber mdout", mdout.read_text())
             raise RuntimeError("Error when calling sander")

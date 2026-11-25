@@ -1,0 +1,40 @@
+pressurising
+ &cntrl
+   imin = 0, nstlim = 100, irest = 0, ntx = 1, dt = 0.002,
+   ntt = 3, temp0 = 300.0, gamma_ln = 2.0, ig = 17111994,
+   ntc = 2, ntf = 1,
+   ioutfm = 1, iwrap = 1,
+   ntwe = 50, ntwx = 50, ntpr = 50, ntwr = 50,
+   pres0 = 1.0, taup = 2.0, 
+   ibelly=1,
+   bellymask =':WAT',
+   ntp=3,            ! anisotropic pressure scaling (const pressure)
+   csurften=-1,
+
+ /
+ &ewald
+  eedmeth=7,
+ / 
+
+
+&music
+  debug = false,
+  do_coulomb_correction = true,
+  pt_plane="yz", ! Surface plane - depends on how you orient your system.
+  do_angle = true,
+  s_ang = 11.135,
+  r_ang = 2.441,
+  slope = 25.0,
+  radius = 3.3,
+  a1 = 15.768,
+  a2 = 1.594,
+  a3 = 1.922 !-0.5470,
+  a4 = 2.838 !0.2400,
+  b_h_surf = 304.081  !308.342
+ n_h_surf = 5, ! exponent for propeller contribution
+ do_gauss = true, ! calculate repulsion between OW and VS
+ vs_atom_type = "Pt", 
+ eps_gauss = -8.901, !  in kcal/mol; actually an attraction.
+ bxy_gauss = 9.331, ! in 1/A^2
+ bz_gauss = .102, ! in 1/A^2
+/

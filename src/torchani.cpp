@@ -1,960 +1,604 @@
-#include <torch/all.h>
 #include <torchani.h>
-#include "config.h"
-#include "electro.h"
-#include "build_tensors.h"
 
-#include <limits>
-#include <cmath>
-#include <chrono>
-#include <stdint.h>
+#include <dlfcn.h>
+
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
-#include <iostream>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
-#include <sstream>
+#include <iostream>
+#include <iomanip>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <set>
+#include <source_location>
+#include <stdexcept>
 #include <string>
-#include <tuple>
+#include <string_view>
 #include <vector>
 
-#include <torch/csrc/jit/runtime/graph_executor.h>
+#include <ATen/Context.h>
+#include <c10/util/Logging.h>
+#include <torch/all.h>
 #include <torch/csrc/autograd/autograd.h>  // For forces
-#include <torch/script.h>
+
+#include "tensor_utils.h"
+#include "config.h"
+#include "constants.h"
+#include "electro.h"
+#include "io.h"
+#include "mlip.h"
+#include "timing.h"
 
 // Globals:
 namespace {
 // Default device is CPU, and default kind is Float32
-GlobalConfig config{};
-torch::jit::Module model;
-torch::Tensor torchani_atomic_numbers;
-torch::Tensor torchani_do_eval_atoms_mask;
-torch::Tensor torchani_do_eval_idxs;
-// This factor should come straight from torchani.units and be consistent with ASE
-double HARTREE_TO_KCALMOL = 627.5094738898777;
-// NOTE: Probably this should be used instead (or nothing)
-// double AMBER_HARTREE_TO_KCALMOL = 627.509469433585;
-std::vector<std::string> torchani_builtin_models = {
-    "ani1x",
-    "ani1x-infer",
-    "ani1ccx",
-    "ani1ccx-infer",
-    "ani2x",
-    "ani2x-infer",
-    "ani2xr",
-    "ani2xr-infer",
-    "ani2dr",
-    "ani2dr-infer",
-    "animbis",
-    "animbisv",
-    "anir2s",
-    "anir2s-infer",
-    "anir2s_water",
-    "anir2s_water-infer",
-    "anir2s_chcl3",
-    "anir2s_chcl3-infer",
-    "anir2s_ch3cn",
-    "anir2s_ch3cn-infer",
-    "aimnet2-b973c-dsf",
-    "aimnet2-b973c-ewald",
-    "aimnet2-b973c-nocut",
-    "aimnet2-b973c-mbis-dsf",
-    "aimnet2-b973c-mbis-ewald",
-    "aimnet2-b973c-mbis-nocut",
-    "aimnet2-wb97m-dsf",
-    "aimnet2-wb97m-ewald",
-    "aimnet2-wb97m-nocut",
-    "aimnet2-wb97m-mbis-dsf",
-    "aimnet2-wb97m-mbis-ewald",
-    "aimnet2-wb97m-mbis-nocut",
-    "nutmeg-small",
-    "nutmeg-medium",
-    "nutmeg-large",
-};
-const std::vector<double> animbisv_volume_kzs_with_model_charges = {
-    0.0,  // unused
-    0.0,  // H
-    0.0,  // He
-    0.0,  // Li
-    0.0,  // Be
-    0.0,  // B
-    0.7190062581351027,  // C
-    0.9894465754783003,  // N
-    0.5712807132434742,  // O
-    0.0,  // F
-    0.0,  // Ne
-    0.0,  // Na
-    0.0,  // Mg
-    0.0,  // Al
-    0.0,  // Si
-    0.0,  // P
-    0.0,  // S
-    0.47491014980647467,  // Cl
-};
-const std::vector<double> animbisv_volume_kzs_with_forcefield_charges = {
-    0.0,  // unused
-    0.7659661617582175,  // H
-    0.0,  // He
-    0.0,  // Li
-    0.0,  // Be
-    0.0,  // B
-    0.36055843774225754,  // C
-    0.32324322791847215,  // N
-    0.26476340834055967,  // O
-    0.0,  // F
-    0.0,  // Ne
-    0.0,  // Na
-    0.0,  // Mg
-    0.0,  // Al
-    0.0,  // Si
-    0.0,  // P
-    0.030818228617190933,  // S
-    1.1044386233759735,  // Cl
-};
-}  // namespace
+config::GlobalConfig global_config{};
+std::unique_ptr<mlip::MlipModel> model;
+// Tensors stored through the C API, and the graph kept between
+// Cleared by mlip_initialize.
+// Names starting with "__" are reserved for internal use
+tensor_utils::TensorContainer tensor_container;
+// Set by mlip_update_md_step. The write_* outputs are written once per step, if it is a
+// multiple of write_interval
+int current_md_step = 0;
+std::optional<int> last_written_md_step;  // Reset by mlip_initialize
 
-std::vector<torch::jit::IValue> setup_inputs_pbc(
-    torch::Tensor& coords,
-    torch::Tensor& cell,
-    bool ensemble_values = false,
-    int net_charge = 0
+void populateEmbeddingForces(
+    torch::Tensor ml_forces,
+    torch::Tensor mm_forces,
+    int ml_atoms_num,
+    int mm_atoms_num,
+    double ml_forces_buf[][3],
+    double mm_forces_buf[][3]
 ) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ cell,
-        /* pbc= */ config.enabled_pbc(),
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        torch::indexing::None
-    };
+    ml_forces = ml_forces * constants::HARTREE_TO_KCALMOL;
+    mm_forces = mm_forces * constants::HARTREE_TO_KCALMOL;
+    // Accessor is used to access tensor elements, but dimensionality has
+    // to be known at compile time. Note that this is a CPU accessor.
+    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
+    // AFIK cuda tensors have to be converted to cpu before access is allowed
+    // This cast does nothing if output is already of the required type and
+    // device, so there should be no overhead.
+    ml_forces = ml_forces.to(torch::kCPU, torch::kDouble);
+    auto force_a = ml_forces.accessor<double, 3>();
+    for (int atom = 0; atom != ml_atoms_num; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            ml_forces_buf[atom][c] = force_a[0][atom][c];
+        }
+    }
+    mm_forces = mm_forces.to(torch::kCPU, torch::kDouble);
+    auto qforce_a = mm_forces.accessor<double, 3>();
+    for (int q = 0; q != mm_atoms_num; ++q) {
+        for (int c = 0; c != 3; ++c) {
+            mm_forces_buf[q][c] = qforce_a[0][q][c];
+        }
+    }
 }
 
-std::vector<torch::jit::IValue> setup_inputs_only_bonded_pbc(
-    torch::Tensor& coords,
-    torch::Tensor& cell,
-    torch::Tensor& molecule_idxs,
-    bool ensemble_values = false,
-    int net_charge = 0
-) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ cell,
-        /* pbc= */ config.enabled_pbc(),
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ molecule_idxs
-    };
-}
-
-std::vector<torch::jit::IValue> setup_inputs_only_bonded_nopbc(
-    torch::Tensor& coords,
-    torch::Tensor& molecule_idxs,
-    bool ensemble_values = false,
-    int net_charge = 0
-) {
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ torch::indexing::None,
-        /* pbc= */ torch::indexing::None,
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ molecule_idxs
-    };
-}
-
-std::vector<torch::jit::IValue> setup_inputs_nopbc(
-    torch::Tensor& coords, bool ensemble_values = false, int net_charge = 0
-) {
-    // uses one "global", torchani_atomic_numbers
-    // Create a vector of input values, jit::script::Module
-    // classes accept and return values of ONLY type torch::jit::IValue so
-    // any tensor passed to them has to be wrapped in this
-    // return by value is OK since inputs is locally created
-    return {
-        std::tuple{torchani_atomic_numbers, coords},
-        /* cell= */ torch::indexing::None,
-        /* pbc= */ torch::indexing::None,
-        /* charge= */ net_charge,
-        /* atomic= */ false,
-        /* ensemble_values= */ ensemble_values,
-        /* molecule_idxs */ torch::indexing::None
-    };
-}
-
-void calculate_and_populate_atomic_scalar_derivatives(
-    torch::Tensor& coords,
-    torch::Tensor& atomic_scalars_tensor,
-    double* atomic_scalar_derivatives,
-    int num_atoms
-) {
-    atomic_scalars_tensor = atomic_scalars_tensor.view({1, -1});
-    for (int atom_idx = 0; atom_idx != num_atoms; ++atom_idx) {
-        torch::Tensor scalar_deriv = torch::autograd::grad(
-            {atomic_scalars_tensor.index({0, atom_idx})},
-            {coords},
-            /* grad_outputs= */ {},
-            /* retain_graph= */ true
-        )[0];
-        scalar_deriv = scalar_deriv.to(torch::kCPU, torch::kFloat64);
-        auto scalar_deriv_acc = scalar_deriv.accessor<double, 3>();
-        for (int atom_subidx = 0; atom_subidx != num_atoms; ++atom_subidx) {
+void populateForces(torch::Tensor forces, double forces_buf[][3], int num_atoms) {
+    forces = forces * constants::HARTREE_TO_KCALMOL;
+    // Accessor is used to access tensor elements, but dimensionality has
+    // to be known at compile time. Note that this is a CPU accessor.
+    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
+    // AFIK cuda tensors have to be converted to cpu before access is allowed
+    // This cast does nothing if output is already of the required type and
+    // device, so there should be no overhead.
+    forces = forces.to(torch::kCPU, torch::kDouble);
+    if (global_config.useNoEvalAtoms()) {
+        auto do_eval_idxs = tensor_container.get("__do_eval_atoms_idxs").to(torch::kCPU);
+        auto do_eval_idxs_a = do_eval_idxs.accessor<long, 1>();
+        auto forces_a = forces.accessor<double, 3>();
+        for (int atom = 0; atom != num_atoms; ++atom) {
             for (int c = 0; c != 3; ++c) {
-                atomic_scalar_derivatives
-                    [c + atom_subidx * 3 + atom_idx * num_atoms * 3] =
-                        scalar_deriv_acc[0][atom_subidx][c];
+                forces_buf[atom][c] = 0.0;
             }
         }
-    }
-}
-
-void calculate_and_populate_charge_derivatives(
-    torch::Tensor& coords,
-    torch::Tensor& atomic_charges_tensor,
-    double* atomic_charge_derivatives,
-    int num_atoms
-) {
-    calculate_and_populate_atomic_scalar_derivatives(
-        coords, atomic_charges_tensor, atomic_charge_derivatives, num_atoms
-    );
-}
-
-void calculate_and_populate_qbc_derivatives(
-    torch::Tensor& coords,
-    torch::Tensor& qbc,
-    double qbc_derivatives[][3],
-    bool retain_graph,
-    int num_atoms
-) {
-    std::vector<torch::Tensor> qbc_vec = {qbc.sum()};
-    std::vector<torch::Tensor> coord_vec = {coords};
-    torch::Tensor torchani_qbc_derivatives = torch::autograd::grad(
-                                                 qbc_vec,
-                                                 coord_vec,
-                                                 /* grad_outputs= */ {},
-                                                 /* retain_graph= */ retain_graph
-                                             )[0] *
-        HARTREE_TO_KCALMOL;
-    torchani_qbc_derivatives = torchani_qbc_derivatives.to(torch::kCPU, torch::kDouble);
-
-    auto torchani_qbc_derivatives_a = torchani_qbc_derivatives.accessor<double, 3>();
-    for (int atom = 0; atom != num_atoms; ++atom) {
-        for (int c = 0; c != 3; ++c) {
-            qbc_derivatives[atom][c] = torchani_qbc_derivatives_a[0][atom][c];
-        }
-    }
-}
-
-void calculate_and_populate_embedding_forces(
-    torch::Tensor energy,
-    torch::Tensor coords,
-    torch::Tensor env_charges_coords,
-    int num_atoms,
-    int num_env_charges,
-    double forces_on_atoms_buf[][3],
-    double forces_on_env_charges_buf[][3]
-) {
-    std::vector<torch::Tensor> energy_vec = {energy.sum()};
-    std::vector<torch::Tensor> coord_vec = {coords, env_charges_coords};
-    // the output is a vector of tensors, of the same number of elements as
-    // coord_vec (in this case only one) so the [0] element is the array of
-    // derivatives, and the negative is the force
-    auto ad_output = torch::autograd::grad(
-        energy_vec,
-        coord_vec,
-        /* grad_outputs= */ {},
-        /* retain_graph= */ false
-    );
-    torch::Tensor forces_on_atoms = -ad_output[0] * HARTREE_TO_KCALMOL;
-    torch::Tensor forces_on_env_charges = -ad_output[1] * HARTREE_TO_KCALMOL;
-    // Accessor is used to access tensor elements, but dimensionality has
-    // to be known at compile time. Note that this is a CPU accessor.
-    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
-    // AFIK cuda tensors have to be converted to cpu before access is allowed
-    // This cast does nothing if output is already of the required type and
-    // device, so there should be no overhead.
-    forces_on_atoms = forces_on_atoms.to(torch::kCPU, torch::kDouble);
-    auto force_a = forces_on_atoms.accessor<double, 3>();
-    for (int atom = 0; atom != num_atoms; ++atom) {
-        for (int c = 0; c != 3; ++c) {
-            forces_on_atoms_buf[atom][c] = force_a[0][atom][c];
-        }
-    }
-    forces_on_env_charges = forces_on_env_charges.to(torch::kCPU, torch::kDouble);
-    auto qforce_a = forces_on_env_charges.accessor<double, 3>();
-    for (int q = 0; q != num_env_charges; ++q) {
-        for (int c = 0; c != 3; ++c) {
-            forces_on_env_charges_buf[q][c] = qforce_a[0][q][c];
-        }
-    }
-}
-
-void calculate_and_populate_forces(
-    torch::Tensor& coords,
-    torch::Tensor& output,
-    double forces_buf[][3],
-    bool retain_graph,
-    int num_atoms
-) {
-    std::vector<torch::Tensor> energy_vec = {output.sum()};
-    std::vector<torch::Tensor> coord_vec = {coords};
-    // the output is a vector of tensors, of the same number of elements as
-    // coord_vec (in this case only one) so the [0] element is the array of
-    // derivatives, and the negative is the force
-    torch::Tensor torchani_force = -torch::autograd::grad(
-                                       energy_vec,
-                                       coord_vec,
-                                       /* grad_outputs= */ {},
-                                       /* retain_graph= */ retain_graph
-                                   )[0] *
-        HARTREE_TO_KCALMOL;
-    // Accessor is used to access tensor elements, but dimensionality has
-    // to be known at compile time. Note that this is a CPU accessor.
-    // Packed accessors can't be used to access CUDA tensors outside CUDA kernels,
-    // AFIK cuda tensors have to be converted to cpu before access is allowed
-    // This cast does nothing if output is already of the required type and
-    // device, so there should be no overhead.
-    //
-    torchani_force = torchani_force.to(torch::kCPU, torch::kDouble);
-    if (config.use_no_eval_atoms()) {
-        int idx = 0;
-        auto do_eval_atoms_mask_clone  = torchani_do_eval_atoms_mask.clone().to(torch::kCPU);
-        auto do_eval_atoms_mask_a = do_eval_atoms_mask_clone.accessor<bool, 1>();
-        auto torchani_force_a = torchani_force.accessor<double, 3>();
-        for (int atom = 0; atom != num_atoms; ++atom) {
-            if (do_eval_atoms_mask_a[atom]) {
-                for (int c = 0; c != 3; ++c) {
-                    forces_buf[atom][c] = torchani_force_a[0][idx][c];
-                }
-                idx += 1;
+        for (long i = 0; i != do_eval_idxs.size(0); ++i) {
+            for (int c = 0; c != 3; ++c) {
+                forces_buf[do_eval_idxs_a[i]][c] = forces_a[0][i][c];
             }
         }
     } else {
-        auto torchani_force_a = torchani_force.accessor<double, 3>();
+        auto forces_a = forces.accessor<double, 3>();
         for (int atom = 0; atom != num_atoms; ++atom) {
             for (int c = 0; c != 3; ++c) {
-                forces_buf[atom][c] = torchani_force_a[0][atom][c];
+                forces_buf[atom][c] = forces_a[0][atom][c];
             }
         }
     }
 }
 
-void populate_atomic_scalars(
-    torch::Tensor& atomic_scalars_tensor, double* atomic_scalars, int num_atoms
+void populateAtomicCharges(
+    torch::Tensor& atomic_charges_tensor, double* atomic_charges, int num_atoms
 ) {
-    atomic_scalars_tensor = atomic_scalars_tensor.view({1, -1});
-    atomic_scalars_tensor = atomic_scalars_tensor.to(torch::kCPU, torch::kDouble);
-    auto atomic_scalars_accessor = atomic_scalars_tensor.accessor<double, 2>();
+    atomic_charges_tensor = atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
+    auto atomic_charges_accessor = atomic_charges_tensor.accessor<double, 2>();
 
     for (int atom = 0; atom != num_atoms; ++atom) {
-        atomic_scalars[atom] = atomic_scalars_accessor[0][atom];
+        atomic_charges[atom] = atomic_charges_accessor[0][atom];
     }
 }
 
-void populate_atomic_charges(
-    torch::Tensor& atomic_charges_tensor, double* atomic_charges, int num_atoms
-) {
-    populate_atomic_scalars(atomic_charges_tensor, atomic_charges, num_atoms);
-}
-
-void populate_atomic_volumes(
-    torch::Tensor& atomic_volumes_tensor, double* atomic_volumes, int num_atoms
-) {
-    populate_atomic_scalars(atomic_volumes_tensor, atomic_volumes, num_atoms);
-}
-
-// This function is actually equivalent to the populate_potential_energy function
-void populate_qbc(torch::Tensor& output, double* qbc) {
-    output = output.to(torch::kCPU, torch::kDouble);
-    *qbc = (*output.data_ptr<double>()) * HARTREE_TO_KCALMOL;
-}
-
-void populate_potential_energy(torch::Tensor& output, double* potential_energy) {
+void populateEnergyScalar(torch::Tensor& output, double* energy_scalar) {
     // data is copied here, otherwise errors ocurr, since the data dies as soon
     // as the function exits.
     // This cast does nothing if output is already of the required type and
     // device, so there should be no overhead
     output = output.to(torch::kCPU, torch::kDouble);
-    *potential_energy = (*output.data_ptr<double>()) * HARTREE_TO_KCALMOL;
+    *energy_scalar = (*output.data_ptr<double>()) * constants::HARTREE_TO_KCALMOL;
 }
 
-// The output value of the model is of type torch::jit::IValue
-// so it has to be converted to tensor to be correctly used
-// output value is a tuple here
-// The output value of the model is an IValue that has to be cast to a
-// (pointer to a) tuple. The first element is the only important one, which is
-// a 1D tensor that holds the potential energy
-
-torch::Tensor calc_qbcs(int num_atoms, torch::Tensor& energy) {
-    torch::Tensor qbc = torch::std(energy, 0);
-    torch::Tensor num_atoms_tensor = torch::tensor(num_atoms);
-    return qbc / config.tensor_to_torchani_dtype_and_device(num_atoms_tensor).sqrt();
-}
-
-torch::Tensor fetch_atomic_alphas_from_output(torch::jit::IValue output) {
-    // New signature for compute_from_neighbors
-    if (!output.isTuple()) {
-        return output.toGenericDict().at("atomic_alphas").toTensor();
-    }
-
-    // Standard signature, tuple form (not supported) or tuple-dict form
-    auto scalars = output.toTuple()->elements()[2];
-    if (scalars.isTensor()) {
-        throw c10::Error("Bad output for atomic alphas, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]");
-    }
-    return scalars.toGenericDict().at("atomic_alphas").toTensor();
-}
-
-torch::Tensor fetch_atomic_volumes_from_output(torch::jit::IValue output) {
-    // New signature for compute_from_neighbors
-    if (!output.isTuple()) {
-        return output.toGenericDict().at("atomic_volumes").toTensor();
-    }
-
-    // Standard signature, tuple-dict form
-    auto scalars = output.toTuple()->elements()[2];
-    if (scalars.isTensor()) {
-        throw c10::Error("Bad output for atomic volumes, expected tuple[species: Tensor, energies: Tensor, scalars: dict[str, Tensor]]");
-    }
-    return scalars.toGenericDict().at("atomic_volumes").toTensor();
-}
-
-torch::Tensor animbisv_kzs_for_atomic_numbers(bool predict_charges) {
-    const std::vector<double>& kzs = predict_charges
-        ? animbisv_volume_kzs_with_model_charges
-        : animbisv_volume_kzs_with_forcefield_charges;
-    auto options = torch::TensorOptions().dtype(config.dtype()).device(config.device());
-    torch::Tensor kz_table = torch::tensor(kzs, options);
-    return kz_table.index_select(0, torchani_atomic_numbers.view(-1));
-}
-
-torch::Tensor fetch_energies_from_output(torch::jit::IValue output) {
-    // New signature for compute_from_neighbors
-    if (!output.isTuple()) {
-        return output.toGenericDict().at("energies").toTensor();
-    }
-
-    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
-    torch::Tensor first_tensor = output.toTuple()->elements()[0].toTensor();
-    if (first_tensor.scalar_type() == torch::kFloat) {
-        return first_tensor;
-    }
-
-    // Standard signature
-    return output.toTuple()->elements()[1].toTensor();
-}
-
-torch::Tensor fetch_atomic_charges_from_output(torch::jit::IValue output) {
-    // New signature for compute_from_neighbors
-    if (!output.isTuple()) {
-        return output.toGenericDict().at("atomic_charges").toTensor();
-    }
-    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
-    torch::Tensor first_tensor = output.toTuple()->elements()[0].toTensor();
-    if (first_tensor.scalar_type() == torch::kFloat) {
-        return output.toTuple()->elements()[1].toTensor();
-    }
-
-    // Standard signature, tuple form or tuple-dict form
-    auto scalars = output.toTuple()->elements()[2];
-    if (scalars.isTensor()) {
-        return scalars.toTensor();
-    }
-    return scalars.toGenericDict().at("atomic_charges").toTensor();
-}
-
-void validate_model_output(
-    const torch::jit::IValue& output, size_t expect_len, bool external = false
+void exitIfNoEvalAtoms(
+    const config::GlobalConfig& config,
+    std::source_location loc = std::source_location::current()
 ) {
-    try {
-        output.toTuple();
-    } catch (const c10::Error& e) {
+    if (config.useNoEvalAtoms()) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "Expected model to return a tuple of tensors" << std::endl;
-#ifdef DEBUG
-        throw;
-#endif
-        std::exit(2);
-    }
-    if (output.toTuple()->elements().size() < expect_len) {
-        std::cerr << "ERROR (libtorchani)\n";
-        std::cerr << "Expected model to return ";
-        if (expect_len == 2) {
-            if (external) {
-                std::cerr << "a tuple (energies, atomic_scalars)";
-            } else {
-                std::cerr << "a tuple (species, energies, ...)";
-            }
-        } else if (expect_len == 3) {
-            std::cerr << "a tuple (species, energies, atomic_charges, ...) or (species, energies, scalars)";
-        } else {
-            std::cerr << "a tuple of len at least " << expect_len;
-        }
-        std::cerr << std::endl;
+                  << loc.function_name() << " does not support"
+                  << " atoms excluded from the evaluation" << std::endl;
         std::exit(2);
     }
 }
 
-extern "C" {
-void torchani_initialize(
-    int num_atoms,
-    int atomic_nums[],
-    int no_eval_atoms[],  // Shape (num_atoms,)
-    const char* model_type,
-    int device_index,
-    int network_index,
-    bool use_double_precision,
-    bool use_cuda_device,
-    bool use_cuaev
+void exitIfNoMlmmConfig(
+    const config::GlobalConfig& config,
+    std::source_location loc = std::source_location::current()
 ) {
-    if (use_cuaev and not use_cuda_device) {
-        std::cerr << "WARNING (libtorchani)\n"
-                  << "A CUDA capable device must be selected to use the cuAEV\n"
-                  << "but CPU was selected.\n"
-                  << "The cuAEV extension will be disabled"
-                  << std::endl;
-        use_cuaev = false;
+    if (not config.hasMlmmConfig()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " requires the ML/MM config, call"
+                  << " mlip_initialize with read_mlmm_config = true first" << std::endl;
+        std::exit(2);
     }
-    std::string jit_models_dir = __FILE__;
-    // The following is roughtly equivalent to dir.parent.parent
-    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
-    jit_models_dir = jit_models_dir.substr(0, jit_models_dir.find_last_of("/"));
-    jit_models_dir = jit_models_dir + "/jit";
+}
 
-    std::string jit_model = model_type;
-    // Path to extra features may be inside jit_model, separated by ::
-    std::size_t loc = jit_model.find("::");
-    std::string extra_features_fpath = "";
-    if (loc != std::string::npos) {
-        extra_features_fpath = jit_model.substr(loc + 2);
-        jit_model = jit_model.substr(0, loc);
-        // Use internal test file in this case
-        if (extra_features_fpath == "ace-ala-nme-test") {
-            extra_features_fpath = jit_models_dir + "/ace-ala-nme.charges";
-        }
+void exitIfNotInitialized(
+    const config::GlobalConfig& config,
+    std::source_location loc = std::source_location::current()
+) {
+    if (not config.mlipInterfaceIsInit()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " was called before mlip_initialize" << std::endl;
+        std::exit(2);
     }
+}
 
-    std::string jit_model_path = "";
-    if (std::find(
-            torchani_builtin_models.begin(), torchani_builtin_models.end(), jit_model
-        ) != torchani_builtin_models.end()) {
-        std::string jit_model_fname = jit_model + ".pt";
-        //  AimNet2 models are stored in a subdirectory
-        std::string aimnet2_prefix = "aimnet2";
-        std::string nutmeg_prefix = "nutmeg";
-        if (jit_model_fname.compare(0, aimnet2_prefix.size(), aimnet2_prefix) == 0) {
-            jit_model_path = jit_models_dir + "/aimnet2" + "/" + jit_model_fname;
-        } else if (jit_model_fname.compare(0, nutmeg_prefix.size(), nutmeg_prefix) ==
-                   0) {
-            jit_model_path = jit_models_dir + "/nutmeg" + "/" + jit_model_fname;
-        } else {
-            jit_model_path = jit_models_dir + "/" + jit_model_fname;
-        }
-    } else {
-        // Assume the path has been passed directly
-        jit_model_path = jit_model;
-    }
-#ifdef DEBUG
-    std::cout << "jit_model_fname: " << jit_model_fname << '\n';
-#endif
-    config.set_device_and_precision(
-        use_cuda_device, device_index, use_double_precision
+// Namelist keys are lowercase
+std::string lowercase(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return str;
+}
+
+
+
+// Atomic numbers of the ML atoms, on the CPU
+std::vector<long> mlAtomicNumbers() {
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    torch::Tensor atomic_nums = atomic_numbers.view({-1}).to(torch::kCPU);
+    return std::vector<long>(
+        atomic_nums.data_ptr<long>(), atomic_nums.data_ptr<long>() + atomic_nums.numel()
     );
-    // It is VERY important to get types correctly here. If the
-    // types don't match then from_blob will not interpret the pointers correctly
-    // and as a consequence the tensor will have junk memory inside. If the blob
-    // is int then the tensor should be torch::kInt. If the blob is double
-    // then the tensor should be torch::kDouble
-    //
-    // PBC tensor is initialized even if pbc is not needed afterwards,
-    // since the tensor occupies almost no space
-    torchani_atomic_numbers = torch::from_blob(
-        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
-    );
+}
 
-    auto no_eval_atoms_mask = torch::from_blob(
-        no_eval_atoms, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
-    ).to(torch::kBool).to(config.device());
-    bool use_no_eval_atoms = no_eval_atoms_mask.any().item().toBool();
-    config.set_no_eval_atoms(use_no_eval_atoms);
-    torchani_do_eval_atoms_mask = ~no_eval_atoms_mask;
-    torchani_do_eval_idxs = torchani_do_eval_atoms_mask.nonzero().view({-1});
-#ifdef DEBUG
-    std::cout << "jit_model_path: " << jit_model_path << '\n';
-#endif
-    torchani_atomic_numbers = torchani_atomic_numbers.to(config.device());
-    torchani_atomic_numbers = torchani_atomic_numbers.to(torch::kLong);
-    // This is necessary since torch has to use this tensor to index internally,
-    // and only long tensors can be used for this, so widening of the ints has
-    // to be performed.
-    // Also, torchani needs an extra dimension as batch dimension
-    torchani_atomic_numbers = torchani_atomic_numbers.unsqueeze(0);
-#ifdef DEBUG
-    std::cout << "Initialized torchani with atomic numbers:" << '\n';
-    std::cout << torchani_atomic_numbers << '\n';
-#endif
-    // Discard unused idxs
-    torchani_atomic_numbers = torchani_atomic_numbers.index_select(1, {torchani_do_eval_idxs});
-#ifdef DEBUG
-    std::cout << "After discarding unused atoms:" << '\n';
-    std::cout << torchani_atomic_numbers << '\n';
-#endif
-
-    // Disable TF32 and FP16 for accuracy
-    torch::jit::setGraphExecutorOptimize(false);
-    torch::globalContext().setAllowTF32CuBLAS(false);
-    torch::globalContext().setAllowTF32CuDNN(false);
-    torch::globalContext().setAllowFP16ReductionCuBLAS(false);
-
-#ifdef DEBUG
-    std::cout << "Disabled JIT optimizations" << '\n';
-#endif
-
-    // The model is loaded from a JIT compiled file always.
-    try {
-        model = torch::jit::load(jit_model_path, config.device());
-    } catch (const c10::Error& e) {
-        std::cerr
-            << "ERROR (libtorchani)\n"
-            << "Could not load model correctly from path: " << jit_model_path
-            << "Make sure the path absolute, and correctly specified,\n"
-            << "or that you are correctly specifying one of the built-in models.\n"
-            << "Also make sure your the model has been correctly jit-compiled\n"
-            << std::endl;
-        throw;
-    }
-
-    // This is only necessary for double precision, since
-    // the buffers / parameters are kFloat by default
-    model.to(config.dtype());
-#ifdef DEBUG
-    std::cout << "Cast model to the specified precision" << '\n';
-#endif
-
-    // Set the correct model configuration
-    if (network_index != -1) {
-        if (model.find_method("set_active_members").has_value()) {
-            model.get_method("set_active_members")(
-                {torch::List<std::int64_t>{network_index}}
-            );
-        } else {
-            std::cerr << "ERROR (libtorchani)\n"
-                      << "You set 'network_index' to a value != -1"
-                      << " but the selected model doesn't export"
-                      << " a method 'set_active_members(str) -> None'" << std::endl;
+// Polarizabilities of the ML atoms (AU), from the ML/MM config. Exits if the
+// ML/MM config was not read, or if an element has no polarizability
+torch::Tensor mlAtomicPolarizabilities() {
+    std::vector<double> alphas;
+    for (long atomic_num : mlAtomicNumbers()) {
+        double alpha = std::numeric_limits<double>::quiet_NaN();
+        try {
+            alpha = global_config.getPolarizability(atomic_num);
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
             std::exit(2);
         }
+        alphas.push_back(alpha);
     }
-    if (use_cuaev) {
-        if (model.find_method("set_strategy").has_value()) {
-            model.get_method("set_strategy")({"cuaev"});
-        } else {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << " The selected model doesn't export"
-                      << " a method 'set_strategy(str) -> None'"
-                      << " that accepts the string 'cuaev'.\n"
-                      << "The cuAEV extension will be disabled.\n"
-                      << " If you are not using a traditional ANI model with AEVs,"
-                      << " you can safely disregard this warning."
-                      << std::endl;
-        }
-    } else {
-        // It is not required that models support this
-        try {
-            model.get_method("set_strategy")({"pyaev"});
-        } catch (const c10::Error& e) {
-        }
-    }
-    // Nutmeg models require a set of features passed as floats
-    // In general a model can read arbitrary features from a newline separated
-    // file with floats
-    if (model.find_method("set_extra_features").has_value() and
-        (not extra_features_fpath.empty())) {
-        // TODO: This is ugly, it would be better to fail gracefully if the file can't
-        // be parsed
-        std::ifstream features_file(extra_features_fpath);
-        torch::List<double> features;
-        std::string line;
-        double val;
-        while (features_file >> val) {
-            features.push_back(val);
-        }
-        model.get_method("set_extra_features")({features});
-    };
-#ifdef DEBUG
-    std::cout << "Loaded JIT-compiled model" << '\n';
-#endif
-
-#ifdef DEBUG
-    std::cout << "Finalized TorchANI Initialization" << '\n';
-#endif
-}
-
-void torchani_calc_energy_force_from_external_neighbors(
-    int num_atoms,
-    int num_neighbors,
-    double coords_buf[][3],
-    int* neighborlist_buf[2],
-    double shifts_buf[][3],
-    int* molecule_idxs_buf,  // Shape (num_atoms,)
-    bool calc_only_bonded,
-    int net_charge,
-    /* outputs */
-    double forces_buf[][3],
-    double* potential_energy_buf
-) {
-#ifdef TIMING
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    torch::Tensor shifts = dbl_buf_to_shifts_tensor(config, shifts_buf, num_neighbors);
-    torch::Tensor neighborlist =
-        int_buf_to_neighborlist_tensor(config, neighborlist_buf, num_neighbors);
-    torch::Tensor molecule_idxs =
-        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
-    std::vector<torch::jit::IValue> inputs;
-
-    if (config.use_no_eval_atoms()) {
-        auto mask  = torchani_do_eval_atoms_mask.view({-1}).index({neighborlist.view(-1)}).view({2, -1});
-        auto do_eval_pairs = (torch::all(mask, 0)).nonzero().flatten();
-        neighborlist = neighborlist.index_select(1, {do_eval_pairs});
-        shifts = shifts.index_select(0, {do_eval_pairs});
-        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
-        coords = coords.index_select(1, {torchani_do_eval_idxs});
-    }
-
-    if (calc_only_bonded or config.use_no_eval_atoms()) {
-        inputs = {
-            torchani_atomic_numbers,
-            coords,
-            neighborlist,
-            shifts,
-            /* charge= */ net_charge,
-            /* atomic= */ false,
-            /* ensemble_values= */ false,
-            /* ensemble_values= */ molecule_idxs
-        };
-    } else {
-        inputs = {
-            torchani_atomic_numbers,
-            coords,
-            neighborlist,
-            shifts,
-            /* charge= */ net_charge,
-            /* atomic= */ false,
-            /* ensemble_values= */ false,
-            /* ensemble_values= */ torch::indexing::None
-        };
-    }
-    if (model.find_method("compute_from_external_neighbors").has_value()) {
-        torch::jit::IValue output =
-            model.get_method("compute_from_external_neighbors")(inputs);
-
-        torch::Tensor energy = fetch_energies_from_output(output);
-        calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-        populate_potential_energy(energy, potential_energy_buf);
-    } else {
-        std::cerr << "ERROR (libtorchani)\n"
-                  << "To use an external neighborlist"
-                  << " the model must export 'compute_from_external_neighbors(...)'."
-                  << " Consult the TorchANI-Amber readme for more info" << std::endl;
-        std::exit(2);
-    }
-#ifdef TIMING
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::cout
-        << "TORCHANI-AMBER: energy force external neighbors time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
-            1000
-        << "ms" << std::endl;
-#endif
-}
-
-void torchani_calc_energy_force(
-    int num_atoms,
-    double coords_buf[][3],
-    double cell_buf[][3],
-    bool use_pbc,
-    int* molecule_idxs_buf,
-    bool calc_only_bonded,
-    int net_charge,
-    double forces_buf[][3],
-    double* potential_energy
-) {
-#ifdef TIMING
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
-    torch::Tensor molecule_idxs =
-        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
-    if (config.use_no_eval_atoms()) {
-        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
-        coords = coords.index_select(1, {torchani_do_eval_idxs});
-    }
-    // Inputs are setup with PBC
-    std::vector<torch::jit::IValue> inputs;
-    // In the no_eval_atoms case, the energies will still be added, but the
-    // atoms will feel no forces
-    if (not use_pbc) {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_nopbc(
-                coords, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs = setup_inputs_nopbc(coords, /*ensemble values=*/false, net_charge);
-        }
-    } else {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_pbc(
-                coords, cell, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs =
-                setup_inputs_pbc(coords, cell, /*ensemble values=*/false, net_charge);
-        }
-    }
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, 2);
-    torch::Tensor energy = fetch_energies_from_output(output);
-    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-    populate_potential_energy(energy, potential_energy);
-#ifdef TIMING
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::cout
-        << "TORCHANI-AMBER: energy force PBC time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
-            1000
-        << "ms" << std::endl;
-#endif
-}
-
-void torchani_calc_energy_force_atomic_scalars(
-    int num_atoms,
-    double coords_buf[][3],
-    double cell_buf[][3],
-    bool use_pbc,
-    int* molecule_idxs_buf,
-    bool calc_only_bonded,
-    int net_charge,
-    bool write_charges,
-    bool write_charges_grad,
-    bool write_volumes,
-    bool write_volumes_grad,
-    /* outputs */
-    double forces_buf[][3],
-    double atomic_charges_buf[],
-    double* atomic_charge_derivatives,
-    double atomic_volumes_buf[],
-    double* atomic_volume_derivatives,
-    double* potential_energy
-) {
-#ifdef TIMING
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
-    bool write_scalars = (
-        write_charges || write_charges_grad || write_volumes || write_volumes_grad
+    return global_config.tensorToTorchaniDtypeAndDevice(
+        torch::tensor(alphas, torch::TensorOptions().dtype(torch::kDouble))
     );
-    if (write_scalars && config.use_no_eval_atoms()) {
-        std::cerr << "ERROR (libtorchani)\n"
-                  << "Atomic scalar outputs are not supported together with "
-                  << "no_eval_atoms filtering" << std::endl;
-        std::exit(2);
-    }
-
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    torch::Tensor cell = dbl_buf_to_cell_tensor(config, cell_buf);
-    torch::Tensor molecule_idxs =
-        int_buf_to_i64_tensor(config, molecule_idxs_buf, {num_atoms});
-    if (config.use_no_eval_atoms()) {
-        molecule_idxs = molecule_idxs.index({torchani_do_eval_idxs});
-        coords = coords.index_select(1, {torchani_do_eval_idxs});
-    }
-    std::vector<torch::jit::IValue> inputs;
-    if (not use_pbc) {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_nopbc(
-                coords, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs = setup_inputs_nopbc(coords, /*ensemble values=*/false, net_charge);
-        }
-    } else {
-        if (calc_only_bonded or config.use_no_eval_atoms()) {
-            inputs = setup_inputs_only_bonded_pbc(
-                coords, cell, molecule_idxs, /*ensemble values=*/false, net_charge
-            );
-        } else {
-            inputs =
-                setup_inputs_pbc(coords, cell, /*ensemble values=*/false, net_charge);
-        }
-    }
-
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, write_scalars ? 3 : 2);
-    torch::Tensor energy = fetch_energies_from_output(output);
-
-    if (write_charges || write_charges_grad) {
-        torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
-        if (write_charges_grad) {
-            calculate_and_populate_atomic_scalar_derivatives(
-                coords, atomic_charges, atomic_charge_derivatives, num_atoms
-            );
-        }
-        populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
-    }
-    if (write_volumes || write_volumes_grad) {
-        torch::Tensor atomic_volumes = fetch_atomic_volumes_from_output(output);
-        if (write_volumes_grad) {
-            calculate_and_populate_atomic_scalar_derivatives(
-                coords, atomic_volumes, atomic_volume_derivatives, num_atoms
-            );
-        }
-        populate_atomic_volumes(atomic_volumes, atomic_volumes_buf, num_atoms);
-    }
-
-    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-    populate_potential_energy(energy, potential_energy);
-#ifdef TIMING
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::cout
-        << "TORCHANI-AMBER: energy force atomic scalars PBC time"
-        << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() *
-            1000
-        << "ms" << std::endl;
-#endif
 }
 
-void torchani_energy_force_atomic_charges(
-    int num_atoms,
-    double coords_buf[][3],
-    /* outputs */
-    double forces_buf[][3],
-    double atomic_charges_buf[],
-    double* potential_energy
-) {
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, 3);
-    torch::Tensor energy = fetch_energies_from_output(output);
-    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
+// Factors kz of the ML atoms (AU), such that their polarizabilities are kz times their
+// atomic volumes, from the ML/MM config. Exits if the ML/MM config was not read, or if
+// an element has no kz
+torch::Tensor mlVolumeKzs() {
+    std::vector<double> kzs;
+    for (long atomic_num : mlAtomicNumbers()) {
+        double kz = std::numeric_limits<double>::quiet_NaN();
+        try {
+            kz = global_config.getVolumeKz(atomic_num);
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
+        kzs.push_back(kz);
+    }
+    return global_config.tensorToTorchaniDtypeAndDevice(
+        torch::tensor(kzs, torch::TensorOptions().dtype(torch::kDouble))
+    );
+}
 
-    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-    populate_potential_energy(energy, potential_energy);
-    populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+void printPolarizabilitiesInUse() {
+    std::set<long> atomic_nums;
+    for (long atomic_num : mlAtomicNumbers()) {
+        atomic_nums.insert(atomic_num);
+    }
+    bool use_mlip_atomic_volumes = global_config.getBool("use_mlip_atomic_volumes");
+    if (use_mlip_atomic_volumes) {
+        std::cout << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
+                  << "Element Symbol, kz (AU)\n";
+    } else {
+        std::cout << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
+                  << "Element Symbol, Alpha (AU)\n";
+    }
+    for (long atomic_num : atomic_nums) {
+        double value = 0.0;
+        try {
+            if (use_mlip_atomic_volumes) {
+                value = global_config.getVolumeKz(atomic_num);
+            } else {
+                value = global_config.getPolarizability(atomic_num);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
+        std::cout << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
+                  << std::fixed << std::setprecision(4) << value << "\n";
+    }
+    std::cout << std::defaultfloat << std::flush;
+}
+
+void exitWithConfigOptionError(
+    const std::string& name,
+    const std::string& type_name,
+    const std::exception& err
+) {
+    std::cerr << "ERROR (libtorchani)\n"
+              << "Could not get config option " << name << " as " << type_name
+              << ": " << err.what() << std::endl;
+    std::exit(2);
+}
+
+void disableTorchReducedFloatPrecisionOptimizations() {
+    at::globalContext().setAllowTF32CuBLAS(false);
+    at::globalContext().setAllowTF32CuDNN(false);
+    at::globalContext().setAllowFP16ReductionCuBLAS(false);
+    LOG(INFO) << "Disabled TF32 in cuBLAS and cuDNN, and FP16 reduction in cuBLAS";
+}
+
+// Return the directory of *this *.so*
+std::string libtorchaniDir() {
+    // &libtorchaniDir is the memory address of *this function*
+    // dladdr searches for the *.so that contains this memory address
+    // the Dl_info struct containes the absolute path to the *.so
+    // dladdr depends on a cast of a function pointer to void*. This is
+    // fully sound only in POSIX
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void*>(&libtorchaniDir), &info) == 0) {
+        // dladdr returns 0 if it can't find the *.so that contains the requested addr
+        throw std::runtime_error("Could not locate the libtorchani.so install directory");
+    }
+    std::string lib_path = info.dli_fname;
+    return lib_path.substr(0, lib_path.find_last_of("/"));
+}
+
+// One float per atom, from a newline separated file. Exits if the file can't be read,
+// or if the number of floats doesn't match num_atoms
+torch::Tensor readExtraFeatures(const std::string& fpath, long num_atoms) {
+    std::ifstream file(fpath);
+    if (!file) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Could not open the extra features file " << fpath << std::endl;
+        std::exit(2);
+    }
+    std::vector<double> extra_features;
+    double value = 0.0;
+    while (file >> value) {
+        extra_features.push_back(value);
+    }
+    if (!file.eof()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The extra features file " << fpath << " has values that are not floats"
+                  << std::endl;
+        std::exit(2);
+    }
+    if (static_cast<long>(extra_features.size()) != num_atoms) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The extra features file " << fpath << " has "
+                  << extra_features.size() << " values, but there are " << num_atoms
+                  << " atoms" << std::endl;
+        std::exit(2);
+    }
+    return torch::tensor(extra_features, torch::TensorOptions().dtype(torch::kDouble));
+}
+
+void setModelExtraFeatures(torch::Tensor extra_features) {
+    try {
+        model->setExtraFeatures(extra_features);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Could not set the extra features of the model:\n"
+                  << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
+void loadTorchaniExtension(const std::string& lib_name) {
+    std::string lib_path = libtorchaniDir() + "/" + lib_name;
+    // RTLD_NOW | RTLD_LOCAL are dlopen flags that control *when* the librarie's
+    // symbols get resolved, and who else can see the symbols.
+    // RTLD_LOCAL doesn't export the symbols globally
+    // If dlopen fails to load with the passed flags, it returns nullptr
+    if (dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL) == nullptr) {
+        throw std::runtime_error("Could not load " + lib_path + ": " + dlerror());
+    }
+    LOG(INFO) << "Loaded extension: " << lib_path;
+}
+
+// Store the outputs of the model other than the energy and the forces as
+// "__result_<name>", without the molecules dim, replacing the results of previous
+// calculations. The QBC and its grads are stored in kcal/mol
+void storeResults(const mlip::MlipOutput& output) {
+    tensor_container.clearStartingWith("__result_");
+    for (const auto& [name, value] : output) {
+        if (name == "energy" or name == "forces" or name == "mm_forces") {
+            continue;
+        }
+        torch::Tensor result = value.detach();
+        if (name == "qbc" or name == "qbc_grad") {
+            result = result * constants::HARTREE_TO_KCALMOL;
+        }
+        if (result.dim() > 0 and result.size(0) == 1) {
+            result = result.squeeze(0);
+        }
+        tensor_container.store("__result_" + name, result);
+    }
+}
+
+// Output files of the write_* options. The forces are only the ones calculated by
+// the MLIP Interface, they don't include contributions added later by the md engine
+struct OutputFiles {
+    std::string coords;
+    std::string forces;
+    std::string mm_forces;  // Empty if there is no MM region
+    std::string atomic_charges;
+    std::string atomic_volumes;
+    std::string atomic_alphas;
+    std::string coords_comment;
+};
+
+const OutputFiles OUTPUT_FILES{
+    "coords.xyz",
+    "forces.mlip.dat",
+    "",
+    "atomic_charges.mlip.dat",
+    "atomic_volumes.mlip.dat",
+    "atomic_alphas.mlip.dat",
+    "MLIP: .xyz trajectory file",
+};
+
+const OutputFiles MLMM_OUTPUT_FILES{
+    "ml_region.xyz",
+    "forces_ml_region.mlip.dat",
+    "forces_mlmm_mm_region.mlip.dat",
+    "atomic_charges_ml_region.mlip.dat",
+    "atomic_volumes_ml_region.mlip.dat",
+    "atomic_alphas_ml_region.mlip.dat",
+    "ML/MM: .xyz trajectory file of the ML region",
+};
+
+// Path of an output file, in the output_dir option, or the current working directory if
+// it is empty
+std::string outputPath(const std::string& fname) {
+    const std::string& output_dir = global_config.getString("output_dir");
+    if (output_dir.empty()) {
+        return fname;
+    }
+    return (std::filesystem::path(output_dir) / fname).string();
+}
+
+// Create empty output files for the write_* options that are set, and output_dir if
+// it doesn't exist
+void createOutputFiles(const OutputFiles& files) {
+    bool writes_outputs = global_config.getBool("write_coords")
+        or global_config.getBool("write_forces")
+        or global_config.getBool("write_atomic_charges")
+        or global_config.getBool("write_atomic_volumes")
+        or global_config.getBool("write_atomic_alphas");
+    if (not writes_outputs) {
+        return;
+    }
+    try {
+        const std::string& output_dir = global_config.getString("output_dir");
+        if (not output_dir.empty()) {
+            std::filesystem::create_directories(output_dir);
+        }
+        if (global_config.getBool("write_coords")) {
+            io::createEmptyFile(outputPath(files.coords));
+        }
+        if (global_config.getBool("write_forces")) {
+            io::createEmptyFile(outputPath(files.forces));
+            if (not files.mm_forces.empty()) {
+                io::createEmptyFile(outputPath(files.mm_forces));
+            }
+        }
+        if (global_config.getBool("write_atomic_charges")) {
+            io::createEmptyFile(outputPath(files.atomic_charges));
+        }
+        if (global_config.getBool("write_atomic_volumes")) {
+            io::createEmptyFile(outputPath(files.atomic_volumes));
+        }
+        if (global_config.getBool("write_atomic_alphas")) {
+            io::createEmptyFile(outputPath(files.atomic_alphas));
+        }
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
+// Throws if the model doesn't predict the atomic scalars
+void appendAtomicScalarsFrame(
+    const mlip::MlipOutput& output, const std::string& key, const std::string& fname
+) {
+    if (output.count(key) == 0) {
+        throw std::runtime_error(
+            "write_" + key + " = T, but the model doesn't predict " + key
+        );
+    }
+    io::appendDatFrame(outputPath(fname), output.at(key).view({-1}));
+}
+
+// Append the outputs of a calculation requested by the write_* options, if the current
+// MD step is a multiple of write_interval, and they weren't written yet for it. Forces are in
+// Hartree/Angstrom, and are written in kcal/mol/Angstrom. mm_forces is only written if
+// files has an mm_forces file
+void writeOutputs(
+    const OutputFiles& files,
+    const torch::Tensor& atomic_numbers,
+    const torch::Tensor& coords,
+    const torch::Tensor& forces,
+    const torch::Tensor& mm_forces,
+    const mlip::MlipOutput& output
+) {
+    bool is_write_step = current_md_step % global_config.getInt("write_interval") == 0
+        and last_written_md_step != current_md_step;
+    if (not is_write_step) {
+        return;
+    }
+    last_written_md_step = current_md_step;
+    try {
+        if (global_config.getBool("write_coords")) {
+            io::appendXyzFrame(
+                outputPath(files.coords),
+                atomic_numbers.view({-1}),
+                coords.view({-1, 3}),
+                files.coords_comment
+            );
+        }
+        if (global_config.getBool("write_forces")) {
+            io::appendDatFrame(
+                outputPath(files.forces),
+                forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
+            );
+            if (not files.mm_forces.empty() and mm_forces.numel() > 0) {
+                io::appendDatFrame(
+                    outputPath(files.mm_forces),
+                    mm_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
+                );
+            }
+        }
+        if (global_config.getBool("write_atomic_charges")) {
+            appendAtomicScalarsFrame(output, "atomic_charges", files.atomic_charges);
+        }
+        if (global_config.getBool("write_atomic_volumes")) {
+            appendAtomicScalarsFrame(output, "atomic_volumes", files.atomic_volumes);
+        }
+        if (global_config.getBool("write_atomic_alphas")) {
+            appendAtomicScalarsFrame(output, "atomic_alphas", files.atomic_alphas);
+        }
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
+// Charges of the ML atoms stored by the md engine, used by the coupling if
+// use_mlip_atomic_charges = F. Exits if they are missing, or don't match the ML atoms
+torch::Tensor fixedAtomicCharges(int ml_atoms_num, const std::string& mlmm_coupling) {
+    if (not tensor_container.contains("fixed_atomic_charges")) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling = '" << mlmm_coupling << "' with"
+                  << " use_mlip_atomic_charges = F uses fixed atomic charges for the ML"
+                  << " atoms, they must be stored as 'fixed_atomic_charges' (with"
+                  << " mlip_store_tensor) before running the calculation" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor fixed_atomic_charges = tensor_container.get("fixed_atomic_charges");
+    if (fixed_atomic_charges.numel() != ml_atoms_num) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The stored 'fixed_atomic_charges' have "
+                  << fixed_atomic_charges.numel() << " values, but there are "
+                  << ml_atoms_num << " ML atoms" << std::endl;
+        std::exit(2);
+    }
+    return fixed_atomic_charges.reshape({ml_atoms_num});
+}
+
+void calcEnergyForceCustomMlmm(
+    int ml_atoms_num,
+    int mm_atoms_num,
+    double ml_coords_buf[][3],
+    double mm_coords_buf[][3],
+    double mm_atomic_charges_buf[],
+    double cell_buf[][3],
+    bool use_pbc,
+    bool verbose,
+    /* outputs */
+    double ml_forces_buf[][3],
+    double mm_forces_buf[][3],
+    double* pot_energy_buf
+) {
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    if (!model->supportsCustomMlmm()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling = 'custom' requires the model to export"
+                  << " 'compute_mlmm(...)'. "
+                  << " Consult the TorchANI-Amber README.md for the required signature\n"
+                  << "https://github.com/roitberg-group/torchani-amber" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor ml_coords = tensor_utils::dblBufToCoordsTensor(global_config, ml_coords_buf, ml_atoms_num);
+    torch::Tensor mm_coords = tensor_utils::dblBufToCoordsTensor(global_config, mm_coords_buf, mm_atoms_num);
+    torch::Tensor mm_charges = tensor_utils::dblBufToTensor(global_config, mm_atomic_charges_buf, {1, mm_atoms_num});
+    torch::Tensor cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
+
+    std::optional<torch::Tensor> maybe_cell;
+    if (use_pbc) {
+        maybe_cell = cell;
+    }
+    torch::Tensor empty_pairs = torch::empty({2, 0}, ml_coords.options().dtype(torch::kLong));
+    mlip::MlipOutput output = model->computeMlmm(
+        atomic_numbers,
+        ml_coords,
+        mm_coords,
+        mm_charges,
+        /*pairs_12=*/empty_pairs,
+        /*pairs_13=*/empty_pairs,
+        /*pairs_14=*/empty_pairs,
+        maybe_cell,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
+        /*mm_cutoff=*/0.0,
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        /*molecule_idxs=*/std::nullopt,
+        /*calc_forces=*/true
+    );
+    storeResults(output);
+    torch::Tensor energy = output.at("energy");
+
+    populateEmbeddingForces(
+        output.at("forces"), output.at("mm_forces"), ml_atoms_num, mm_atoms_num,
+        ml_forces_buf, mm_forces_buf
+    );
+    writeOutputs(
+        MLMM_OUTPUT_FILES, atomic_numbers, ml_coords, output.at("forces"),
+        output.at("mm_forces"), output
+    );
+    populateEnergyScalar(energy, pot_energy_buf);
+    if (verbose) {
+        std::cout << std::fixed << std::setprecision(4)
+                  << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
+                  << *pot_energy_buf << std::defaultfloat << std::endl;
+    }
 }
 
 /**
@@ -963,297 +607,830 @@ void torchani_energy_force_atomic_charges(
  *
  * Currently this is the only code path that supports charged molecules
  */
-void torchani_calc_energy_force_with_coupling(
-    int num_atoms,
-    int num_env_charges,
-    double inv_pol_dielectric,
-    double coords_buf[][3],
-    double atomic_alphas_buf[],  // shape (num-atoms,)
-    double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
-    double env_charges_buf[],  // shape (num-charges,)
-    bool predict_charges,
-    bool simple_polarization_correction,
-    bool use_charge_derivatives,
-    bool predict_volumes,
-    int ml_system_charge,
-    bool write_charges,
-    bool write_charges_grad,
-    bool write_volumes,
-    bool write_volumes_grad,
+void calcEnergyForceMlmm(
+    int ml_atoms_num,
+    int mm_atoms_num,
+    double ml_coords_buf[][3],
+    double mm_coords_buf[][3],  // shape (mm_atoms_num, 3)
+    double mm_atomic_charges_buf[],  // shape (mm_atoms_num,)
+    double cell_buf[][3],  // shape (3, 3), only used with use_pbc
+    bool use_pbc,  // Only supported with mlmm_coupling = 'custom'
+    bool verbose,
+    bool calc_qbc,
     /* outputs */
-    double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
-    double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
-    double atomic_charges_buf[],  // shape (num-atoms, 3) (actually in-out)
-    double* atomic_charge_derivatives,
-    double atomic_volumes_buf[],
-    double* atomic_volume_derivatives,
-    double* ene_pot_invacuo_buf,
-    double* ene_pot_embed_pol_buf,
-    double* ene_pot_embed_dist_buf,
-    double* ene_pot_embed_coulomb_buf,
-    double* ene_pot_total_buf
+    double ml_forces_buf[][3],  // shape (ml_atoms_num, 3)
+    double mm_forces_buf[][3],  // shape (mm_atoms_num, 3)
+    double* pot_energy_buf
 ) {
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-
-    torch::Tensor atomic_charges = dbl_buf_to_tensor(config, atomic_charges_buf, {num_atoms});
-
-    // backwards compatibility
-    if (ml_system_charge == -9'999'999) {
-         ml_system_charge =
-             torch::round(torch::sum(atomic_charges)).to(torch::kLong).item().toInt();
-    }
-
-    std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values*/ false, /*charge*/ ml_system_charge);
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, (predict_charges || predict_volumes) ? 3 : 2);
-    torch::Tensor ene_pot_invacuo = fetch_energies_from_output(output);
-
-    if (predict_volumes && !simple_polarization_correction) {
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    const std::string& mlmm_coupling = global_config.getString("mlmm_coupling");
+    if (mlmm_coupling != "custom" && use_pbc) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "Predicted volumes can only be used with simple polarization coupling"
-                  << std::endl;
+                  << "use_pbc is only supported with mlmm_coupling = 'custom'" << std::endl;
         std::exit(2);
     }
-
-    if (predict_charges) {
-        atomic_charges = fetch_atomic_charges_from_output(output);
-        if (not use_charge_derivatives) {
-            // Disregard dependence of predicted charges on coordinates
-            atomic_charges.detach_();
-        }
+    if (mlmm_coupling == "custom" && calc_qbc) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling = 'custom' doesn't support the QBC" << std::endl;
+        std::exit(2);
     }
-
-    // Embedding part
-    torch::Tensor atomic_alphas =
-        dbl_buf_to_tensor(config, atomic_alphas_buf, {num_atoms});
-    torch::Tensor atomic_alphas_bohr =
-        torch::zeros({num_atoms}, torch::dtype(config.dtype()).device(config.device()));
-    torch::Tensor atomic_volumes;
-    if (predict_volumes) {
-        atomic_volumes = fetch_atomic_volumes_from_output(output).view({-1});
-        atomic_alphas_bohr = animbisv_kzs_for_atomic_numbers(predict_charges) * atomic_volumes;
+    if (mlmm_coupling == "custom") {
+        calcEnergyForceCustomMlmm(
+            ml_atoms_num,
+            mm_atoms_num,
+            ml_coords_buf,
+            mm_coords_buf,
+            mm_atomic_charges_buf,
+            cell_buf,
+            use_pbc,
+            verbose,
+            ml_forces_buf,
+            mm_forces_buf,
+            pot_energy_buf
+        );
+        return;
     }
-    torch::Tensor env_charge_coords =
-        dbl_buf_to_coords_tensor(config, env_charge_coords_buf, num_env_charges);
-    torch::Tensor env_charges =
-        dbl_buf_to_tensor(config, env_charges_buf, {num_env_charges});
+    torch::Tensor ml_coords = tensor_utils::dblBufToCoordsTensor(global_config, ml_coords_buf, ml_atoms_num);
 
-    torch::Tensor delta = torch::reshape(env_charge_coords, {-1, 1, 3}) -
-        torch::reshape(coords, {1, -1, 3});
-    torch::Tensor env_charges_to_atoms_distances =
-        torch::linalg_norm(delta, std::nullopt, 2);
+    // Without coupling, the energy doesn't depend on the MM coords, so the model
+    // calculates the forces on the ML atoms directly
+    bool coupling_is_none = mlmm_coupling == "none";
+    mlip::MlipOutput output = model->computeSinglePoint(
+        atomic_numbers,
+        ml_coords,
+        /*cell=*/std::nullopt,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        /*molecule_idxs=*/std::nullopt,
+        /*calc_forces=*/coupling_is_none,
+        /*calc_qbc_and_qbc_grad=*/calc_qbc
+    );
+    storeResults(output);
+    torch::Tensor ene_pot_invacuo = output.at("energy");
 
     // Embedding calculations are made in atomic units, so outputs are in Ha
-    auto ene_pot_coulomb = electro::coulombic_embedding_energy(
-        atomic_charges, env_charges, env_charges_to_atoms_distances
-    );
+    torch::Tensor ene_pot_coulomb =
+        torch::zeros(1, torch::dtype(global_config.dtype()).device(global_config.device()));
     torch::Tensor ene_pot_pol =
-        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
+        torch::zeros(1, torch::dtype(global_config.dtype()).device(global_config.device()));
     torch::Tensor ene_pot_dist =
-        torch::zeros(1, torch::dtype(config.dtype()).device(config.device()));
-    if (simple_polarization_correction) {
-        if (predict_volumes) {
-            ene_pot_pol = electro::polarizable_embedding_energy_with_bohr_alphas(
-                coords,
-                atomic_alphas_bohr,
-                env_charge_coords,
-                env_charges,
-                env_charges_to_atoms_distances,
-                inv_pol_dielectric
-            );
+        torch::zeros(1, torch::dtype(global_config.dtype()).device(global_config.device()));
+    torch::Tensor ene_pot_total = ene_pot_invacuo;
+    torch::Tensor ml_forces;
+    torch::Tensor mm_forces;
+    if (coupling_is_none) {
+        ml_forces = output.at("forces");
+        mm_forces = torch::zeros({1, mm_atoms_num, 3}, ml_coords.options());
+    } else {
+        torch::Tensor mm_coords =
+            tensor_utils::dblBufToCoordsTensor(global_config, mm_coords_buf, mm_atoms_num);
+        torch::Tensor mm_atomic_charges =
+            tensor_utils::dblBufToTensor(global_config, mm_atomic_charges_buf, {mm_atoms_num});
+        torch::Tensor ml_atomic_charges;
+        if (global_config.getBool("use_mlip_atomic_charges")) {
+            if (output.count("atomic_charges") == 0) {
+                std::cerr << "ERROR (libtorchani)\n"
+                          << "use_mlip_atomic_charges = T, but the model doesn't predict"
+                          << " atomic charges" << std::endl;
+                std::exit(2);
+            }
+            ml_atomic_charges = output.at("atomic_charges");
         } else {
-            ene_pot_pol = electro::polarizable_embedding_energy(
-                coords,
+            ml_atomic_charges = fixedAtomicCharges(ml_atoms_num, mlmm_coupling);
+        }
+
+        torch::Tensor delta = torch::reshape(mm_coords, {-1, 1, 3}) -
+            torch::reshape(ml_coords, {1, -1, 3});
+        torch::Tensor mm_to_ml_distances =
+            torch::linalg_norm(delta, std::nullopt, 2);
+
+        ene_pot_coulomb = electro::coulombicEmbeddingEnergy(
+            ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances
+        );
+        if (mlmm_coupling == "simple-polarizable") {
+            // Exits if the ML/MM config was not read, so it can be read afterwards
+            torch::Tensor atomic_alphas;
+            if (global_config.getBool("use_mlip_atomic_volumes")) {
+                if (output.count("atomic_volumes") == 0) {
+                    std::cerr << "ERROR (libtorchani)\n"
+                              << "use_mlip_atomic_volumes = T, but the model doesn't"
+                              << " predict atomic volumes" << std::endl;
+                    std::exit(2);
+                }
+                atomic_alphas = mlVolumeKzs() * output.at("atomic_volumes").view({-1});
+            } else {
+                atomic_alphas = mlAtomicPolarizabilities();
+            }
+            double inv_pol_dielectric = global_config.getDouble("inv_pol_dielectric");
+            ene_pot_pol = electro::polarizableEmbeddingEnergy(
+                ml_coords,
                 atomic_alphas,
-                env_charge_coords,
-                env_charges,
-                env_charges_to_atoms_distances,
+                mm_coords,
+                mm_atomic_charges,
+                mm_to_ml_distances,
                 inv_pol_dielectric
             );
+            ene_pot_dist = -0.5 * ene_pot_pol;
         }
-        ene_pot_dist = -0.5 * ene_pot_pol;
+
+        ene_pot_total = ene_pot_invacuo + ene_pot_dist + ene_pot_pol + ene_pot_coulomb;
+        std::vector<torch::Tensor> energy_vec = {ene_pot_total.sum()};
+        std::vector<torch::Tensor> coord_vec = {ml_coords, mm_coords};
+        // the output is a vector of tensors, one per element of coord_vec, so the
+        // [0] and [1] elements are the derivatives wrt the ML and MM coords, and their
+        // negatives are the forces
+        auto ad_output = torch::autograd::grad(
+            energy_vec,
+            coord_vec,
+            /* grad_outputs= */ {},
+            /* retain_graph= */ false,
+            /* create_graph= */ false
+        );
+        ml_forces = -ad_output[0];
+        mm_forces = -ad_output[1];
+    }
+    populateEmbeddingForces(
+        ml_forces,
+        mm_forces,
+        ml_atoms_num,
+        mm_atoms_num,
+        ml_forces_buf,
+        mm_forces_buf
+    );
+    writeOutputs(MLMM_OUTPUT_FILES, atomic_numbers, ml_coords, ml_forces, mm_forces, output);
+    populateEnergyScalar(ene_pot_total, pot_energy_buf);
+    if (verbose) {
+        double ene_pot_invacuo_kcal = 0.0;
+        double ene_pot_pol_kcal = 0.0;
+        double ene_pot_dist_kcal = 0.0;
+        double ene_pot_coulomb_kcal = 0.0;
+        populateEnergyScalar(ene_pot_invacuo, &ene_pot_invacuo_kcal);
+        populateEnergyScalar(ene_pot_pol, &ene_pot_pol_kcal);
+        populateEnergyScalar(ene_pot_dist, &ene_pot_dist_kcal);
+        populateEnergyScalar(ene_pot_coulomb, &ene_pot_coulomb_kcal);
+        double ene_pot_embed_kcal = ene_pot_coulomb_kcal + ene_pot_dist_kcal + ene_pot_pol_kcal;
+        std::cout << std::fixed << std::setprecision(4)
+                  << " ML/MM: IN VACUO ENERGY = " << std::setw(14) << ene_pot_invacuo_kcal
+                  << "\n ML/MM: ML-MM COUPLING ENERGY (COULOMBIC) =" << std::setw(14)
+                  << ene_pot_coulomb_kcal
+                  << "\n ML/MM: ML-MM COUPLING ENERGY (DISTORTION) =" << std::setw(14)
+                  << ene_pot_dist_kcal
+                  << "\n ML/MM: ML-MM COUPLING ENERGY (POLARIZATION) =" << std::setw(14)
+                  << ene_pot_pol_kcal
+                  << "\n ML/MM: ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14) << ene_pot_embed_kcal
+                  << std::defaultfloat << std::endl;
+    }
+}
+
+// Between mlip_calc_energy_atomic_charges_retain and mlip_calc_energy_atomic_charges_vjp
+void exitIfChargesGraphIsRetained(
+    std::source_location loc = std::source_location::current()
+) {
+    bool charges_graph_is_retained = tensor_container.contains("__retain_coords")
+        or tensor_container.contains("__retain_energy")
+        or tensor_container.contains("__retain_atomic_charges");
+    if (charges_graph_is_retained) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " can't be called between"
+                  << " mlip_calc_energy_atomic_charges_retain and"
+                  << " mlip_calc_energy_atomic_charges_vjp" << std::endl;
+        std::exit(2);
+    }
+}
+
+// Names starting with "__" are reserved for tensors stored internally
+void exitIfNameIsReserved(const char* name) {
+    if (std::string_view{name}.starts_with("__")) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Tensor " << name << " can't be stored, names starting with __ are"
+                  << " reserved" << std::endl;
+        std::exit(2);
+    }
+}
+
+// Shape of a tensor stored through the C API. Exits if any dim, or dims_num, is negative
+std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
+    std::vector<long> shape;
+    if (dims_num >= 0) {
+        shape.assign(dims, dims + dims_num);
+    }
+    bool has_negative_dim = std::any_of(shape.begin(), shape.end(), [](long d) { return d < 0; });
+    if (dims_num < 0 || has_negative_dim) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Tensor " << name << " can't be stored, dims_num and its dims must be"
+                  << " non-negative" << std::endl;
+        std::exit(2);
+    }
+    return shape;
+}
+
+}  // namespace
+
+extern "C" {
+void mlip_initialize(
+    int num_atoms,
+    int atomic_nums[],  // Shape (num_atoms,)
+    const char* config_path,
+    bool read_mlmm_config,
+    const char* calling_program,
+    bool print_config_info
+) {
+    // (0) Clear tensors stored in previous runs of the MLIP Interface
+    tensor_container.clear();
+
+    // (1) Read and print configuration, fail immediatly if running on an unsupported device
+    try {
+        global_config = config::GlobalConfig::fromNamelistFile(
+            config_path, read_mlmm_config, calling_program
+        );
+    } catch (const config::unsupported_device_error& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Could not read the config from " << config_path << ":\n"
+                  << e.what() << std::endl;
+        std::exit(2);
+    }
+    if (print_config_info) {
+        global_config.printInfo();
     }
 
-    auto ene_pot_total = ene_pot_invacuo + ene_pot_dist + ene_pot_pol + ene_pot_coulomb;
-    // TODO It may be possible to return forces due to "different things"
-    // by detaching the coords before the final calculation
+    // (2) Disable TF32 and FP16 for accuracy
+    disableTorchReducedFloatPrecisionOptimizations();
 
-    if (predict_charges) {
-        if (write_charges_grad && use_charge_derivatives) {
-            calculate_and_populate_atomic_scalar_derivatives(
-                coords, atomic_charges, atomic_charge_derivatives, num_atoms
-            );
+    // It is VERY important to get types correctly here. If the
+    // types don't match then from_blob will not interpret the pointers correctly
+    // and as a consequence the tensor will have junk memory inside. If the blob
+    // is int then the tensor should be torch::kInt. If the blob is double
+    // then the tensor should be torch::kDouble
+    //
+    // PBC tensor is initialized even if pbc is not needed afterwards,
+    // since the tensor occupies almost no space
+    torch::Tensor atomic_numbers = torch::from_blob(
+        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
+    );
+
+    atomic_numbers = atomic_numbers.to(global_config.device());
+    atomic_numbers = atomic_numbers.to(torch::kLong);
+    // This is necessary since torch has to use this tensor to index internally,
+    // and only long tensors can be used for this, so widening of the ints has
+    // to be performed.
+    // Also, torchani needs an extra dimension as batch dimension
+    atomic_numbers = atomic_numbers.unsqueeze(0);
+    LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << atomic_numbers;
+    // All atoms are evaluated until mlip_set_no_eval_atoms_mask is called
+    tensor_container.store("__all_atomic_numbers", atomic_numbers);
+    tensor_container.store("__atomic_numbers", atomic_numbers);
+
+    // (3) Load compiled extensions
+    std::vector<std::string> extension_names = {"cuaev.so", "cell_list.so"};
+    for (const std::string& lib_name : extension_names) {
+        try {
+            loadTorchaniExtension(lib_name);
+        } catch (const std::runtime_error& e) {
+            std::cerr << "WARNING (libtorchani)\n"
+                      << e.what() << "\n"
+                      << "Models that support this extension will fail to load,\n"
+                      << "even if the extension is not called during execution"
+                      << std::endl;
         }
-        populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
-    }
-    if (predict_volumes && (write_volumes || write_volumes_grad)) {
-        if (write_volumes_grad) {
-            calculate_and_populate_atomic_scalar_derivatives(
-                coords, atomic_volumes, atomic_volume_derivatives, num_atoms
-            );
-        }
-        populate_atomic_volumes(atomic_volumes, atomic_volumes_buf, num_atoms);
     }
 
-    calculate_and_populate_embedding_forces(
-        ene_pot_total,
+    // (4) Resolve model path
+    std::string model_type = global_config.getString("model_type");
+    std::filesystem::path model_path;
+    if (std::find(
+            constants::builtin_models.begin(),
+            constants::builtin_models.end(),
+            model_type
+        ) != constants::builtin_models.end()) {
+        std::string jit_model_fname = model_type + ".pt";
+        //  AimNet2 models, and Nutmeg models, are stored in subdirs
+        std::filesystem::path model_dir =
+            std::filesystem::path{libtorchaniDir()} / TORCHANI_MLIPS_RELATIVE_DIR;
+        if (model_type.starts_with("aimnet2")) {
+            model_dir /= "aimnet2";
+        } else if (model_type.starts_with("nutmeg")) {
+            model_dir /= "nutmeg";
+        }
+        model_path = model_dir / jit_model_fname;
+        LOG(INFO) << "MLIP Model file name: " << jit_model_fname;
+    } else {
+        // Assume the path has been passed directly
+        model_path = model_type;
+    }
+    LOG(INFO) << "MLIP Model full path: " << model_path.string();
+
+    // (5) Load model
+    // The model is loaded from a pytorch file, which can be either a TorchScript
+    // compiled file (*.pt) or an AOTInductor-compiled graph (*.pt2 file)
+    try {
+        model = mlip::MlipModel::from_model_path(
+            model_path.string(), global_config.device(), global_config.dtype()
+        );
+    } catch (const std::exception& e) {
+        std::cerr
+            << "ERROR (libtorchani)\n"
+            << "Could not load model correctly from path: " << model_path.string() << "\n"
+            << "Make sure the path is absolute, and correctly specified,\n"
+            << "or that you are correctly specifying one of the built-in models.\n"
+            << "Also make sure the model has been correctly packaged\n"
+            << std::endl;
+        throw;
+    }
+
+    // (6) Set the correct model configuration
+    int model_index = global_config.getInt("model_index");
+    if (model_index != -1) {
+        try {
+            model->useOnlyEnsembleMember(model_index);
+        } catch (const std::runtime_error& e) {
+            std::cerr << "ERROR (libtorchani)\n"
+                      << "You set 'model_index' to a value != -1, but:\n"
+                      << e.what() << std::endl;
+            std::exit(2);
+        }
+    }
+    std::string strat = global_config.getBool("use_cuaev") ? "cuaev" : "pyaev";
+    try {
+        model->setStrategy(strat);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "WARNING (libtorchani)\n"
+                  << e.what() << "\n"
+                  << "The passed strategy was " << strat
+                  << ". The cuAEV extension will be disabled.\n"
+                  << " If you are not using a traditional ANI model with AEVs,"
+                  << " you can safely disregard this warning."
+                  << std::endl;
+    }
+    // Models can read arbitrary features from a newline separated
+    // file with floats (e.g. Nutmeg potentials use this)
+    // Relative paths are resolved wrt the current working directory
+    std::string extra_features_fpath = global_config.getString("extra_features_file_path");
+    if (not extra_features_fpath.empty()) {
+        extra_features_fpath = std::filesystem::absolute(extra_features_fpath).string();
+        torch::Tensor extra_features = readExtraFeatures(extra_features_fpath, num_atoms);
+        tensor_container.store("__all_extra_features", extra_features);
+        tensor_container.store("__extra_features", extra_features);
+        setModelExtraFeatures(extra_features);
+    }
+
+    createOutputFiles(read_mlmm_config ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
+    last_written_md_step.reset();
+
+    // (7) Epilogue
+    global_config.setMlipInterfaceIsInit(true);
+    if (read_mlmm_config && global_config.getBool("use_mlip_atomic_volumes")) {
+        // Exits if an element of the ML atoms has no kz
+        mlVolumeKzs();
+    }
+    if (
+        print_config_info
+        && read_mlmm_config
+        && global_config.getString("mlmm_coupling") == "simple-polarizable"
+    ) {
+        printPolarizabilitiesInUse();
+    }
+    LOG(INFO) << "Loaded MLIP model and finished MLIP Interface initialization";
+}
+
+void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
+    exitIfNotInitialized(global_config);
+    exitIfChargesGraphIsRetained();
+    torch::Tensor all_atomic_numbers = tensor_container.get("__all_atomic_numbers");
+    if (num_atoms != all_atomic_numbers.size(1)) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The no-eval atoms mask has " << num_atoms << " values, but there are "
+                  << all_atomic_numbers.size(1) << " atoms" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor no_eval_atoms_mask =
+        torch::from_blob(values, {num_atoms}, torch::TensorOptions().dtype(torch::kInt));
+    if (not ((no_eval_atoms_mask == 0) | (no_eval_atoms_mask == 1)).all().item<bool>()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The no-eval atoms mask can only have values 0 and 1" << std::endl;
+        std::exit(2);
+    }
+    no_eval_atoms_mask = no_eval_atoms_mask.to(torch::kBool).to(global_config.device());
+    global_config.setNoEvalAtoms(no_eval_atoms_mask.any().item<bool>());
+    torch::Tensor do_eval_atoms_idxs = (~no_eval_atoms_mask).nonzero().view({-1});
+    torch::Tensor atomic_numbers = all_atomic_numbers.index_select(1, do_eval_atoms_idxs);
+    LOG(INFO) << "After discarding unused atoms, atomic numbers are:\n" << atomic_numbers;
+    tensor_container.store("__do_eval_atoms_idxs", do_eval_atoms_idxs);
+    tensor_container.store("__atomic_numbers", atomic_numbers);
+    if (tensor_container.contains("__all_extra_features")) {
+        torch::Tensor extra_features = tensor_container.get("__all_extra_features")
+                                           .index_select(0, do_eval_atoms_idxs.to(torch::kCPU));
+        tensor_container.store("__extra_features", extra_features);
+        setModelExtraFeatures(extra_features);
+    }
+}
+
+void mlip_update_md_step(int md_step) {
+    current_md_step = md_step;
+}
+
+void mlip_set_ml_charge_and_spin_mult(int charge, int spin_mult) {
+    exitIfNotInitialized(global_config);
+    exitIfChargesGraphIsRetained();
+    global_config.setMlChargeAndSpinMult(charge, spin_mult);
+}
+
+void mlip_calc_energy_force_from_external_neighbors(
+    int num_atoms,
+    int num_neighbors,
+    double coords_buf[][3],
+    int neighborlist_buf[],
+    double shifts_buf[][3],
+    int* molecule_idxs_buf,  // Shape (num_atoms,)
+    bool calc_only_bonded,
+    /* outputs */
+    double forces_buf[][3],
+    double* pot_energy_buf
+) {
+    exitIfNotInitialized(global_config);
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    timing::ScopedTimer timer{};
+    if (!model->supportsComputeFromExternalNeighbors()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "To use an external neighborlist (use_amber_neighborlist=.true.)\n"
+                  << " the model must export 'compute_from_external_neighbors(...)'."
+                  << " Consult the TorchANI-Amber README.md for the required signature\n"
+                  << "https://github.com/roitberg-group/torchani-amber" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
+    torch::Tensor shifts = tensor_utils::dblBufToShiftsTensor(global_config, shifts_buf, num_neighbors);
+    torch::Tensor neighborlist =
+        tensor_utils::intBufToNeighborlistTensor(global_config, neighborlist_buf, num_neighbors);
+    torch::Tensor molecule_idxs =
+        tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
+
+    if (global_config.useNoEvalAtoms()) {
+        torch::Tensor do_eval_atoms_idxs = tensor_container.get("__do_eval_atoms_idxs");
+        torch::Tensor reduced_idxs = torch::full({num_atoms}, -1, neighborlist.options());
+        reduced_idxs.index_put_(
+            {do_eval_atoms_idxs},
+            torch::arange(do_eval_atoms_idxs.size(0), neighborlist.options())
+        );
+        neighborlist = reduced_idxs.index({neighborlist});
+        auto do_eval_pairs = (neighborlist >= 0).all(0).nonzero().flatten();
+        neighborlist = neighborlist.index_select(1, {do_eval_pairs});
+        shifts = shifts.index_select(0, {do_eval_pairs});
+        molecule_idxs = molecule_idxs.index({do_eval_atoms_idxs});
+        coords = coords.index_select(1, {do_eval_atoms_idxs});
+    }
+
+    std::optional<torch::Tensor> maybe_molecule_idxs;
+    if (calc_only_bonded) {
+        maybe_molecule_idxs = molecule_idxs;
+    }
+    mlip::MlipOutput output = model->computeFromExternalNeighbors(
+        atomic_numbers,
         coords,
-        env_charge_coords,
-        num_atoms,
-        num_env_charges,
-        forces_on_atoms_buf,
-        forces_on_env_charges_buf
+        neighborlist,
+        shifts,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        maybe_molecule_idxs,
+        /*calc_forces=*/true
     );
-    populate_potential_energy(ene_pot_total, ene_pot_total_buf);
-    populate_potential_energy(ene_pot_invacuo, ene_pot_invacuo_buf);
-    populate_potential_energy(ene_pot_pol, ene_pot_embed_pol_buf);
-    populate_potential_energy(ene_pot_dist, ene_pot_embed_dist_buf);
-    populate_potential_energy(ene_pot_coulomb, ene_pot_embed_coulomb_buf);
-}
-
-// For bw compat only
-void torchani_energy_force_with_coupling(
-    int num_atoms,
-    int num_env_charges,
-    double inv_pol_dielectric,
-    double coords_buf[][3],
-    double atomic_alphas_buf[],  // shape (num-atoms,)
-    double env_charge_coords_buf[][3],  //  shape (num-charges, 3)
-    double env_charges_buf[],  // shape (num-charges,)
-    bool predict_charges,
-    bool simple_polarization_correction,
-    bool use_charge_derivatives,
-    /* outputs */
-    double forces_on_atoms_buf[][3],  // shape (num-atoms, 3)
-    double forces_on_env_charges_buf[][3],  // shape (num-charges, 3)
-    double atomic_charges_buf[],  // shape (num-atoms, 3) (actually in-out)
-    double* ene_pot_invacuo_buf,
-    double* ene_pot_embed_pol_buf,
-    double* ene_pot_embed_dist_buf,
-    double* ene_pot_embed_coulomb_buf,
-    double* ene_pot_total_buf
-) {
-    std::vector<double> atomic_charge_derivatives(num_atoms * num_atoms * 3, 0.0);
-    std::vector<double> atomic_volumes(num_atoms, 0.0);
-    std::vector<double> atomic_volume_derivatives(num_atoms * num_atoms * 3, 0.0);
-    return torchani_calc_energy_force_with_coupling(
-        num_atoms,
-        num_env_charges,
-        inv_pol_dielectric,
-        coords_buf,
-        atomic_alphas_buf,
-        env_charge_coords_buf,
-        env_charges_buf,
-        predict_charges,
-        simple_polarization_correction,
-        use_charge_derivatives,
-        false,
-        -9'999'999,  // backwards compatibility (infer)
-        false,
-        false,
-        false,
-        false,
-        forces_on_atoms_buf,
-        forces_on_env_charges_buf,
-        atomic_charges_buf,
-        atomic_charge_derivatives.data(),
-        atomic_volumes.data(),
-        atomic_volume_derivatives.data(),
-        ene_pot_invacuo_buf,
-        ene_pot_embed_pol_buf,
-        ene_pot_embed_dist_buf,
-        ene_pot_embed_coulomb_buf,
-        ene_pot_total_buf
+    storeResults(output);
+    torch::Tensor energy = output.at("energy");
+    populateForces(output.at("forces"), forces_buf, num_atoms);
+    populateEnergyScalar(energy, pot_energy_buf);
+    writeOutputs(
+        OUTPUT_FILES, atomic_numbers, coords, output.at("forces"), torch::Tensor{}, output
     );
 }
 
-
-void torchani_energy_force_atomic_charges_with_derivatives(
+void mlip_calc_energy_force(
     int num_atoms,
     double coords_buf[][3],
-    /* outputs */
+    double cell_buf[][3],
+    bool use_pbc,
+    int* molecule_idxs_buf,
+    bool calc_only_bonded,
     double forces_buf[][3],
+    double* pot_energy_buf
+) {
+    exitIfNotInitialized(global_config);
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    timing::ScopedTimer timer{};
+    torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
+    torch::Tensor cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
+    torch::Tensor molecule_idxs =
+        tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
+    // Atoms excluded from the evaluation feel no forces, and don't contribute to the
+    // energy
+    if (global_config.useNoEvalAtoms()) {
+        torch::Tensor do_eval_atoms_idxs = tensor_container.get("__do_eval_atoms_idxs");
+        molecule_idxs = molecule_idxs.index({do_eval_atoms_idxs});
+        coords = coords.index_select(1, {do_eval_atoms_idxs});
+    }
+    // Inputs are setup with PBC
+    std::optional<torch::Tensor> maybe_cell;
+    if (use_pbc) {
+        maybe_cell = cell;
+    }
+    std::optional<torch::Tensor> maybe_molecule_idxs;
+    if (calc_only_bonded) {
+        maybe_molecule_idxs = molecule_idxs;
+    }
+    mlip::MlipOutput output = model->computeSinglePoint(
+        atomic_numbers,
+        coords,
+        maybe_cell,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        maybe_molecule_idxs,
+        /*calc_forces=*/true
+    );
+    storeResults(output);
+    torch::Tensor energy = output.at("energy");
+    populateForces(output.at("forces"), forces_buf, num_atoms);
+    populateEnergyScalar(energy, pot_energy_buf);
+    writeOutputs(
+        OUTPUT_FILES, atomic_numbers, coords, output.at("forces"), torch::Tensor{}, output
+    );
+}
+
+void mlip_calc_energy_force_mlmm(
+    int ml_atoms_num,
+    int mm_atoms_num,
+    double ml_coords_buf[][3],
+    double mm_coords_buf[][3],
+    double mm_atomic_charges_buf[],
+    double cell_buf[][3],
+    bool use_pbc,
+    bool verbose,
+    /* outputs */
+    double ml_forces_buf[][3],
+    double mm_forces_buf[][3],
+    double* pot_energy_buf
+) {
+    exitIfNotInitialized(global_config);
+    exitIfNoMlmmConfig(global_config);
+    exitIfNoEvalAtoms(global_config);
+    calcEnergyForceMlmm(
+        ml_atoms_num,
+        mm_atoms_num,
+        ml_coords_buf,
+        mm_coords_buf,
+        mm_atomic_charges_buf,
+        cell_buf,
+        use_pbc,
+        verbose,
+        /*calc_qbc=*/false,
+        ml_forces_buf,
+        mm_forces_buf,
+        pot_energy_buf
+    );
+}
+
+void mlip_calc_energy_force_mlmm_qbc(
+    int ml_atoms_num,
+    int mm_atoms_num,
+    double ml_coords_buf[][3],
+    double mm_coords_buf[][3],
+    double mm_atomic_charges_buf[],
+    double cell_buf[][3],
+    bool use_pbc,
+    bool verbose,
+    /* outputs */
+    double ml_forces_buf[][3],
+    double mm_forces_buf[][3],
+    double* pot_energy_buf
+) {
+    exitIfNotInitialized(global_config);
+    exitIfNoMlmmConfig(global_config);
+    exitIfNoEvalAtoms(global_config);
+    calcEnergyForceMlmm(
+        ml_atoms_num,
+        mm_atoms_num,
+        ml_coords_buf,
+        mm_coords_buf,
+        mm_atomic_charges_buf,
+        cell_buf,
+        use_pbc,
+        verbose,
+        /*calc_qbc=*/true,
+        ml_forces_buf,
+        mm_forces_buf,
+        pot_energy_buf
+    );
+}
+
+void mlip_calc_energy_atomic_charges_retain(
+    int num_atoms,
+    double coords_buf[][3],
+    /* outputs */
     double atomic_charges_buf[],
-    double* atomic_charge_derivatives,
-    double* potential_energy
+    double* pot_energy_buf
 ) {
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs = setup_inputs_nopbc(coords);
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, 3);
-    torch::Tensor energy = fetch_energies_from_output(output);
-    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output);
-
-    calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
-    calculate_and_populate_charge_derivatives(
-        coords, atomic_charges, atomic_charge_derivatives, num_atoms
+    exitIfNotInitialized(global_config);
+    exitIfNoEvalAtoms(global_config);
+    torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
+    // The graph outlives this call, so it must not refer to the caller's buffer
+    // (dblBufToCoordsTensor does not copy for CPU double precision)
+    torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms)
+                               .detach()
+                               .clone()
+                               .requires_grad_(true);
+    mlip::MlipOutput output = model->computeSinglePoint(
+        atomic_numbers,
+        coords,
+        /*cell=*/std::nullopt,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
+        /*atomic=*/false,
+        /*ensemble_values=*/false,
+        /*molecule_idxs=*/std::nullopt,
+        /*calc_forces=*/false
     );
-    populate_potential_energy(energy, potential_energy);
-    populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+    if (output.count("atomic_charges") == 0) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_calc_energy_atomic_charges_retain requires a model that predicts"
+                  << " atomic charges" << std::endl;
+        std::exit(2);
+    }
+    storeResults(output);
+    torch::Tensor energy = output.at("energy");
+    torch::Tensor atomic_charges = output.at("atomic_charges");
+
+    populateEnergyScalar(energy, pot_energy_buf);
+    // populateAtomicCharges converts its argument to CPU double, keep the
+    // original tensor (and its graph) for the backward pass
+    torch::Tensor charges_copy = atomic_charges;
+    populateAtomicCharges(charges_copy, atomic_charges_buf, num_atoms);
+    tensor_container.store("__retain_coords", coords);
+    tensor_container.store("__retain_energy", energy);
+    tensor_container.store("__retain_atomic_charges", atomic_charges);
 }
 
-void torchani_calc_energy_force_qbc(
+void mlip_calc_energy_atomic_charges_vjp(
     int num_atoms,
-    double coords_buf[][3],
-    int net_charge, 
-    double forces_buf[][3],
-    double* qbc_buf,
-    double qbc_derivatives[][3],
-    double* potential_energy
-) {
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
-
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, 2);
-    torch::Tensor ensemble_energy = fetch_energies_from_output(output);
-
-    torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
-    torch::Tensor energy = ensemble_energy.mean(0);
-    calculate_and_populate_qbc_derivatives(
-        coords, qbc, qbc_derivatives, true, num_atoms
-    );
-    calculate_and_populate_forces(coords, energy, forces_buf, false, num_atoms);
-    populate_potential_energy(energy, potential_energy);
-    populate_qbc(qbc, qbc_buf);
-}
-
-void torchani_calc_data_for_monitored_mlmm(
-    int num_atoms,
-    double coords_buf[][3],
-    int net_charge,
+    double ml_electrostatic_potential_buf[],
     /* outputs */
-    double forces_buf[][3],
-    double atomic_charges_buf[],
-    /* TODO not sure how to specify type of atomic_charges_grad, besides "buf" */
-    double* atomic_charge_derivatives,
-    double* qbc_buf,
-    double qbc_derivatives[][3],
-    double* potential_energy
+    double forces_buf[][3]
 ) {
-    torch::Tensor coords = dbl_buf_to_coords_tensor(config, coords_buf, num_atoms);
-    std::vector<torch::jit::IValue> inputs =
-        setup_inputs_nopbc(coords, /*ensemble_values=*/true, net_charge);
-
-    torch::jit::IValue output = model.forward(inputs);
-    validate_model_output(output, 3);
-    torch::Tensor ensemble_energy = fetch_energies_from_output(output);
-    // Squeeze ensemble dimension from atomic charges
-    torch::Tensor atomic_charges = fetch_atomic_charges_from_output(output).squeeze(0);
-    torch::Tensor qbc = calc_qbcs(num_atoms, ensemble_energy);
-    torch::Tensor energy = ensemble_energy.mean(0);
-
-    calculate_and_populate_forces(coords, energy, forces_buf, true, num_atoms);
-    calculate_and_populate_qbc_derivatives(
-        coords, qbc, qbc_derivatives, true, num_atoms
+    exitIfNotInitialized(global_config);
+    bool charges_graph_is_retained = tensor_container.contains("__retain_coords")
+        and tensor_container.contains("__retain_energy")
+        and tensor_container.contains("__retain_atomic_charges");
+    if (not charges_graph_is_retained) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_calc_energy_atomic_charges_vjp must follow a call to"
+                  << " mlip_calc_energy_atomic_charges_retain" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(
+        global_config, ml_electrostatic_potential_buf, {1, num_atoms}
     );
-    populate_potential_energy(energy, potential_energy);
-    populate_qbc(qbc, qbc_buf);
-    calculate_and_populate_charge_derivatives(
-        coords, atomic_charges, atomic_charge_derivatives, num_atoms
-    );
-    populate_atomic_charges(atomic_charges, atomic_charges_buf, num_atoms);
+    std::vector<torch::Tensor> output_vec = {
+        tensor_container.get("__retain_energy").sum() * constants::HARTREE_TO_KCALMOL +
+        (tensor_container.get("__retain_atomic_charges") * ml_electrostatic_potential).sum()
+    };
+    std::vector<torch::Tensor> coord_vec = {tensor_container.get("__retain_coords")};
+    torch::Tensor forces = -torch::autograd::grad(
+                               output_vec,
+                               coord_vec,
+                               /* grad_outputs= */ {},
+                               /* retain_graph= */ false
+                           )[0];
+    forces = forces.to(torch::kCPU, torch::kDouble);
+    auto forces_a = forces.accessor<double, 3>();
+    for (int atom = 0; atom != num_atoms; ++atom) {
+        for (int c = 0; c != 3; ++c) {
+            forces_buf[atom][c] = forces_a[0][atom][c];
+        }
+    }
+    tensor_container.clear("__retain_coords");
+    tensor_container.clear("__retain_energy");
+    tensor_container.clear("__retain_atomic_charges");
+}
+
+void mlip_store_float_tensor(
+    const char* name,
+    double* values,
+    int* dims,
+    int dims_num
+) {
+    exitIfNotInitialized(global_config);
+    exitIfNameIsReserved(name);
+    std::vector<long> shape = shapeFromDims(name, dims, dims_num);
+    // dblBufToTensor doesn't copy values that are already double on the CPU, and the
+    // stored tensor must not refer to the caller's buffer
+    torch::Tensor tensor = tensor_utils::dblBufToTensor(global_config, values, shape).clone();
+    tensor_container.store(name, tensor);
+}
+
+void mlip_store_int_tensor(
+    const char* name,
+    int* values,
+    int* dims,
+    int dims_num
+) {
+    exitIfNotInitialized(global_config);
+    exitIfNameIsReserved(name);
+    std::vector<long> shape = shapeFromDims(name, dims, dims_num);
+    // intBufToI64Tensor always copies, since it converts the values to int64
+    tensor_container.store(name, tensor_utils::intBufToI64Tensor(global_config, values, shape));
+}
+
+void mlip_store_mask_tensor(
+    const char* name,
+    int* values,
+    int* dims,
+    int dims_num
+) {
+    exitIfNotInitialized(global_config);
+    exitIfNameIsReserved(name);
+    std::vector<long> shape = shapeFromDims(name, dims, dims_num);
+    torch::Tensor tensor = torch::from_blob(values, shape, torch::TensorOptions().dtype(torch::kInt));
+    if (not ((tensor == 0) | (tensor == 1)).all().item<bool>()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "Mask tensor " << name << " can only have values 0 and 1" << std::endl;
+        std::exit(2);
+    }
+    // The cast to bool copies, so the stored tensor doesn't refer to the caller's buffer
+    tensor_container.store(name, global_config.tensorToTorchaniDevice(tensor.to(torch::kBool)));
+}
+
+void mlip_fetch_result(const char* name, double* values, int* dims, int dims_num) {
+    exitIfNotInitialized(global_config);
+    std::string key = std::string("__result_") + name;
+    if (not tensor_container.contains(key)) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "There is no result '" << name << "', the last calculation didn't"
+                  << " produce it" << std::endl;
+        std::exit(2);
+    }
+    torch::Tensor result = tensor_container.get(key);
+    std::vector<long> shape = shapeFromDims(name, dims, dims_num);
+    if (result.sizes() != torch::IntArrayRef(shape)) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "The result '" << name << "' has shape " << result.sizes()
+                  << ", but the shape of the array is " << torch::IntArrayRef(shape)
+                  << " (C order)" << std::endl;
+        std::exit(2);
+    }
+    result = result.to(torch::kCPU, torch::kDouble).contiguous();
+    std::copy(result.data_ptr<double>(), result.data_ptr<double>() + result.numel(), values);
+}
+
+void mlip_get_config_int_option(const char* name, int* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = global_config.getInt(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "an int", err);
+    }
+}
+
+void mlip_get_config_bool_option(const char* name, bool* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = global_config.getBool(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a bool", err);
+    }
+}
+
+void mlip_get_config_float_option(const char* name, double* out_value) {
+    try {
+        std::string key = lowercase(name);
+        *out_value = global_config.getDouble(key);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a float", err);
+    }
+}
+
+void mlip_get_config_str_option(
+    const char* name,
+    int out_value_len,
+    /* outputs */
+    char out_value[]
+) {
+    try {
+        std::string key = lowercase(name);
+        const std::string& value = global_config.getString(key);
+        if (static_cast<int>(value.size()) + 1 > out_value_len) {
+            throw std::length_error(
+                "Value '" + value + "' doesn't fit in a buffer of length "
+                + std::to_string(out_value_len)
+            );
+        }
+        std::memcpy(out_value, value.c_str(), value.size() + 1);
+    } catch (const std::exception& err) {
+        exitWithConfigOptionError(name, "a str", err);
+    }
 }
 }

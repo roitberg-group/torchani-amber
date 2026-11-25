@@ -1,0 +1,14 @@
+
+&cntrl
+  cut = 999.9, ntb = 0, ntp = 0, ntt = 1, gamma_ln = 0,
+  irest = 1, ntx = 5, ntc = 2, ntf = 2, tol = 0.000001,
+  ioutfm = 1, igb = 2, gbsa = 1,
+  dt = 0.002, ntpr = 50, ntwx = 0, ntwr = 500, nstlim = 500,
+  ig = 29166, ntr = 0, nscm = 5000, infe = 1,
+/
+
+&smd
+  output_file = 'work.txt'
+  output_freq = 1
+  cv_file = 'cv.in'
+/

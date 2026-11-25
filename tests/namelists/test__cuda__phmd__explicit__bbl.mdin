@@ -1,0 +1,12 @@
+Production stage 1 of bbl
+ &cntrl
+  ig=49,
+  imin=0, nstlim=20, dt=0.002, 
+  irest=1, ntx=5, 
+  tempi=300, temp0=300, 
+  ntc=2, ntf=2, tol = 0.00001,taup = 0.1,
+  ntwx=20, ntwe=20, ntwr=20, ntpr=2, 
+  cut=12.0, fswitch=10, iwrap=0, 
+  ntt=3, gamma_ln=1.0, ntb=2, ntp=1,
+  iphmd=3, solvph=7.0,
+/

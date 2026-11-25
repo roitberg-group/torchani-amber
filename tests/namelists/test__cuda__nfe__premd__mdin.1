@@ -1,0 +1,20 @@
+
+ &cntrl
+  igb = 0, ntx = 7, irest = 1,
+  ntb = 1, ntp = 0, temp0 = 300.0,
+  ntt = 1, gamma_ln = 0.0,
+  ntf = 2, ntc = 2, tol = 0.00001,
+  cut = 8.0, dt = 0.002, ig = 71277
+  ntpr = 5, ntwx = 0, nstlim = 5,
+  numexchg = 10, infe = 1,
+ /
+
+ &ewald
+  skinnb = 1.0
+ /
+
+ &pmd
+   output_file = 'pmd.1.txt'
+   output_freq = 1
+   cv_file = 'cv.1'
+ /

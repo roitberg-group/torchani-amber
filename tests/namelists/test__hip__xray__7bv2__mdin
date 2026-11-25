@@ -1,0 +1,25 @@
+   checking out 7bv2
+ &cntrl
+    imin=0, maxcyc=200, 
+    ntx=1, ntxo=1, irest=0, ntpr=10,
+    tempi=0.0, ntt=3, gamma_ln=5.0, dt=0.002, temp0=300.,
+    ntc=2, ntf=2, tol=1.d-6, 
+    nstlim=0, ntwx=0, ntwr=500,
+    nmropt=1, 
+    ntr=0, restraint_wt=1.0, restraintmask='!(@H=)', 
+ /
+ &wt type='TEMP0', istep1=   1, istep2=1000, value1=0., value2=100. /
+ &wt type='TEMP0', istep1=2001, istep2=3000, value1= 50., value2=  0. /
+ &wt type='END' /
+ &xray
+   pdb_infile = '7bv2_box_uc.pdb',
+   reflection_infile = 'test-sf.dat',
+   fmtz_outfile = 'md1.fmtz', 
+   atom_selection_mask = '!(@H=)',
+   xray_weight = 100000.0,
+   bulk_solvent_model = 'simple',  target = 'vls', 
+   k_sol = 0.3554,  b_sol = 65.57,
+   resolution_high = 2.5,
+   scale_update_frequency = 1000, 
+   mask_update_frequency = 1000, 
+ /

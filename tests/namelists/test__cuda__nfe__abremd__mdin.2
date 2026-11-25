@@ -1,0 +1,27 @@
+
+ &cntrl
+  igb = 0, ntx = 7, irest = 1,
+  ntb = 1, ntp = 0, temp0 = 310.0,
+  ntt = 1, gamma_ln = 0,
+  ntf = 2, ntc = 2, tol = 0.00001,
+  cut = 8.0, dt = 0.002, ig = 71277
+  ntpr = 5, ntwx = 0, nstlim = 5, infe = 1,
+  numexchg = 10
+ /
+
+ &ewald
+  skinnb = 1.0
+ /
+
+ &abmd
+   monitor_file = 'abmd.2.txt'
+   monitor_freq = 2
+
+   umbrella_file = 'umbrella.2.nc'
+
+   mode = 'FLOODING'
+
+   timescale = 2.0
+
+   cv_file = 'cv.in'
+ /

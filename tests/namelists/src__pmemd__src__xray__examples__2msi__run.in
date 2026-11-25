@@ -1,0 +1,26 @@
+Production stage (NPT)
+ &cntrl
+  imin = 0,
+  irest = 1, ntx = 5, iwrap = 1,
+  ntb = 1,
+  ntt = 3, gamma_ln = 3., ig = -1,
+  tempi = 298.0, temp0 = 298.0,
+  ntp = 0, pres0 = 1.0, taup = 2.0,
+  cut = 8.0,
+  ntr = 0,
+  ntc = 2, ntf = 2,
+  nstlim = 5000, nscm = 100, dt = 0.002,
+  ntpr = 100, ntwx = 100, ntwr = 5000,
+  ioutfm = 1
+/
+&xray
+  spacegroup_name='P1',
+  pdb_infile = 'uc.pdb',
+  pdb_read_coordinates=.false., 
+  reflection_infile = 'real.dat',
+  atom_selection_mask = ':1-264',
+  xray_weight_initial = 0.,
+  xray_weight_final = 1.,
+  bulk_solvent_model='afonine-2013',
+  target='ml',
+/

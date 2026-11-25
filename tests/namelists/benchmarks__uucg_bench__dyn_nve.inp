@@ -1,0 +1,16 @@
+MD NVE                                                                 
+ &cntrl                                                                        
+  imin = 0, irest = 1, ntx = 7,                                                
+  cut = 9.0,                                                                   
+  ntc = 2, ntf = 2, tol = 0.0000005                                            
+  nstlim = 7500000, dt = 0.001,                                               
+  ntt = 0, ntb = 0, ntb =1 ,                                                   
+  ntpr = 2000,                                                                 
+  ntwx = 2000,                                                                 
+  ntwr = 2000,                                                                  
+  ioutfm = 1,                                                                  
+  iwrap = 1                                                                    
+ /                                                                             
+ &ewald                                                                        
+ dsum_tol = 0.000001                                                           
+ /                     

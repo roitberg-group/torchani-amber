@@ -1,0 +1,13 @@
+Ala3 GB RXSGLD
+&cntrl
+   imin = 0, nstlim = 10, dt = 0.002,
+   ntx = 5, irest = 1, ig = ,
+   ntwx = 100, ntwe = 0, ntwr = 500, ntpr = 1,
+   ioutfm = 0, ntxo = 1,
+   ntt = 3, tautp = 5.0, tempi = 0.0, temp0 = 300.0 ,
+   ntc = 2, tol = 0.000001, ntf = 2, ntb = 0,
+   cut = 9999.0, nscm = 10, gamma_ln=1.0,
+   igb = 1, offset = 0.09,
+   numexchg = 5,
+   isgld=1,tsgavg=0.2,sgft=0.5, ig=71277,
+&end

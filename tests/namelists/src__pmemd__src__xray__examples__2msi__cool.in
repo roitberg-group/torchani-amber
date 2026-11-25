@@ -1,0 +1,52 @@
+120ps NEB ALA-ALA cool stage 1
+ &cntrl
+  imin=0,
+  ntx=5,
+  irest=1,
+  iwrap = 1,
+  nstlim=5000,
+  dt=0.002,
+  ntf=2,
+  ntc=2,
+  tempi=298.0,
+  temp0=0.0,
+  ntpr=100,
+  ntwx=100,
+  cut=8.0,
+  ntb=1,
+  ntp=0,
+  ntt=3,
+  gamma_ln=2.0,
+  nscm=200,
+  nmropt=1,
+ /
+ &wt type='TEMP0', istep1=0,    istep2=500,  value1=293.0,  value2=262.5 /
+ &wt type='TEMP0', istep1=501,  istep2=625,  value1=262.5,  value2=262.5 /
+ &wt type='TEMP0', istep1=626,  istep2=1125, value1=262.5,  value2=225.0 /
+ &wt type='TEMP0', istep1=1125, istep2=1250, value1=225.0,  value2=225.0 /
+ &wt type='TEMP0', istep1=1251, istep2=1750, value1=225.0,  value2=187.5 /
+ &wt type='TEMP0', istep1=1751, istep2=1875, value1=187.5,  value2=187.5 /
+ &wt type='TEMP0', istep1=1876, istep2=2375, value1=187.5,  value2=150.0 /
+ &wt type='TEMP0', istep1=2376, istep2=2500, value1=150.0,  value2=150.0 /
+ &wt type='TEMP0', istep1=2501, istep2=3000, value1=150.0,  value2=112.5 /
+ &wt type='TEMP0', istep1=3001, istep2=3125, value1=112.5,  value2=112.5 /
+ &wt type='TEMP0', istep1=3126, istep2=3625, value1=112.5,  value2=75.0 /
+ &wt type='TEMP0', istep1=3626, istep2=3750, value1=75.0,   value2=75.0 /
+ &wt type='TEMP0', istep1=3751, istep2=4250, value1=75.0,   value2=37.5 /
+ &wt type='TEMP0', istep1=4251, istep2=4375, value1=37.5,   value2=37.5 /
+ &wt type='TEMP0', istep1=4376, istep2=4875, value1=37.5,   value2=0.0 /
+ &wt type='TEMP0', istep1=4876, istep2=5000, value1=0.0,    value2=0.0 /
+ &wt type='END' /
+
+ &xray
+  spacegroup_name='P1',
+  pdb_infile = 'uc.pdb',
+  pdb_read_coordinates=.false.,
+  reflection_infile = 'real.dat',
+  ! fmtz_outfile = 'bs.fmtz',
+  atom_selection_mask = ':1-264',
+  xray_weight_initial = 1.,
+  xray_weight_final = 1.,
+  bulk_solvent_model='afonine-2013',
+  target='ml',
+ /

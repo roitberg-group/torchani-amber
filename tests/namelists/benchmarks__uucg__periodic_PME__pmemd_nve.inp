@@ -1,0 +1,24 @@
+ Typical Production MD NVE 
+ &cntrl
+   ntx=1, irest=0, 
+   imin=1, maxcyc=0,
+   ntc=1, ntf=1, tol=0.00000001,
+!   nstlim=0,
+   ntpr=1, ntwx=1,
+   ntwr=1, 
+   dt=0.0001, cut=9.0
+   ntt=0, tempi=0.0
+   ntb=1, 
+   ntp=0,
+   ioutfm=1,
+ /
+ &ewald
+  vdwmeth=0,
+  ew_coeff=0.348832, 
+  nfft1=80,
+  nfft2=80,
+  nfft3=80,
+  order=4,
+  netfrc=0,
+ /
+

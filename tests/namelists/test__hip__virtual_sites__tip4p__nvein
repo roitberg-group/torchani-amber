@@ -1,0 +1,9 @@
+Constant energy dynamics of tip4p
+ &cntrl
+  imin=0, ntx=5, irest=1,
+  nstlim=10, dt=0.0000001,
+  ntc=2, ntf=2,
+  ntpr=1, ntwx=0, ntwr=0,
+  cut=9.0, ntb=1, ntp=0, ntt=0, 
+  nmropt=0, ioutfm=0, tol=0.0000001,
+ /

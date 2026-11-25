@@ -1,0 +1,7 @@
+minimisation stage-1
+ &cntrl
+  imin=1, maxcyc=500, ncyc=50,
+  ntb=1,
+  ntr=0,
+  cut=8.,
+ /

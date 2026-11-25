@@ -1,0 +1,30 @@
+
+ &cntrl
+  igb = 0, ntx = 5, irest = 1,
+  ntb = 1, ntp = 0, temp0 = 300.0,
+  ntt = 3, gamma_ln = 1.0,
+  ntf = 2, ntc = 2, tol = 0.00001,
+  cut = 8.0, dt = 0.002, ig = 71277,
+  ntpr = 5, ntwx = 0, nstlim = 50, infe = 1,
+ /
+
+ &abmd
+
+   monitor_file = 'abmd.3.txt'
+   monitor_freq = 3
+
+   umbrella_file = 'umbrella.3.nc'
+   
+   selection_freq = 10
+   selection_constant = 0.02
+
+   wt_temperature = 10000.0
+   wt_umbrella_file = 'wt_umbrella.3.nc'
+
+   mode = 'FLOODING'
+
+   timescale = 4.0
+
+   cv_file = 'cv.in'
+
+ /

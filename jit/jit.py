@@ -18,7 +18,7 @@ class ModelSpec:
     infer: bool = False
 
     @property
-    def kwargs(self) -> tp.Dict[str, tp.Any]:
+    def kwargs(self) -> dict[str, tp.Any]:
         return {"neighborlist": "adaptive", "strategy": "cuaev"}
 
     def file_path(self) -> Path:
@@ -29,8 +29,8 @@ class ModelSpec:
 
 def _check_which_models_need_compilation(
     force_recompilation: bool,
-    infer_model: str = "",
-) -> tp.List[ModelSpec]:
+    infer: bool = False,
+) -> list[ModelSpec]:
     model_names: tuple[str, ...] = (
         "ANI1x",
         "ANI1ccx",
@@ -44,34 +44,20 @@ def _check_which_models_need_compilation(
         # "ANIr2s_ch3cn",
         # "ANIr2s_chcl3",
     )
-    if infer_model:
-        model_names = (infer_model.replace("ani", "ANI"),)
-        infer = True
-    else:
-        infer = False
+    all_specs = [ModelSpec(cls=name) for name in model_names]
+    if infer:
+        all_specs.extend(ModelSpec(cls=name, infer=True) for name in model_names)
 
     specs = []
-    for name in model_names:
-        # TODO: With infer this segfaults sometimes !!! not sure what's up
-        if infer and not (
-            name in ["ANI1x", "ANI2x", "ANI2xr", "ANI2dr"] or name.startswith("ANIr2s")
-        ):
-            continue
-        spec = ModelSpec(cls=name, infer=infer)
+    for spec in all_specs:
         if spec.file_path().exists() and not force_recompilation:
             continue
         specs.append(spec)
     if specs:
         console.print("-- JIT - Will attempt to compile the following models:")
         for s in specs:
-            console.print(f"-- {s.cls}")  # noqa
+            console.print(f"-- {s.file_path().stem}")  # noqa
     return specs
-
-
-def _reset_jit_registry():
-    torch._C._jit_clear_class_registry()
-    torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
-    torch.jit._state._clear_class_state()
 
 
 def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
@@ -86,9 +72,6 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
         model.potentials["nnp"].neural_networks = model.potentials[
             "nnp"
         ].neural_networks.to_infer_model(use_mnp=False)
-
-    # TODO: is this still needed?
-    _reset_jit_registry()
     torch.jit.save(torch.jit.script(model), spec.file_path())
     return True
 
@@ -110,13 +93,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--disable-optimizations",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
-        "--infer-model",
-        type=str,
-        default="",
+        "--infer",
+        action="store_true",
+        default=False,
+        help="Also compile the inference-optimized (*-infer.pt) version of each model",
     )
     parser.add_argument(
         "--force",
@@ -135,14 +119,34 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.aimnet2:
-        from aimnet2_wrapper import generate_aimnet2_wrapper
+        # The wrappers are written once (they are only rewritten with --force); if
+        # their dependencies (e.g. ase) are missing, warn and go on with the rest
+        aimnet2_files = [
+            JIT_DIR / "aimnet2" / f"aimnet2-{lot}-{mbis}{suffix}.pt"
+            for lot in ("b973c", "wb97m")
+            for mbis in ("", "mbis-")
+            for suffix in ("nocut", "dsf")
+        ]
+        if all(f.exists() for f in aimnet2_files) and not args.force:
+            console.print("-- JIT - AimNet2 wrappers found, not generating them again")
+            args.aimnet2 = False
+        else:
+            try:
+                from aimnet2_wrapper import generate_aimnet2_wrapper
+            except ImportError as e:
+                console.print(
+                    f"-- JIT - Can't generate the AimNet2 wrappers ({e});"
+                    " the AimNet2 models will not be available",
+                    style="yellow",
+                )
+                args.aimnet2 = False
     if args.nutmeg:
         from nutmeg_wrapper import generate_nutmeg_wrapper
 
     try:
         model_specs = _check_which_models_need_compilation(
             force_recompilation=args.force,
-            infer_model=args.infer_model,
+            infer=args.infer,
         )
         if model_specs:
             # If we actually need to compile something we import torch and torchani
@@ -153,7 +157,9 @@ if __name__ == "__main__":
             import torch
             import torchani
 
-            # TODO Does this do anything?
+            # NOTE: Confirmed to be a no-op (the saved *.pt files are identical), since
+            # these flags only affect how torch *runs* TorchScript graphs
+            # TODO: Remove this in the future
             if args.disable_optimizations:
                 console.print(
                     "-- JIT - Disabling optimizations before scripting",
@@ -162,7 +168,8 @@ if __name__ == "__main__":
         success = True
         console.print("-- JIT - Starting to compile models")
         for spec in tqdm(model_specs, leave=False):
-            success = _jit_compile_and_save_models_in_spec(spec)
+            if not _jit_compile_and_save_models_in_spec(spec):
+                success = False
 
         if success:
             if model_specs:
@@ -171,6 +178,14 @@ if __name__ == "__main__":
                 console.print("-- JIT - Done (nothing to compile)", style="green")
         else:
             console.print("-- JIT - Done, but failed for some models", style="yellow")
+        custom_mlmm_file = JIT_DIR / "animbis-custom-mlmm.pt"
+        if args.force or not custom_mlmm_file.exists():
+            console.print("-- JIT - Generating ANImbis custom ML/MM wrapper")
+            from custom_mlmm_wrapper import generate_custom_mlmm_wrapper
+
+            generate_custom_mlmm_wrapper(
+                custom_mlmm_file, neighborlist="adaptive", strategy="cuaev"
+            )
         if args.aimnet2:
             console.print("-- JIT - Generating AimNet2 Wrappers")
             # jit one model to cache the NNPotential class
