@@ -44,10 +44,8 @@ cd "${repo_root}"
         -o -path ./environment.yaml \
         -o -path ./build \
         -o -path ./inputs \
-        -o -path './jit/*.csv' \
+        -o -path ./jit \
         -o -path ./tests \
-        -o -path ./jit/aimnet2 \
-        -o -path ./jit/nutmeg \
         -o -path ./submodules/Catch2 \
         -o -path ./submodules/torchani \
         -o -path "./${bundle_name}.tar.gz" \) -prune \
@@ -60,5 +58,5 @@ cd "${repo_root}"
     --transform "s,^\.,${bundle_name}," \
     -T -
 
-echo "WARNING: tests/ and inputs/ are not packed" >&2
+echo "WARNING: tests/, inputs/ and jit/ are not packed" >&2
 echo "Created ${output}"

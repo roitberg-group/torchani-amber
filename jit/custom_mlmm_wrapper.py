@@ -87,12 +87,12 @@ class CustomMLMMANImbis(torch.nn.Module):
     ) -> SpeciesEnergiesAtomicCharges:
         return self.model(
             species_coordinates,
-            cell,
-            pbc,
-            charge,
-            atomic,
-            ensemble_values,
-            molecule_idxs,
+            cell=cell,
+            pbc=pbc,
+            charge=charge,
+            atomic=atomic,
+            ensemble_values=ensemble_values,
+            molecule_idxs=molecule_idxs,
         )
 
     # Inputs are in Angstrom and e, output is in Hartree
@@ -115,14 +115,16 @@ class CustomMLMMANImbis(torch.nn.Module):
         molecule_idxs: Tensor | None = None,
     ) -> Tensor:
         species, coords = species_coordinates
+        if spin_mult is not None and bool((spin_mult != 1).any()):
+            raise ValueError("The custom ML/MM wrapper only supports spin_mult = 1")
         output = self.model(
             species_coordinates,
-            cell,
-            pbc,
-            charge,
-            atomic,
-            ensemble_values,
-            molecule_idxs,
+            cell=cell,
+            pbc=pbc,
+            charge=charge,
+            atomic=atomic,
+            ensemble_values=ensemble_values,
+            molecule_idxs=molecule_idxs,
         )
         # Shapes: delta (C, M, N, 3), distances (C, M, N), efield (C, N, 3)
         delta = mm_coords.unsqueeze(2) - coords.unsqueeze(1)
