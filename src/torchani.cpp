@@ -30,6 +30,7 @@
 #include "config.h"
 #include "constants.h"
 #include "electro.h"
+#include "io.h"
 #include "mlip.h"
 #include "timing.h"
 
@@ -322,6 +323,99 @@ void storeResults(const mlip::MlipOutput& output) {
     }
 }
 
+// Output files of the write_mlmm_* options. The forces are only the ones calculated by
+// the MLIP Interface, they don't include contributions added later by the md engine
+const std::string ML_COORDS_FILE = "ml_region.xyz";
+const std::string ML_FORCES_FILE = "forces_ml_region.mlip.dat";
+const std::string MM_FORCES_FILE = "forces_mlmm_mm_region.mlip.dat";
+const std::string ML_ATOMIC_CHARGES_FILE = "atomic_charges_ml_region.mlip.dat";
+
+// Path of an output file, in the output_dir option, or the current working directory if
+// it is empty
+std::string outputPath(const std::string& fname) {
+    const std::string& output_dir = global_config.getString("output_dir");
+    if (output_dir.empty()) {
+        return fname;
+    }
+    return (std::filesystem::path(output_dir) / fname).string();
+}
+
+// Create empty output files for the write_mlmm_* options that are set, and output_dir if
+// it doesn't exist
+void createMlmmOutputFiles() {
+    bool writes_outputs = global_config.getBool("write_mlmm_coords")
+        or global_config.getBool("write_mlmm_forces")
+        or global_config.getBool("write_mlmm_atomic_charges");
+    if (not writes_outputs) {
+        return;
+    }
+    try {
+        const std::string& output_dir = global_config.getString("output_dir");
+        if (not output_dir.empty()) {
+            std::filesystem::create_directories(output_dir);
+        }
+        if (global_config.getBool("write_mlmm_coords")) {
+            io::createEmptyFile(outputPath(ML_COORDS_FILE));
+        }
+        if (global_config.getBool("write_mlmm_forces")) {
+            io::createEmptyFile(outputPath(ML_FORCES_FILE));
+            io::createEmptyFile(outputPath(MM_FORCES_FILE));
+        }
+        if (global_config.getBool("write_mlmm_atomic_charges")) {
+            io::createEmptyFile(outputPath(ML_ATOMIC_CHARGES_FILE));
+        }
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
+// Append the outputs of an ML/MM calculation requested by the write_mlmm_* options.
+// Forces are in Hartree/Angstrom, and are written in kcal/mol/Angstrom
+void writeMlmmOutputs(
+    const torch::Tensor& atomic_numbers,
+    const torch::Tensor& ml_coords,
+    const torch::Tensor& ml_forces,
+    const torch::Tensor& mm_forces,
+    const mlip::MlipOutput& output
+) {
+    try {
+        if (global_config.getBool("write_mlmm_coords")) {
+            io::appendXyzFrame(
+                outputPath(ML_COORDS_FILE),
+                atomic_numbers.view({-1}),
+                ml_coords.view({-1, 3}),
+                "ML/MM: .xyz trajectory file of the ML region"
+            );
+        }
+        if (global_config.getBool("write_mlmm_forces")) {
+            io::appendDatFrame(
+                outputPath(ML_FORCES_FILE),
+                ml_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
+            );
+            if (mm_forces.numel() > 0) {
+                io::appendDatFrame(
+                    outputPath(MM_FORCES_FILE),
+                    mm_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
+                );
+            }
+        }
+        if (global_config.getBool("write_mlmm_atomic_charges")) {
+            if (output.count("atomic_charges") == 0) {
+                throw std::runtime_error(
+                    "write_mlmm_atomic_charges = T, but the model doesn't predict atomic charges"
+                );
+            }
+            io::appendDatFrame(
+                outputPath(ML_ATOMIC_CHARGES_FILE), output.at("atomic_charges").view({-1})
+            );
+        }
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
 // Charges of the ML atoms stored by the md engine, used by the coupling if
 // use_mlip_atomic_charges = F. Exits if they are missing, or don't match the ML atoms
 torch::Tensor fixedAtomicCharges(int ml_atoms_num, const std::string& mlmm_coupling) {
@@ -401,6 +495,7 @@ void calcEnergyForceCustomMlmm(
         output.at("forces"), output.at("mm_forces"), ml_atoms_num, mm_atoms_num,
         ml_forces_buf, mm_forces_buf
     );
+    writeMlmmOutputs(atomic_numbers, ml_coords, output.at("forces"), output.at("mm_forces"), output);
     populateEnergyScalar(energy, ene_pot_total_buf);
     if (verbose) {
         std::cout << std::fixed << std::setprecision(4)
@@ -556,6 +651,7 @@ void calcEnergyForceMlmm(
         ml_forces_buf,
         mm_forces_buf
     );
+    writeMlmmOutputs(atomic_numbers, ml_coords, ml_forces, mm_forces, output);
     populateEnergyScalar(ene_pot_total, ene_pot_total_buf);
     if (verbose) {
         double ene_pot_invacuo_kcal = 0.0;
@@ -772,6 +868,10 @@ void mlip_initialize(
         tensor_container.store("__all_extra_features", extra_features);
         tensor_container.store("__extra_features", extra_features);
         setModelExtraFeatures(extra_features);
+    }
+
+    if (read_mlmm_config) {
+        createMlmmOutputFiles();
     }
 
     // (7) Epilogue

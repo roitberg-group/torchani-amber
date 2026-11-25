@@ -1004,3 +1004,60 @@ TEST_CASE("Models without spin_mult only support spin_mult = 1", "[spin_mult]") 
         Catch::Matchers::ContainsSubstring("only spin_mult = 1 is supported")
     );
 }
+
+TEST_CASE("ML/MM output files", "[io]") {
+    const int size = 2;
+    int atomic_numbers[size] = {1, 6};
+    double coords[size][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    double mm_coords[1][3] = {{6.0, 6.0, 6.0}};
+    double mm_atomic_charges[1] = {0.5};
+    double ml_forces[size][3];
+    double mm_forces[1][3];
+    double energy;
+    std::filesystem::path output_dir =
+        std::filesystem::temp_directory_path() / "torchani_test_mlmm_outputs";
+    std::filesystem::remove_all(output_dir);
+    mlip_initialize(
+        size,
+        atomic_numbers,
+        writeMlipConfig(
+            "animbis", 0, true, false, false, 0,
+            "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+            "  write_mlmm_coords = T, write_mlmm_forces = T, write_mlmm_atomic_charges = T,\n"
+            "  output_dir = '" + output_dir.string() + "',\n"
+        ).c_str(),
+        true,
+        "none",
+        false
+    );
+    for (int step = 0; step != 2; ++step) {
+        mlip_calc_energy_force_mlmm(
+            size, 1, coords, mm_coords, mm_atomic_charges, nullptr, false, false,
+            ml_forces, mm_forces, &energy
+        );
+    }
+    auto read_lines = [](const std::filesystem::path& path) {
+        std::ifstream file(path);
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) {
+            lines.push_back(line);
+        }
+        return lines;
+    };
+    // Two frames of: atom count, comment, one line per atom
+    std::vector<std::string> xyz = read_lines(output_dir / "ml_region.xyz");
+    REQUIRE(xyz.size() == 8);
+    CHECK(xyz[0] == "       2");
+    CHECK(xyz[2] == "  1      3.0000000      3.0000000      4.0000000");
+    // Two frames of: one line per atom, and an empty line
+    std::vector<std::string> ml_forces_lines =
+        read_lines(output_dir / "forces_ml_region.mlip.dat");
+    REQUIRE(ml_forces_lines.size() == 6);
+    CHECK(ml_forces_lines[2].empty());
+    double fx = std::stod(ml_forces_lines[0].substr(0, 15));
+    CHECK_THAT(fx, Catch::Matchers::WithinAbs(ml_forces[0][0], 1e-6));
+    CHECK(read_lines(output_dir / "forces_mlmm_mm_region.mlip.dat").size() == 4);
+    CHECK(read_lines(output_dir / "atomic_charges_ml_region.mlip.dat").size() == 6);
+    std::filesystem::remove_all(output_dir);
+}

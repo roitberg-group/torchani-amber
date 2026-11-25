@@ -293,11 +293,11 @@ For ML/MM, set the charge and spin multiplicity of the ML region with `qmcharge`
 The `&mlip` namelist remains the same, with the following extra available options:
 
 Output related options:
-- `write_ml_coords` (bool)
+- `write_mlmm_coords` (bool)
    Dump xyz coordinates of QM region as a `.xyz` file
-- `write_ml_forces` (bool)
+- `write_mlmm_forces` (bool)
    Dump forces acting on QM atoms as a `.dat` file
-- `write_ml_atomic_charges` (bool)
+- `write_mlmm_atomic_charges` (bool)
    Dump charges of the QM atoms as a `.dat` file
 
 ML/MM and electrostatic related options:
