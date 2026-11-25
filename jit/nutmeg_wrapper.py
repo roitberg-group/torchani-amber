@@ -67,6 +67,20 @@ class NutmegWrapper(torch.nn.Module):
             device=self._atomic_charges.device,
         )
 
+    # The model has no total charge input, it is implied by the Gasteiger charges
+    def _check_charge(self, charge: Tensor) -> None:
+        expect_charge = float(self._atomic_charges.sum())
+        for i in range(charge.shape[0]):
+            passed_charge = float(charge[i])
+            if abs(passed_charge - expect_charge) > 1e-5:
+                raise ValueError(
+                    "Nutmeg models take the total charge from the sum of the Gasteiger"
+                    " charges (the extra features), which is "
+                    + str(expect_charge)
+                    + ", but the total charge passed is "
+                    + str(passed_charge)
+                )
+
     def _create_atom_features(
         self, species: Tensor, coords: Tensor
     ) -> tuple[Tensor, Tensor]:
@@ -115,6 +129,8 @@ class NutmegWrapper(torch.nn.Module):
     ) -> tuple[Tensor, Tensor]:
 
         species, coords = species_coords
+        if charge is not None:
+            self._check_charge(charge)
         neigh = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
         full_idxs = torch.cat((neigh.indices, neigh.indices.flipud()), dim=1)
         species = species.squeeze(0)

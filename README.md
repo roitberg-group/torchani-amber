@@ -173,12 +173,12 @@ namelists in your input file:
 - The usual `&cntrl` namelist, which *must have* the flag `iextpot = 2`, together
   with the usual simulation configuration.
 - Second, the `&extpot` namelist, with the only setting `extprog = 'TORCHANI'`.
-- Third, the `&ani` namelist, with the actual `TorchANI` configuration.
+- Third, the `&mlip` namelist, with the actual `TorchANI` configuration.
 
-The `&ani` namelist supports the following basic options:
+The `&mlip` namelist supports the following basic options:
 - `model_type` (*string*)
    The neural network to choose. Possible values are `"ani1x"`, `"ani1ccx"`, `"ani2x"`,
-   `anidr`. For usage of custom models see section *Support for custom
+   `"ani2dr"`. For usage of custom models see section *Support for custom
    models*. Default is `"ani2x"` (case sensitive).
 - `use_double_precision` (*bool*)
    Determines whether the network runs using float64 parameters. Defaults to `.true.` We
@@ -188,13 +188,19 @@ The `&ani` namelist supports the following basic options:
    the flag is set to `.true.` and a CUDA enabled GPU can't be found, TorchANI-Amber
    will exit with an error. CUDA acceleration provides a very significant performance
    boost over CPU.
+- `ml_charge` (*int*)
+   Total charge of the system evaluated by the model. Default is `0`. Not all models
+   support charged systems.
+- `ml_spin_mult` (*int*)
+   Spin multiplicity of the system evaluated by the model. Default is `1`. Not all
+   models support spin multiplicities other than `1`.
 
 There are also some advanced options:
 - `use_cuaev` (*bool*)
    Whether to use the cuAEV compiled extension to accelerate potentials that support it.
-- `use_amber_neighborlist` (*bool*)
+- `use_external_neighborlist` (*bool*)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
-- `use_all_amber_nonbond` (*bool*)
+- `use_external_nonbond` (*bool*)
    Whether to let Sander handle all inter-molecular non-bonded interactions. See
    section *Amber-NB configuration*. Default is `.false.`.
 - `model_index` (*int*)
@@ -217,7 +223,7 @@ An example `mdin` input file with the correct format:
 &extpot
     extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
 /
-&ani
+&mlip
     model_type = "ani2x"
     use_double_precision = .true.
     use_cuda_device = .true.
@@ -234,7 +240,7 @@ electrostatics) are calculated by the force field. Molecules are defined by the
 `ATOMS_PER_MOLECULE` section of the topology file. This configuration is useful, for
 example, for memory-hungry models, or for offloading long range interactions to the FF.
 
-To use it, set `use_all_amber_nonbond = .true.` in the `&ani` namelist of a full-ML
+To use it, set `use_external_nonbond = .true.` in the `&mlip` namelist of a full-ML
 input. The other namelists stay the same.
 Pmemd is (currently) not supported for this configuration. Periodic boundary conditions
 (`igb = 0`) are required.
@@ -250,9 +256,9 @@ An example `mdin` input file for the Amber-NB configuration is, schematically:
 &extpot
     extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
 /
-&ani
+&mlip
     model_type = "ani2x"
-    use_all_amber_nonbond = .true.  ! Required for the Amber-NB configuration
+    use_external_nonbond = .true.  ! Required for the Amber-NB configuration
     use_double_precision = .true.
     use_cuda_device = .true.
     use_cuaev = .true.
@@ -279,20 +285,23 @@ turned off automatically if `ntb = 0` or `use_pme = 0`, so it must be set explic
 for periodic systems. The QM region has no default, it must be selected with `qmmask`
 (or `iqmatoms`). `qmcut` defaults to the value of `cut` in the `&cntrl` namelist.
 
-The `&ani` namelist remains the same, with the following extra available options:
+For ML/MM, set the charge and spin multiplicity of the ML region with `qmcharge` and
+`spin` in the `&qmmm` namelist, instead of `ml_charge` and `ml_spin_mult` in the
+`&mlip` namelist. TorchANI-Amber takes them from `&qmmm`, and Sander also uses
+`qmcharge` (e.g. to adjust the MM charges, see `adjust_q`).
+
+The `&mlip` namelist remains the same, with the following extra available options:
 
 Output related options:
-- `write_xyz` (bool)
+- `write_ml_coords` (bool)
    Dump xyz coordinates of QM region as a `.xyz` file
-- `write_forces` (bool)
+- `write_ml_forces` (bool)
    Dump forces acting on QM atoms as a `.dat` file
-- `write_charges` (bool)
+- `write_ml_atomic_charges` (bool)
    Dump charges of the QM atoms as a `.dat` file
-- `write_charges_grad` (bool)
-   Dump charge derivatives w.r.t. coords of the QM atoms as a `.dat` file
 
 ML/MM and electrostatic related options:
-- `use_torchani_charges` (bool)
+- `use_mlip_atomic_charges` (bool)
    **This option can only be specified if a charge-predicting model is selected.**
    Currently the `model_type`s that support it are `animbis` and `aimnet2-*-mbis-*`.
    Partial charges for the QM atoms will be predicted by TorchANI (MBIS atomic charges at
@@ -306,9 +315,9 @@ ML/MM and electrostatic related options:
    integers `0`, `1`, `2` and `3` are deprecated aliases of these values, in that order.
 
 We recommend using one of the following two settings:
-- *mlmm_coupling = 'simple-polarizable'* and *use_torchani_charges=.true.* (variable
+- *mlmm_coupling = 'simple-polarizable'* and *use_mlip_atomic_charges=.true.* (variable
   nn-predicted charges)
-- *mlmm_coupling = 'coulombic'* and *use_torchani_charges=.false.* (fixed topology
+- *mlmm_coupling = 'coulombic'* and *use_mlip_atomic_charges=.false.* (fixed topology
   charges)
 
 A template for the first setting (simple polarizable with variable charges) is:
@@ -323,13 +332,14 @@ A template for the first setting (simple polarizable with variable charges) is:
     qm_ewald = 0  ! Required for Sander EXTERN QM/MM
     qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
     qmmask = ':1',  ! Select the first molecule as the QM-region
+    qmcharge = 0  ! Charge of the ML region
+    spin = 1  ! Spin multiplicity of the ML region
     qmcut = 15.0  ! Recommended
 /
-&ani
+&mlip
     model_type = 'animbis'  ! Charge-predicting model, 'animbis' or 'aimnet2-*-mbis-*'
-    use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
+    use_mlip_atomic_charges = .true.  ! Use geometry dependent, nn-predicted charges
     mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
-    use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
@@ -348,11 +358,10 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
     qmmask = ':1'  ! Select the first molecule as the QM-region
     qmcut = 15.0  ! Recommended
 /
-&ani
+&mlip
     model_type = 'ani2x'  ! Select any model
-    use_torchani_charges = .false.  ! Use fixed topology charges
+    use_mlip_atomic_charges = .false.  ! Use fixed topology charges
     mlmm_coupling = 'coulombic'  ! Coulombic coupling
-    use_torch_coupling = .True.  ! Accelerated torch coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```

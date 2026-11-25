@@ -30,8 +30,8 @@ void mlip_set_no_eval_atoms_mask(
 );
 
 // Set the ml_charge and ml_spin_mult options of the config, which can change between
-// calls. Exits if called between mlip_energy_atomic_charges_retain and
-// mlip_energy_atomic_charges_vjp
+// calls. Exits if called between mlip_calc_energy_atomic_charges_retain and
+// mlip_calc_energy_atomic_charges_vjp
 void mlip_set_ml_charge_and_spin_mult(
     int charge,
     int spin_mult
@@ -44,7 +44,6 @@ void mlip_calc_energy_force(
     bool use_pbc,
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
-    int charge,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* potential_energy
@@ -58,7 +57,6 @@ void mlip_calc_energy_force_from_external_neighbors(
     double shifts[][3],  // Shape (num_neighbors, 3)
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
-    int charge,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double* potential_energy
@@ -71,7 +69,6 @@ void mlip_calc_energy_force_atomic_charges(
     bool use_pbc,
     int molecule_idxs[],  // Shape (num_atoms,)
     bool calc_only_bonded,
-    int charge,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
     double atomic_charges[],  // Shape (num_atoms,)
@@ -86,19 +83,18 @@ void mlip_calc_energy_force_atomic_charges(
 // charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 // single call (not currently implemented).
 // For an md engine that uses the predicted charges in its own electrostatics
-// (e.g. PME). mlip_energy_atomic_charges_retain returns the in-vacuo energy
+// (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
 // and the charges (forward pass only) and keeps the graph. Then
-// mlip_energy_atomic_charges_vjp, given
+// mlip_calc_energy_atomic_charges_vjp, given
 // ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
 // the in-vacuo forces plus the forces due to the charges
 // changing with the geometry (ml_electrostatic_potential held fixed)
 //   forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
 // with a single backward pass, and frees the graph (zero potential gives the
 // in-vacuo forces).
-void mlip_energy_atomic_charges_retain(
+void mlip_calc_energy_atomic_charges_retain(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
-    int charge,
     /* outputs */
     double atomic_charges[],  // Shape (num_atoms,)
     double* potential_energy
@@ -115,7 +111,7 @@ void mlip_energy_atomic_charges_retain(
 // The returned forces don't include the electrostatic force at fixed charges on the
 // ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 // otherwise the forces on the ML atoms are incomplete.
-void mlip_energy_atomic_charges_vjp(
+void mlip_calc_energy_atomic_charges_vjp(
     int num_atoms,
     double ml_electrostatic_potential[],  // Shape (num_atoms,)
     /* outputs */
@@ -146,7 +142,6 @@ void mlip_calc_energy_force_mlmm(
     bool calc_only_bonded,
     bool predict_charges,
     const char* mlmm_coupling,
-    int ml_charge,
     bool verbose,
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)
@@ -170,7 +165,6 @@ void mlip_calc_energy_force_mlmm_qbc(
     bool calc_only_bonded,
     bool predict_charges,
     const char* mlmm_coupling,
-    int ml_charge,
     bool verbose,
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)

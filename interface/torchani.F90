@@ -11,8 +11,8 @@ public :: &
     mlip_calc_energy_force, &
     mlip_calc_energy_force_from_external_neighbors, &
     mlip_calc_energy_force_atomic_charges, &
-    mlip_energy_atomic_charges_retain, &
-    mlip_energy_atomic_charges_vjp, &
+    mlip_calc_energy_atomic_charges_retain, &
+    mlip_calc_energy_atomic_charges_vjp, &
     mlip_calc_energy_force_mlmm, &
     mlip_calc_energy_force_mlmm_qbc, &
     mlip_store_mask_tensor, &
@@ -78,8 +78,8 @@ subroutine internal_set_no_eval_atoms_mask( &
 endsubroutine
 
 ! Set the ml_charge and ml_spin_mult options of the config, which can change between
-! calls. Exits if called between mlip_energy_atomic_charges_retain and
-! mlip_energy_atomic_charges_vjp
+! calls. Exits if called between mlip_calc_energy_atomic_charges_retain and
+! mlip_calc_energy_atomic_charges_vjp
 subroutine mlip_set_ml_charge_and_spin_mult( &
     charge, &
     spin_mult &
@@ -96,7 +96,6 @@ subroutine internal_calc_energy_force( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     potential_energy &
 ) bind(c, name="mlip_calc_energy_force")
@@ -107,7 +106,6 @@ subroutine internal_calc_energy_force( &
     logical(c_bool), value, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -121,7 +119,6 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     shifts, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     potential_energy &
 ) bind(c, name="mlip_calc_energy_force_from_external_neighbors")
@@ -133,7 +130,6 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(in) :: shifts(*)
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -146,7 +142,6 @@ subroutine internal_calc_energy_force_atomic_charges( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     atomic_charges, &
     potential_energy &
@@ -158,7 +153,6 @@ subroutine internal_calc_energy_force_atomic_charges( &
     logical(c_bool), value, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical(c_bool), value, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: atomic_charges(*)
@@ -173,26 +167,24 @@ endsubroutine
 ! charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
 ! single call (not currently implemented).
 ! For an md engine that uses the predicted charges in its own electrostatics
-! (e.g. PME). mlip_energy_atomic_charges_retain returns the in-vacuo energy
+! (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
 ! and the charges (forward pass only) and keeps the graph. Then
-! mlip_energy_atomic_charges_vjp, given
+! mlip_calc_energy_atomic_charges_vjp, given
 ! ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
 ! the in-vacuo forces plus the forces due to the charges
 ! changing with the geometry (ml_electrostatic_potential held fixed)
 !   forces[j] = - d/d(coords j) [E + sum_k ml_electrostatic_potential[k] * charge k]
 ! with a single backward pass, and frees the graph (zero potential gives the
 ! in-vacuo forces).
-subroutine mlip_energy_atomic_charges_retain( &
+subroutine mlip_calc_energy_atomic_charges_retain( &
     num_atoms, &
     coords, &
-    charge, &
     atomic_charges, &
     potential_energy &
-) bind(c, name="mlip_energy_atomic_charges_retain")
+) bind(c, name="mlip_calc_energy_atomic_charges_retain")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: coords(*)
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: atomic_charges(*)
     real(c_double), intent(out) :: potential_energy
@@ -209,11 +201,11 @@ endsubroutine
 ! The returned forces don't include the electrostatic force at fixed charges on the
 ! ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
 ! otherwise the forces on the ML atoms are incomplete.
-subroutine mlip_energy_atomic_charges_vjp( &
+subroutine mlip_calc_energy_atomic_charges_vjp( &
     num_atoms, &
     ml_electrostatic_potential, &
     forces &
-) bind(c, name="mlip_energy_atomic_charges_vjp")
+) bind(c, name="mlip_calc_energy_atomic_charges_vjp")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     real(c_double), intent(in) :: ml_electrostatic_potential(*)
@@ -245,7 +237,6 @@ subroutine internal_calc_energy_force_mlmm( &
     calc_only_bonded, &
     predict_charges, &
     mlmm_coupling, &
-    ml_charge, &
     verbose, &
     ml_forces, &
     mm_forces, &
@@ -264,7 +255,6 @@ subroutine internal_calc_energy_force_mlmm( &
     logical(c_bool), value, intent(in) :: calc_only_bonded
     logical(c_bool), value, intent(in) :: predict_charges
     character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
-    integer(c_int), value, intent(in) :: ml_charge
     logical(c_bool), value, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
@@ -288,7 +278,6 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     calc_only_bonded, &
     predict_charges, &
     mlmm_coupling, &
-    ml_charge, &
     verbose, &
     ml_forces, &
     mm_forces, &
@@ -309,7 +298,6 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     logical(c_bool), value, intent(in) :: calc_only_bonded
     logical(c_bool), value, intent(in) :: predict_charges
     character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
-    integer(c_int), value, intent(in) :: ml_charge
     logical(c_bool), value, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
@@ -435,7 +423,6 @@ subroutine mlip_calc_energy_force( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     potential_energy &
 )
@@ -445,7 +432,6 @@ subroutine mlip_calc_energy_force( &
     logical, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -456,7 +442,6 @@ subroutine mlip_calc_energy_force( &
         fbool_to_cbool(use_pbc), &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
-        charge, &
         forces, &
         potential_energy &
     )
@@ -472,7 +457,6 @@ subroutine mlip_calc_energy_force_from_external_neighbors( &
     shifts, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     potential_energy &
 )
@@ -483,7 +467,6 @@ subroutine mlip_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(in) :: shifts(*)
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: potential_energy
@@ -495,7 +478,6 @@ subroutine mlip_calc_energy_force_from_external_neighbors( &
         shifts, &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
-        charge, &
         forces, &
         potential_energy &
     )
@@ -510,7 +492,6 @@ subroutine mlip_calc_energy_force_atomic_charges( &
     use_pbc, &
     molecule_idxs, &
     calc_only_bonded, &
-    charge, &
     forces, &
     atomic_charges, &
     potential_energy &
@@ -521,7 +502,6 @@ subroutine mlip_calc_energy_force_atomic_charges( &
     logical, intent(in) :: use_pbc
     integer(c_int), intent(in) :: molecule_idxs(*)
     logical, intent(in) :: calc_only_bonded
-    integer(c_int), value, intent(in) :: charge
     ! Outputs
     real(c_double), intent(out) :: forces(*)
     real(c_double), intent(out) :: atomic_charges(*)
@@ -533,7 +513,6 @@ subroutine mlip_calc_energy_force_atomic_charges( &
         fbool_to_cbool(use_pbc), &
         molecule_idxs, &
         fbool_to_cbool(calc_only_bonded), &
-        charge, &
         forces, &
         atomic_charges, &
         potential_energy &
@@ -555,7 +534,6 @@ subroutine mlip_calc_energy_force_mlmm( &
     calc_only_bonded, &
     predict_charges, &
     mlmm_coupling, &
-    ml_charge, &
     verbose, &
     ml_forces, &
     mm_forces, &
@@ -573,7 +551,6 @@ subroutine mlip_calc_energy_force_mlmm( &
     logical, intent(in) :: calc_only_bonded
     logical, intent(in) :: predict_charges
     character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
-    integer(c_int), value, intent(in) :: ml_charge
     logical, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
@@ -594,7 +571,6 @@ subroutine mlip_calc_energy_force_mlmm( &
         fbool_to_cbool(calc_only_bonded), &
         fbool_to_cbool(predict_charges), &
         c_mlmm_coupling, &
-        ml_charge, &
         fbool_to_cbool(verbose), &
         ml_forces, &
         mm_forces, &
@@ -618,7 +594,6 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
     calc_only_bonded, &
     predict_charges, &
     mlmm_coupling, &
-    ml_charge, &
     verbose, &
     ml_forces, &
     mm_forces, &
@@ -638,7 +613,6 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
     logical, intent(in) :: calc_only_bonded
     logical, intent(in) :: predict_charges
     character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
-    integer(c_int), value, intent(in) :: ml_charge
     logical, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
@@ -661,7 +635,6 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
         fbool_to_cbool(calc_only_bonded), &
         fbool_to_cbool(predict_charges), &
         c_mlmm_coupling, &
-        ml_charge, &
         fbool_to_cbool(verbose), &
         ml_forces, &
         mm_forces, &

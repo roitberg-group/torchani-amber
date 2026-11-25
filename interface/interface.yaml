@@ -55,8 +55,8 @@ functions:
   - name: mlip_set_ml_charge_and_spin_mult
     comment: |
       Set the ml_charge and ml_spin_mult options of the config, which can change between
-      calls. Exits if called between mlip_energy_atomic_charges_retain and
-      mlip_energy_atomic_charges_vjp
+      calls. Exits if called between mlip_calc_energy_atomic_charges_retain and
+      mlip_calc_energy_atomic_charges_vjp
     args:
       - {name: charge, dtype: int}
       - {name: spin_mult, dtype: int}
@@ -69,7 +69,6 @@ functions:
       - {name: use_pbc, dtype: bool}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
@@ -82,7 +81,6 @@ functions:
       - {name: shifts, dtype: double, shape: [num_neighbors, 3]}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
@@ -94,12 +92,11 @@ functions:
       - {name: use_pbc, dtype: bool}
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
-      - {name: charge, dtype: int}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: mlip_energy_atomic_charges_retain
+  - name: mlip_calc_energy_atomic_charges_retain
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -109,9 +106,9 @@ functions:
       charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
       single call (not currently implemented).
       For an md engine that uses the predicted charges in its own electrostatics
-      (e.g. PME). mlip_energy_atomic_charges_retain returns the in-vacuo energy
+      (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
       and the charges (forward pass only) and keeps the graph. Then
-      mlip_energy_atomic_charges_vjp, given
+      mlip_calc_energy_atomic_charges_vjp, given
       ml_electrostatic_potential[k] = dE_mdengine/d(charge k) (kcal/mol/e), returns
       the in-vacuo forces plus the forces due to the charges
       changing with the geometry (ml_electrostatic_potential held fixed)
@@ -121,11 +118,10 @@ functions:
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: charge, dtype: int}
       - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
-  - name: mlip_energy_atomic_charges_vjp
+  - name: mlip_calc_energy_atomic_charges_vjp
     comment: |
       This two-call API (retain + vjp) is only needed if the md engine's energy includes
       interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
@@ -169,7 +165,6 @@ functions:
       - {name: calc_only_bonded, dtype: bool}
       - {name: predict_charges, dtype: bool}
       - {name: mlmm_coupling, dtype: str}
-      - {name: ml_charge, dtype: int}
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
@@ -193,7 +188,6 @@ functions:
       - {name: calc_only_bonded, dtype: bool}
       - {name: predict_charges, dtype: bool}
       - {name: mlmm_coupling, dtype: str}
-      - {name: ml_charge, dtype: int}
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}

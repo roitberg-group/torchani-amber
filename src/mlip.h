@@ -10,8 +10,8 @@
 
 namespace mlip {
 
-// Keys: "energy", "forces", "atomic_charges", "atomic_charge_grads", "qbc",
-// "qbc_grads", "mm_forces". All values are in Hartree and Angstrom.
+// Keys: "energy", "forces", "atomic_charges", "qbc", "qbc_grads", "mm_forces". All
+// values are in Hartree and Angstrom.
 using MlipOutput = std::unordered_map<std::string, torch::Tensor>;
 
 enum class ModelFormat { TORCHSCRIPT, PT2_AOTI, PYTHON, AUTO };
@@ -50,12 +50,12 @@ class MlipModel {
         const torch::Tensor& coords,
         const std::optional<torch::Tensor>& cell = std::nullopt,
         int net_charge = 0,
+        int spin_mult = 1,
         bool atomic = false,
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
         bool calc_charges = false,
-        bool calc_charges_grad = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeFromExternalNeighbors(
@@ -64,12 +64,12 @@ class MlipModel {
         const torch::Tensor& neighborlist,
         const torch::Tensor& shifts,
         int net_charge = 0,
+        int spin_mult = 1,
         bool atomic = false,
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
         bool calc_charges = false,
-        bool calc_charges_grad = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeMlmm(
@@ -89,7 +89,6 @@ class MlipModel {
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
         bool calc_charges = false,
-        bool calc_charges_grad = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeMultipoleMlmm(
@@ -111,7 +110,6 @@ class MlipModel {
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
         bool calc_charges = false,
-        bool calc_charges_grad = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
 };

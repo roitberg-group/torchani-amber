@@ -314,7 +314,6 @@ void calcEnergyForceCustomMlmm(
     bool use_pbc,
     int* molecule_idxs_buf,
     bool calc_only_bonded,
-    int ml_charge,
     bool verbose,
     /* outputs */
     double ml_forces_buf[][3],
@@ -355,8 +354,8 @@ void calcEnergyForceCustomMlmm(
         /*pairs_13=*/empty_pairs,
         /*pairs_14=*/empty_pairs,
         maybe_cell,
-        ml_charge,
-        /*spin_mult=*/1,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*mm_cutoff=*/0.0,
         /*atomic=*/false,
         /*ensemble_values=*/false,
@@ -395,7 +394,6 @@ void calcEnergyForceMlmm(
     bool calc_only_bonded,  // Only supported with mlmm_coupling = 'custom'
     bool predict_charges,
     const std::string& mlmm_coupling,  // lowercase
-    int ml_charge,
     bool verbose,
     bool calc_qbc,
     /* outputs */
@@ -441,7 +439,6 @@ void calcEnergyForceMlmm(
             use_pbc,
             molecule_idxs_buf,
             calc_only_bonded,
-            ml_charge,
             verbose,
             ml_forces_buf,
             mm_forces_buf,
@@ -456,13 +453,13 @@ void calcEnergyForceMlmm(
         atomic_numbers,
         ml_coords,
         /*cell=*/std::nullopt,
-        ml_charge,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*atomic=*/false,
         /*ensemble_values=*/false,
         /*molecule_idxs=*/std::nullopt,
         /*calc_forces=*/false,
         /*calc_charges=*/predict_charges,
-        /*calc_charges_grad=*/false,
         /*calc_qbc_and_qbc_grad=*/calc_qbc
     );
     torch::Tensor ene_pot_invacuo = output.at("energy");
@@ -567,7 +564,7 @@ void calcEnergyForceMlmm(
     }
 }
 
-// Between mlip_energy_atomic_charges_retain and mlip_energy_atomic_charges_vjp
+// Between mlip_calc_energy_atomic_charges_retain and mlip_calc_energy_atomic_charges_vjp
 void exitIfChargesGraphIsRetained(
     std::source_location loc = std::source_location::current()
 ) {
@@ -577,8 +574,8 @@ void exitIfChargesGraphIsRetained(
     if (charges_graph_is_retained) {
         std::cerr << "ERROR (libtorchani)\n"
                   << loc.function_name() << " can't be called between"
-                  << " mlip_energy_atomic_charges_retain and"
-                  << " mlip_energy_atomic_charges_vjp" << std::endl;
+                  << " mlip_calc_energy_atomic_charges_retain and"
+                  << " mlip_calc_energy_atomic_charges_vjp" << std::endl;
         std::exit(2);
     }
 }
@@ -819,7 +816,6 @@ void mlip_calc_energy_force_from_external_neighbors(
     double shifts_buf[][3],
     int* molecule_idxs_buf,  // Shape (num_atoms,)
     bool calc_only_bonded,
-    int charge,
     /* outputs */
     double forces_buf[][3],
     double* potential_energy_buf
@@ -866,7 +862,8 @@ void mlip_calc_energy_force_from_external_neighbors(
         coords,
         neighborlist,
         shifts,
-        charge,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*atomic=*/false,
         /*ensemble_values=*/false,
         maybe_molecule_idxs,
@@ -884,7 +881,6 @@ void mlip_calc_energy_force(
     bool use_pbc,
     int* molecule_idxs_buf,
     bool calc_only_bonded,
-    int charge,
     double forces_buf[][3],
     double* potential_energy
 ) {
@@ -915,7 +911,8 @@ void mlip_calc_energy_force(
         atomic_numbers,
         coords,
         maybe_cell,
-        charge,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*atomic=*/false,
         /*ensemble_values=*/false,
         maybe_molecule_idxs,
@@ -933,7 +930,6 @@ void mlip_calc_energy_force_atomic_charges(
     bool use_pbc,
     int* molecule_idxs_buf,
     bool calc_only_bonded,
-    int charge,
     /* outputs */
     double forces_buf[][3],
     double atomic_charges_buf[],
@@ -958,7 +954,8 @@ void mlip_calc_energy_force_atomic_charges(
         atomic_numbers,
         coords,
         maybe_cell,
-        charge,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*atomic=*/false,
         /*ensemble_values=*/false,
         maybe_molecule_idxs,
@@ -985,7 +982,6 @@ void mlip_calc_energy_force_mlmm(
     bool calc_only_bonded,
     bool predict_charges,
     const char* mlmm_coupling,
-    int ml_charge,
     bool verbose,
     /* outputs */
     double ml_forces_buf[][3],
@@ -1007,7 +1003,6 @@ void mlip_calc_energy_force_mlmm(
         calc_only_bonded,
         predict_charges,
         lowercase(mlmm_coupling),
-        ml_charge,
         verbose,
         /*calc_qbc=*/false,
         ml_forces_buf,
@@ -1031,7 +1026,6 @@ void mlip_calc_energy_force_mlmm_qbc(
     bool calc_only_bonded,
     bool predict_charges,
     const char* mlmm_coupling,
-    int ml_charge,
     bool verbose,
     /* outputs */
     double ml_forces_buf[][3],
@@ -1055,7 +1049,6 @@ void mlip_calc_energy_force_mlmm_qbc(
         calc_only_bonded,
         predict_charges,
         lowercase(mlmm_coupling),
-        ml_charge,
         verbose,
         /*calc_qbc=*/true,
         ml_forces_buf,
@@ -1067,10 +1060,9 @@ void mlip_calc_energy_force_mlmm_qbc(
     );
 }
 
-void mlip_energy_atomic_charges_retain(
+void mlip_calc_energy_atomic_charges_retain(
     int num_atoms,
     double coords_buf[][3],
-    int charge,
     /* outputs */
     double atomic_charges_buf[],
     double* potential_energy
@@ -1088,7 +1080,8 @@ void mlip_energy_atomic_charges_retain(
         atomic_numbers,
         coords,
         /*cell=*/std::nullopt,
-        charge,
+        global_config.getInt("ml_charge"),
+        global_config.getInt("ml_spin_mult"),
         /*atomic=*/false,
         /*ensemble_values=*/false,
         /*molecule_idxs=*/std::nullopt,
@@ -1108,7 +1101,7 @@ void mlip_energy_atomic_charges_retain(
     tensor_container.store("__retain_atomic_charges", atomic_charges);
 }
 
-void mlip_energy_atomic_charges_vjp(
+void mlip_calc_energy_atomic_charges_vjp(
     int num_atoms,
     double ml_electrostatic_potential_buf[],
     /* outputs */
@@ -1120,8 +1113,8 @@ void mlip_energy_atomic_charges_vjp(
         and tensor_container.contains("__retain_atomic_charges");
     if (not charges_graph_is_retained) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "mlip_energy_atomic_charges_vjp must follow a call to"
-                  << " mlip_energy_atomic_charges_retain" << std::endl;
+                  << "mlip_calc_energy_atomic_charges_vjp must follow a call to"
+                  << " mlip_calc_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
     torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(

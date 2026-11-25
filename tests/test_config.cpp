@@ -12,6 +12,7 @@
 // c10 defines a CHECK macro, which must not replace the one from Catch2
 #undef CHECK
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 using config::GlobalConfig;
 
@@ -454,4 +455,43 @@ TEST_CASE("GlobalConfig polarizabilities", "[config]") {
     CHECK_THROWS_AS(config.getPolarizability(0L), std::out_of_range);
     CHECK_THROWS_AS(config.getPolarizability(119L), std::out_of_range);
     CHECK_THROWS_AS(config.getPolarizability("Xx"), std::out_of_range);
+}
+
+TEST_CASE("GlobalConfig charge and spin from &qmmm", "[config]") {
+    const std::string fname = "torchani_test_config_charge_spin.in";
+    // Only in &qmmm: copied to &mlip
+    std::filesystem::path path =
+        writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = -1, spin = 2 /\n");
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true, true);
+    CHECK(config.getInt("ml_charge") == -1);
+    CHECK(config.getInt("ml_spin_mult") == 2);
+    // &qmmm is only read with validate_amber_config
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getInt("ml_charge") == 0);
+    CHECK(config.getInt("ml_spin_mult") == 1);
+    // Only in &mlip: kept, but a nonzero charge must also be set in &qmmm
+    writeTmpFile(fname, "&mlip ml_charge = 0, ml_spin_mult = 3 /\n&qmmm /\n");
+    config = GlobalConfig::fromNamelistFile(path.string(), true, true);
+    CHECK(config.getInt("ml_charge") == 0);
+    CHECK(config.getInt("ml_spin_mult") == 3);
+    writeTmpFile(fname, "&mlip ml_charge = 1 /\n&qmmm /\n");
+    CHECK_THROWS_WITH(
+        GlobalConfig::fromNamelistFile(path.string(), true, true),
+        Catch::Matchers::ContainsSubstring("ml_charge = 1 in &mlip requires the same qmcharge")
+    );
+    // In both, consistent
+    writeTmpFile(fname, "&mlip ml_charge = 1, ml_spin_mult = 3 /\n&qmmm qmcharge = 1, spin = 3 /\n");
+    CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), true, true));
+    // In both, inconsistent
+    writeTmpFile(fname, "&mlip ml_charge = 1 /\n&qmmm qmcharge = 0 /\n");
+    CHECK_THROWS_WITH(
+        GlobalConfig::fromNamelistFile(path.string(), true, true),
+        Catch::Matchers::ContainsSubstring("ml_charge = 1 in &mlip doesn't match qmcharge = 0")
+    );
+    writeTmpFile(fname, "&mlip ml_spin_mult = 1 /\n&qmmm spin = 2 /\n");
+    CHECK_THROWS_WITH(
+        GlobalConfig::fromNamelistFile(path.string(), true, true),
+        Catch::Matchers::ContainsSubstring("ml_spin_mult = 1 in &mlip doesn't match spin = 2")
+    );
+    std::filesystem::remove(path);
 }

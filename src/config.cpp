@@ -13,6 +13,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -331,7 +332,39 @@ auto GlobalConfig::fromNamelistFile(
         std::vector<NamelistGroup> qmmm_groups = fortran_utils::parseNamelists(
             text, "qmmm", qmmm_schema, {}, /*ignore_unknown_keys=*/true
         );
-        amber_qmmm_config = updatedConfig(qmmm_defaults, qmmm_groups.front());
+        const NamelistGroup& qmmm_group = qmmm_groups.front();
+        amber_qmmm_config = updatedConfig(qmmm_defaults, qmmm_group);
+        // Values set only in &qmmm are used for &mlip, and values set in both must agree
+        const std::vector<std::pair<std::string, std::string>> mlip_and_qmmm_keys = {
+            {"ml_charge", "qmcharge"},
+            {"ml_spin_mult", "spin"},
+        };
+        for (const auto& [mlip_key, qmmm_key] : mlip_and_qmmm_keys) {
+            bool mlip_has_key = group.values.count(mlip_key) > 0;
+            bool qmmm_has_key = qmmm_group.values.count(qmmm_key) > 0;
+            // sander uses qmcharge before the MLIP Interface is initialized (adjust_q), so
+            // it can't be overriden with ml_charge
+            if (mlip_key == "ml_charge" and mlip_has_key and not qmmm_has_key
+                and mlip_config.getInt(mlip_key) != 0) {
+                throw config_validation_error(
+                    "ml_charge = " + std::to_string(mlip_config.getInt(mlip_key))
+                    + " in &mlip requires the same qmcharge in &qmmm"
+                );
+            }
+            if (not qmmm_has_key) {
+                continue;
+            }
+            int qmmm_value = amber_qmmm_config->getInt(qmmm_key);
+            if (not mlip_has_key) {
+                mlip_config = mlip_config.withValue(mlip_key, static_cast<long>(qmmm_value));
+            } else if (mlip_config.getInt(mlip_key) != qmmm_value) {
+                throw config_validation_error(
+                    mlip_key + " = " + std::to_string(mlip_config.getInt(mlip_key))
+                    + " in &mlip doesn't match " + qmmm_key + " = "
+                    + std::to_string(qmmm_value) + " in &qmmm"
+                );
+            }
+        }
         validateAmberQmmmNamelist(mlip_config, *mlmm_config, *amber_qmmm_config);
     }
     return GlobalConfig{mlip_config, mlmm_config, amber_qmmm_config};
