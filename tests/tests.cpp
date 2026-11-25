@@ -145,16 +145,19 @@ TEST_CASE("C bindings") {
                     ModelSpec{"ani1ccx", 0, "_1ccx"},
                     ModelSpec{"ani2x", 0, "_2x"},
                     ModelSpec{"animbis", 0, "_mbis"},
+                    ModelSpec{"animbisv", 0, "_mbisv"},
                     ModelSpec{"ani1x", -1, "_1x_ensemble"},
                     ModelSpec{"ani1ccx", -1, "_1ccx_ensemble"},
                     ModelSpec{"ani2x", -1, "_2x_ensemble"},
-                    ModelSpec{"animbis", -1, "_mbis_ensemble"}
+                    ModelSpec{"animbis", -1, "_mbis_ensemble"},
+                    ModelSpec{"animbisv", -1, "_mbisv_ensemble"}
                 }
             )
         );
         std::string model_type = std::get<0>(model_spec);
         int network_index = std::get<1>(model_spec);
         std::string model_suffix = std::get<2>(model_spec);
+        bool model_has_charges = model_type == "animbis" or model_type == "animbisv";
         INFO("Testing model: " << "ani" << model_suffix);
 
         using DeviceSpec = std::tuple<int, int, int, std::string>;
@@ -188,7 +191,7 @@ TEST_CASE("C bindings") {
             atomic_numbers,
             writeMlipConfig(
                 model_type, network_index, use_double, use_cuda_device, use_cuaev, device_index,
-                model_type == "animbis"
+                model_has_charges
                     ? "  use_mlip_atomic_charges = T, allow_untested_protocols = T,\n"
                     : ""
             ).c_str(),
@@ -213,7 +216,7 @@ TEST_CASE("C bindings") {
             std::exit(2);
         }
 
-        if (model_type != "animbis") {
+        if (not model_has_charges) {
             double test_values[7];
             for (int j = 0; j != 7; ++j) {
                 infile >> test_values[j];
@@ -243,7 +246,7 @@ TEST_CASE("C bindings") {
                 infile >> test_values[j];
             }
             std::vector<double> atomic_charge_derivatives = calcAtomicChargeGrads(
-                std::string(TORCHANI_MLIPS_BUILD_DIR) + "/animbis.pt",
+                std::string(TORCHANI_MLIPS_BUILD_DIR) + "/" + model_type + ".pt",
                 size,
                 atomic_numbers,
                 coords,
@@ -306,6 +309,8 @@ TEST_CASE("C bindings") {
 static const double COUPLING_INV_POL_DIELECTRIC = 0.8;
 static const double COUPLING_ATOMIC_ALPHAS[] = {0.5, 1.2};
 static const double COUPLING_MM_ATOMIC_CHARGES[] = {0.5, -0.4};
+// kz of H and C, such that alpha = kz * volume (AU)
+static const double COUPLING_VOLUME_KZS[] = {0.03, 0.02};
 
 struct CouplingOutput {
     double ml_forces[2][3];
@@ -339,6 +344,70 @@ static CouplingOutput calc_coupling(
     return out;
 }
 
+// Embedding energy (kcal/mol) of the simple-polarizable coupling, for the ML atoms in
+// coords and the MM atoms in mm_coords (with COUPLING_MM_ATOMIC_CHARGES)
+static double expectedEmbeddingEnergy(
+    double coords[][3],
+    double mm_coords[][3],
+    const double ml_atomic_charges[],
+    const double ml_atomic_alphas[]
+) {
+    double expect_coulomb = 0.0;
+    double expect_pol = 0.0;
+    for (int j = 0; j != 2; ++j) {
+        double efield[3] = {0.0, 0.0, 0.0};
+        for (int k = 0; k != 2; ++k) {
+            double delta[3];
+            double dist_sq = 0.0;
+            for (int c = 0; c != 3; ++c) {
+                delta[c] = mm_coords[k][c] - coords[j][c];
+                dist_sq += delta[c] * delta[c];
+            }
+            double dist = std::sqrt(dist_sq);
+            expect_coulomb += COUPLING_MM_ATOMIC_CHARGES[k] * ml_atomic_charges[j]
+                / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
+            for (int c = 0; c != 3; ++c) {
+                efield[c] += COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
+                    / (dist_sq * dist * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
+            }
+        }
+        double efield_sq =
+            efield[0] * efield[0] + efield[1] * efield[1] + efield[2] * efield[2];
+        expect_pol -= COUPLING_INV_POL_DIELECTRIC * ml_atomic_alphas[j] * efield_sq;
+    }
+    return (expect_coulomb + expect_pol - 0.5 * expect_pol) * constants::HARTREE_TO_KCALMOL;
+}
+
+// Check that the ML and MM forces in out are minus the gradient of the total energy,
+// by central finite differences
+static void checkCouplingForcesByFiniteDifferences(
+    double coords[][3], double mm_coords[][3], const CouplingOutput& out
+) {
+    const double step = 1e-4;
+    for (int j = 0; j != 2; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            double displaced[2][3];
+            std::memcpy(displaced, coords, sizeof(displaced));
+            displaced[j][c] += step;
+            double ene_plus = calc_coupling(displaced, mm_coords).pot_energy;
+            displaced[j][c] -= 2 * step;
+            double ene_minus = calc_coupling(displaced, mm_coords).pot_energy;
+            CHECK_THAT(
+                out.ml_forces[j][c], WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
+            );
+
+            std::memcpy(displaced, mm_coords, sizeof(displaced));
+            displaced[j][c] += step;
+            ene_plus = calc_coupling(coords, displaced).pot_energy;
+            displaced[j][c] -= 2 * step;
+            ene_minus = calc_coupling(coords, displaced).pot_energy;
+            CHECK_THAT(
+                out.mm_forces[j][c], WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
+            );
+        }
+    }
+}
+
 TEST_CASE("C bindings for other entry points") {
     const int size = 2;
     double coords[size][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
@@ -358,10 +427,12 @@ TEST_CASE("C bindings for other entry points") {
                 ModelSpec{"ani1ccx", 0, "_1ccx"},
                 ModelSpec{"ani2x", 0, "_2x"},
                 ModelSpec{"animbis", 0, "_mbis"},
+                ModelSpec{"animbisv", 0, "_mbisv"},
                 ModelSpec{"ani1x", -1, "_1x_ensemble"},
                 ModelSpec{"ani1ccx", -1, "_1ccx_ensemble"},
                 ModelSpec{"ani2x", -1, "_2x_ensemble"},
-                ModelSpec{"animbis", -1, "_mbis_ensemble"}
+                ModelSpec{"animbis", -1, "_mbis_ensemble"},
+                ModelSpec{"animbisv", -1, "_mbisv_ensemble"}
             }
         )
     );
@@ -422,7 +493,7 @@ TEST_CASE("C bindings for other entry points") {
         test_values.push_back(value);
     }
     bool model_is_ensemble = network_index == -1;
-    bool model_has_charges = model_type == "animbis";
+    bool model_has_charges = model_type == "animbis" or model_type == "animbisv";
     int charges_offset = model_is_ensemble ? 14 : 7;
 
     SECTION("Energy + Force, external neighbors") {
@@ -527,38 +598,11 @@ TEST_CASE("C bindings for other entry points") {
                 );
             }
 
-            double expect_coulomb = 0.0;
-            double expect_pol = 0.0;
-            for (int j = 0; j != size; ++j) {
-                double efield[3] = {0.0, 0.0, 0.0};
-                for (int k = 0; k != 2; ++k) {
-                    double delta[3];
-                    double dist_sq = 0.0;
-                    for (int c = 0; c != 3; ++c) {
-                        delta[c] = mm_coords[k][c] - coords[j][c];
-                        dist_sq += delta[c] * delta[c];
-                    }
-                    double dist = std::sqrt(dist_sq);
-                    expect_coulomb += COUPLING_MM_ATOMIC_CHARGES[k] * out.ml_atomic_charges[j]
-                        / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
-                    for (int c = 0; c != 3; ++c) {
-                        efield[c] += COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
-                            / (dist_sq * dist
-                               * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
-                    }
-                }
-                double efield_sq =
-                    efield[0] * efield[0] + efield[1] * efield[1] + efield[2] * efield[2];
-                expect_pol -= COUPLING_INV_POL_DIELECTRIC * COUPLING_ATOMIC_ALPHAS[j]
-                    * efield_sq;
-            }
             // The in vacuo energy is the reference energy of the model
-            double expect_embed = expect_coulomb + expect_pol - 0.5 * expect_pol;
-            FLOAT_EQ(
-                out.pot_energy,
-                test_values[0] + expect_embed * constants::HARTREE_TO_KCALMOL,
-                use_double
+            double expect_embed = expectedEmbeddingEnergy(
+                coords, mm_coords, out.ml_atomic_charges, COUPLING_ATOMIC_ALPHAS
             );
+            FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
 
             std::stringstream captured;
             std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
@@ -573,33 +617,51 @@ TEST_CASE("C bindings for other entry points") {
             // With charge derivatives, forces are minus the gradient of the total
             // energy (checked by central finite differences)
             if (use_double) {
-                const double step = 1e-4;
-                for (int j = 0; j != 2; ++j) {
-                    for (int c = 0; c != 3; ++c) {
-                        double displaced[2][3];
-                        std::memcpy(displaced, coords, sizeof(displaced));
-                        displaced[j][c] += step;
-                        double ene_plus =
-                            calc_coupling(displaced, mm_coords).pot_energy;
-                        displaced[j][c] -= 2 * step;
-                        double ene_minus =
-                            calc_coupling(displaced, mm_coords).pot_energy;
-                        CHECK_THAT(
-                            out.ml_forces[j][c],
-                            WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
-                        );
+                checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
+            }
+        }
+    }
 
-                        std::memcpy(displaced, mm_coords, sizeof(displaced));
-                        displaced[j][c] += step;
-                        ene_plus = calc_coupling(coords, displaced).pot_energy;
-                        displaced[j][c] -= 2 * step;
-                        ene_minus = calc_coupling(coords, displaced).pot_energy;
-                        CHECK_THAT(
-                            out.mm_forces[j][c],
-                            WithinAbs(-(ene_plus - ene_minus) / (2 * step), 1e-5)
-                        );
-                    }
-                }
+    SECTION("Energy + Force with coupling and volume-based polarizabilities") {
+        if (model_type == "animbisv") {
+            std::ostringstream volume_options;
+            volume_options << std::setprecision(17)
+                           << "  volume_kzs = " << COUPLING_VOLUME_KZS[0] << ", , , , , "
+                           << COUPLING_VOLUME_KZS[1] << ",\n"
+                           << "  use_mlip_atomic_volumes = T,\n"
+                           << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC
+                           << ",\n"
+                           << "  mlmm_coupling = 'simple-polarizable',"
+                           << " use_mlip_atomic_charges = T,\n";
+            mlip_initialize(
+                size,
+                atomic_numbers,
+                writeMlipConfig(
+                    model_type, network_index, use_double, use_cuda_device, use_cuaev, 0,
+                    volume_options.str()
+                ).c_str(),
+                true,
+                "none",
+                false
+            );
+            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+            CouplingOutput out = calc_coupling(coords, mm_coords);
+            double atomic_volumes[size];
+            int volumes_dims[1] = {size};
+            mlip_fetch_result("atomic_volumes", atomic_volumes, volumes_dims, 1);
+            double atomic_alphas[size];
+            for (int j = 0; j != size; ++j) {
+                CHECK(atomic_volumes[j] > 0.0);
+                atomic_alphas[j] = COUPLING_VOLUME_KZS[j] * atomic_volumes[j];
+            }
+            // The in vacuo energy is the reference energy of the model
+            double expect_embed = expectedEmbeddingEnergy(
+                coords, mm_coords, out.ml_atomic_charges, atomic_alphas
+            );
+            FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
+            // The volumes depend on the coords, so this also checks dvolume/dr
+            if (use_double) {
+                checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
             }
         }
     }
@@ -647,7 +709,8 @@ TEST_CASE("C bindings for other entry points") {
     }
 
     SECTION("Energy + Force with custom ML/MM model") {
-        if (model_has_charges) {
+        // The custom ML/MM model wraps animbis
+        if (model_type == "animbis") {
             double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
             double mm_atomic_charges[2] = {
                 COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
@@ -1119,5 +1182,77 @@ TEST_CASE("ML/MM output files", "[io]") {
     CHECK_THAT(fx, Catch::Matchers::WithinAbs(ml_forces[0][0], 1e-6));
     CHECK(read_lines(output_dir / "forces_mlmm_mm_region.mlip.dat").size() == 4);
     CHECK(read_lines(output_dir / "atomic_charges_ml_region.mlip.dat").size() == 6);
+    std::filesystem::remove_all(output_dir);
+}
+
+TEST_CASE("Atomic volumes output files", "[io]") {
+    const int size = 2;
+    int atomic_numbers[size] = {1, 6};
+    double coords[size][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    double cell[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    int molecule_idxs[size] = {0, 0};
+    double mm_coords[1][3] = {{6.0, 6.0, 6.0}};
+    double mm_atomic_charges[1] = {0.5};
+    double forces[size][3];
+    double mm_forces[1][3];
+    double energy;
+    std::filesystem::path output_dir =
+        std::filesystem::temp_directory_path() / "torchani_test_volumes_outputs";
+    std::filesystem::remove_all(output_dir);
+    auto read_lines = [](const std::filesystem::path& path) {
+        std::ifstream file(path);
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) {
+            lines.push_back(line);
+        }
+        return lines;
+    };
+    double atomic_volumes[size];
+    int volumes_dims[1] = {size};
+
+    mlip_initialize(
+        size,
+        atomic_numbers,
+        writeMlipConfig(
+            "animbisv", 0, true, false, false, 0,
+            "  write_atomic_volumes = T, output_dir = '" + output_dir.string() + "',\n"
+        ).c_str(),
+        false,
+        "none",
+        false
+    );
+    mlip_update_md_step(1);
+    mlip_calc_energy_force(size, coords, cell, false, molecule_idxs, false, forces, &energy);
+    mlip_fetch_result("atomic_volumes", atomic_volumes, volumes_dims, 1);
+    // One frame of: one line per atom, and an empty line
+    std::vector<std::string> lines = read_lines(output_dir / "atomic_volumes.mlip.dat");
+    REQUIRE(lines.size() == 3);
+    CHECK_THAT(std::stod(lines[0]), Catch::Matchers::WithinRel(atomic_volumes[0], 1e-6));
+    CHECK_THAT(std::stod(lines[1]), Catch::Matchers::WithinRel(atomic_volumes[1], 1e-6));
+
+    mlip_initialize(
+        size,
+        atomic_numbers,
+        writeMlipConfig(
+            "animbisv", 0, true, false, false, 0,
+            "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+            "  use_mlip_atomic_volumes = T, write_atomic_volumes = T,\n"
+            "  output_dir = '" + output_dir.string() + "',\n"
+        ).c_str(),
+        true,
+        "none",
+        false
+    );
+    mlip_update_md_step(1);
+    mlip_calc_energy_force_mlmm(
+        size, 1, coords, mm_coords, mm_atomic_charges, nullptr, false, false,
+        forces, mm_forces, &energy
+    );
+    mlip_fetch_result("atomic_volumes", atomic_volumes, volumes_dims, 1);
+    lines = read_lines(output_dir / "atomic_volumes_ml_region.mlip.dat");
+    REQUIRE(lines.size() == 3);
+    CHECK_THAT(std::stod(lines[0]), Catch::Matchers::WithinRel(atomic_volumes[0], 1e-6));
+    CHECK_THAT(std::stod(lines[1]), Catch::Matchers::WithinRel(atomic_volumes[1], 1e-6));
     std::filesystem::remove_all(output_dir);
 }
