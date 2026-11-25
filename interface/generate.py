@@ -131,7 +131,9 @@ def prepare_function(fn: dict) -> dict:
     fn["has_bool_args"] = "bool" in dtypes
     fn["has_str_args"] = "str" in dtypes
     if fn["fortran_wrapper"] not in ("auto", "manual", "none"):
-        raise ValueError(f"{fn['name']}: unknown fortran_wrapper {fn['fortran_wrapper']}")
+        raise ValueError(
+            f"{fn['name']}: unknown fortran_wrapper {fn['fortran_wrapper']}"
+        )
     needs_wrapper = fn["has_bool_args"] or fn["has_str_args"]
     fn["generate_f_wrapper"] = needs_wrapper and fn["fortran_wrapper"] == "auto"
     fn["f_wrapper_args"] = [arg for arg in fn["args"] if arg["f_is_wrapper_arg"]]
