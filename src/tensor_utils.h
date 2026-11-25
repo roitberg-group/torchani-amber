@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <torch/all.h>
@@ -7,6 +10,45 @@
 #include "config.h"
 
 namespace tensor_utils {
+
+// Tensors stored by name. Storing a tensor with an existing name replaces it
+class TensorContainer {
+    std::unordered_map<std::string, torch::Tensor> m_tensors;
+
+    public:
+    auto store(const std::string& name, torch::Tensor tensor) -> void {
+        m_tensors.insert_or_assign(name, std::move(tensor));
+    }
+
+    auto contains(const std::string& name) const -> bool {
+        return m_tensors.count(name) > 0;
+    }
+
+    // Throws if there is no tensor with that name
+    auto get(const std::string& name) const -> const torch::Tensor& {
+        return m_tensors.at(name);
+    }
+
+    auto clear() -> void {
+        m_tensors.clear();
+    }
+
+    // No-op if there is no tensor with that name
+    auto clear(const std::string& name) -> void {
+        m_tensors.erase(name);
+    }
+
+    auto clearStartingWith(const std::string& prefix) -> void {
+        auto it = m_tensors.begin();
+        while (it != m_tensors.end()) {
+            if (it->first.compare(0, prefix.size(), prefix) == 0) {
+                it = m_tensors.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+};
 
 /**
  * Utilities for building Tensors from buffers

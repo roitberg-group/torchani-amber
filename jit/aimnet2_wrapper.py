@@ -260,10 +260,14 @@ class ANIqAllowNonzeroCharge(ANIq):
 
     @staticmethod
     def _check_inputs(
-        elem_idxs: Tensor, coords: Tensor, charge: Tensor | None = None
+        elem_idxs: Tensor,
+        coords: Tensor | None,
+        charge: Tensor | None = None,
+        spin_mult: Tensor | None = None,
     ) -> None:
         assert elem_idxs.dim() == 2
-        assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
+        if coords is not None:
+            assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
 
 
 class AimNet2Mbis(AimNet2Wrapper):
@@ -340,11 +344,10 @@ class AimNet2Mbis(AimNet2Wrapper):
         # Run charge model only
         atomic_charges = self._charge_model.compute_from_neighbors(
             elem_idxs,
-            coords,
             neighbors_lr,
-            charge,
-            atomic,
-            ensemble_values,
+            charge=charge,
+            atomic=atomic,
+            ensemble_values=ensemble_values,
         )["atomic_charges"]
         return SpeciesEnergiesAtomicCharges(species, energies, atomic_charges)
 

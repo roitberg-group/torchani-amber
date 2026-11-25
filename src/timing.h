@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <source_location>
 #include <string>
 
 namespace timing {
@@ -14,6 +15,8 @@ class ScopedTimer {
 
     public:
     explicit ScopedTimer(std::string label);
+    // Labeled with the signature of the calling function
+    explicit ScopedTimer(std::source_location loc = std::source_location::current());
     ScopedTimer(const ScopedTimer&) = delete;
     auto operator=(const ScopedTimer&) -> ScopedTimer& = delete;
     ~ScopedTimer();

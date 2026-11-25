@@ -1,18 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
-usage="Usage: $0 [output]"
-while getopts "h" opt; do
-    case "${opt}" in
-        h) echo "${usage}"; exit 0 ;;
-        *) echo "${usage}" >&2; exit 1 ;;
+usage="Usage: $0 [-h] [--apply] [output]"
+do_apply=false
+positional_args=()
+for arg in "$@"; do
+    case "${arg}" in
+        -h|--help) echo "${usage}"; exit 0 ;;
+        --apply) do_apply=true ;;
+        -*) echo "${usage}" >&2; exit 1 ;;
+        *) positional_args+=("${arg}") ;;
     esac
 done
-shift $((OPTIND - 1))
+if (( ${#positional_args[@]} > 1 )); then
+    echo "${usage}" >&2
+    exit 1
+fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bundle_name="mlip-interface"
-output="$(realpath "${1:-${PWD}/${bundle_name}.tar.gz}")"
+output="$(realpath "${positional_args[0]:-${PWD}/${bundle_name}.tar.gz}")"
 torchani_csrc="./submodules/torchani/torchani/csrc"
 
 skipped_names=(
@@ -44,10 +51,8 @@ cd "${repo_root}"
         -o -path ./environment.yaml \
         -o -path ./build \
         -o -path ./inputs \
-        -o -path './jit/*.csv' \
-        -o -path ./tests/expect \
-        -o -path ./jit/aimnet2 \
-        -o -path ./jit/nutmeg \
+        -o -path ./jit \
+        -o -path ./tests \
         -o -path ./submodules/Catch2 \
         -o -path ./submodules/torchani \
         -o -path "./${bundle_name}.tar.gz" \) -prune \
@@ -60,5 +65,17 @@ cd "${repo_root}"
     --transform "s,^\.,${bundle_name}," \
     -T -
 
-echo "WARNING: tests/expect/ and inputs/ are not packed" >&2
+echo "WARNING: tests/, inputs/ and jit/ are not packed" >&2
 echo "Created ${output}"
+
+if [[ "${do_apply}" == true ]]; then
+    amber_src="${HOME}/Repos/amber/AmberTools/src"
+    if [[ ! -d "${amber_src}/${bundle_name}" ]]; then
+        echo "ERROR: ${amber_src}/${bundle_name} not found, ${output} was not applied" >&2
+        exit 1
+    fi
+    rm -rf "${amber_src:?}/${bundle_name}"
+    tar -xzmf "${output}" -C "${amber_src}"
+    rm "${output}"
+    echo "Replaced ${amber_src}/${bundle_name} and removed ${output}"
+fi

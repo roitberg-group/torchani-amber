@@ -260,6 +260,7 @@ Torchani_Msg_banner(
 
 if(INSIDE_AMBER)
     Torchani_AmberHelper_disable_torch_mkl_if_not_found(MKL_FOUND "${MKL_FOUND}")
+    Torchani_AmberHelper_set_torch_cuda_arch_list(AMBER_NVCC_FLAGS ${CUDA_NVCC_FLAGS})
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
@@ -463,6 +464,7 @@ if(NOT INSIDE_AMBER)
             torchani_tests
             "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/test_fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_config.cpp"
         )
         target_include_directories(
             torchani_tests
@@ -470,8 +472,13 @@ if(NOT INSIDE_AMBER)
                 "${CMAKE_CURRENT_LIST_DIR}/include"
                 "${CMAKE_CURRENT_LIST_DIR}/src"
         )
-        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
-        target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
+        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani ${TORCH_LIBRARIES})
+        target_compile_definitions(
+            torchani_tests
+            PRIVATE
+                TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}"
+                $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+        )
         catch_discover_tests(torchani_tests)
 
         # Used by tests/test_namelists.py to compare the namelist parser with f90nml

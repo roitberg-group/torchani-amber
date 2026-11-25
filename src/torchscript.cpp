@@ -37,6 +37,28 @@ auto chargeInput(int net_charge, const torch::Tensor& coords, bool legacy_charge
     return torch::full({coords.size(0)}, net_charge, coords.options().dtype(torch::kLong));
 }
 
+// Models whose method has no 'spin_mult' argument only support spin_mult = 1
+auto insertSpinMultInput(
+    const torch::jit::Method& method,
+    std::vector<torch::jit::IValue>& inputs,
+    int spin_mult,
+    const torch::Tensor& coords
+) -> void {
+    std::optional<int> idx = method.function().getSchema().argumentIndexWithName("spin_mult");
+    if (idx.has_value()) {
+        // The schema's first argument is 'self', which is not part of the inputs
+        inputs.insert(
+            inputs.begin() + *idx - 1,
+            torch::full({coords.size(0)}, spin_mult, coords.options().dtype(torch::kLong))
+        );
+    } else if (spin_mult != 1) {
+        throw std::runtime_error(
+            "The model's '" + method.name()
+            + "' has no 'spin_mult' argument, only spin_mult = 1 is supported"
+        );
+    }
+}
+
 auto setupInputs(
     const torch::Tensor& atomic_numbers,
     const torch::Tensor& coords,
@@ -144,30 +166,38 @@ torch::Tensor fetchEnergiesFromOutput(const torch::jit::IValue& output) {
     return output.toTuple()->elements()[1].toTensor();
 }
 
-torch::Tensor fetchAtomicChargesFromOutput(const torch::jit::IValue& output) {
+// Outputs of the model other than the species and the energies, e.g. "atomic_charges"
+auto fetchExtraOutputs(const torch::jit::IValue& output) -> mlip::MlipOutput {
+    mlip::MlipOutput extra_outputs;
     // New signature for compute_from_neighbors
     if (!output.isTuple()) {
-        return output.toGenericDict().at("atomic_charges").toTensor();
-    }
-    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
-    torch::Tensor first_tensor = output.toTuple()->elements()[0].toTensor();
-    if (first_tensor.is_floating_point()) {
-        const auto& atomic_charges = output.toTuple()->elements()[1];
-        if (atomic_charges.isNone()) {
-            throw std::runtime_error("The model doesn't return atomic charges");
+        for (const auto& item : output.toGenericDict()) {
+            const std::string& key = item.key().toStringRef();
+            if (key != "energies" && item.value().isTensor()) {
+                extra_outputs[key] = item.value().toTensor();
+            }
         }
-        return atomic_charges.toTensor();
+        return extra_outputs;
     }
-
+    const auto& elements = output.toTuple()->elements();
+    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
+    std::size_t extra_idx = 2;
+    if (elements[0].toTensor().is_floating_point()) {
+        extra_idx = 1;
+    }
     // Standard signature, tuple form or tuple-dict form
-    const auto& scalars = output.toTuple()->elements()[2];
-    if (scalars.isNone()) {
-        throw std::runtime_error("The model doesn't return atomic charges");
+    if (elements.size() <= extra_idx || elements[extra_idx].isNone()) {
+        return extra_outputs;
     }
-    if (scalars.isTensor()) {
-        return scalars.toTensor();
+    const auto& extra = elements[extra_idx];
+    if (extra.isTensor()) {
+        extra_outputs["atomic_charges"] = extra.toTensor();
+        return extra_outputs;
     }
-    return scalars.toGenericDict().at("atomic_charges").toTensor();
+    for (const auto& item : extra.toGenericDict()) {
+        extra_outputs[item.key().toStringRef()] = item.value().toTensor();
+    }
+    return extra_outputs;
 }
 
 void validateModelOutput(
@@ -202,18 +232,17 @@ void validateModelOutput(
     }
 }
 
-// Energies, and optionally forces, atomic charges, QBC and their grads wrt the coords.
-// If mm_coords is passed, the forces on the MM atoms are also calculated
+// Energies, extra outputs of the model, and optionally forces, QBC and QBC grads wrt
+// the coords. If mm_coords is passed, the forces on the MM atoms are also calculated
 auto computeOutput(
     torch::Tensor energy,
-    std::optional<torch::Tensor> atomic_charges,
+    mlip::MlipOutput extra_outputs,
     const torch::Tensor& coords,
     const std::optional<torch::Tensor>& mm_coords,
     bool calc_forces,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
-    mlip::MlipOutput output;
+    mlip::MlipOutput output = std::move(extra_outputs);
     if (calc_qbc_and_qbc_grad) {
         torch::Tensor num_atoms = torch::tensor(
             coords.size(1),
@@ -224,16 +253,13 @@ auto computeOutput(
     }
     output["energy"] = energy;
 
-    if (atomic_charges.has_value()) {
-        // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms)
-        if (atomic_charges->dim() == 3) {
-            atomic_charges = atomic_charges->squeeze(0);
-        }
-        output["atomic_charges"] = *atomic_charges;
+    // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms)
+    if (output.count("atomic_charges") > 0 && output.at("atomic_charges").dim() == 3) {
+        output["atomic_charges"] = output.at("atomic_charges").squeeze(0);
     }
 
     if (calc_forces) {
-        bool retain_graph = calc_qbc_and_qbc_grad or calc_charges_grad;
+        bool retain_graph = calc_qbc_and_qbc_grad;
         if (mm_coords.has_value()) {
             std::vector<torch::Tensor> grads = torch::autograd::grad(
                 {energy.sum()},
@@ -250,26 +276,13 @@ auto computeOutput(
         }
     }
     if (calc_qbc_and_qbc_grad) {
-        output["qbc_grads"] = torch::autograd::grad(
+        output["qbc_grad"] = torch::autograd::grad(
             {output.at("qbc").sum()},
             {coords},
             /* grad_outputs= */ {},
-            /* retain_graph= */ calc_charges_grad
+            // Without calc_forces, the caller may differentiate the energy afterwards
+            /* retain_graph= */ not calc_forces
         )[0];
-    }
-    if (calc_charges_grad) {
-        torch::Tensor charges = output.at("atomic_charges");
-        std::vector<torch::Tensor> charge_grads;
-        for (std::int64_t atom_idx = 0; atom_idx != coords.size(1); ++atom_idx) {
-            torch::Tensor charge_grad = torch::autograd::grad(
-                {charges.index({0, atom_idx})},
-                {coords},
-                /* grad_outputs= */ {},
-                /* retain_graph= */ true
-            )[0];
-            charge_grads.push_back(charge_grad.squeeze(0));
-        }
-        output["atomic_charge_grads"] = torch::stack(charge_grads);
     }
     return output;
 }
@@ -317,19 +330,17 @@ auto TorchScriptMlipModel::useOnlyEnsembleMember(std::int64_t member_idx) -> voi
     m_module.get_method("set_active_members")({torch::List<std::int64_t>{member_idx}});
 }
 
-auto TorchScriptMlipModel::readExtraFeaturesFromFile(const std::string& fpath) -> void {
+auto TorchScriptMlipModel::setExtraFeatures(torch::Tensor extra_features) -> void {
     if (not m_module.find_method("set_extra_features").has_value()) {
         throw std::runtime_error(
             "Model doesn't export a method 'set_extra_features(list[float]) -> None'"
         );
     }
-    // TODO: This is ugly, it would be better to fail gracefully if the file can't
-    // be parsed
-    std::ifstream features_file(fpath);
+    extra_features = extra_features.to(torch::kCPU, torch::kDouble).contiguous();
+    auto extra_features_a = extra_features.accessor<double, 1>();
     torch::List<double> features;
-    double val;
-    while (features_file >> val) {
-        features.push_back(val);
+    for (std::int64_t i = 0; i != extra_features.size(0); ++i) {
+        features.push_back(extra_features_a[i]);
     }
     m_module.get_method("set_extra_features")({features});
 }
@@ -367,12 +378,11 @@ auto TorchScriptMlipModel::computeSinglePoint(
     const torch::Tensor& coords,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
+    int spin_mult,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (atomic) {
@@ -381,10 +391,7 @@ auto TorchScriptMlipModel::computeSinglePoint(
     if (ensemble_values) {
         throw std::runtime_error("computeSinglePoint doesn't support ensemble_values=true");
     }
-    if (calc_charges_grad and not calc_charges) {
-        throw std::runtime_error("calc_charges_grad=true requires calc_charges=true");
-    }
-    torch::jit::IValue raw_output = m_module.forward(setupInputs(
+    std::vector<torch::jit::IValue> inputs = setupInputs(
         atomic_numbers,
         coords,
         cell,
@@ -393,20 +400,17 @@ auto TorchScriptMlipModel::computeSinglePoint(
         /* atomic= */ false,
         /* ensemble_values= */ calc_qbc_and_qbc_grad,
         molecule_idxs
-    ));
-    validateModelOutput(raw_output, calc_charges ? 3 : 2);
-
-    std::optional<torch::Tensor> atomic_charges;
-    if (calc_charges) {
-        atomic_charges = fetchAtomicChargesFromOutput(raw_output);
-    }
+    );
+    torch::jit::Method method = m_module.get_method("forward");
+    insertSpinMultInput(method, inputs, spin_mult, coords);
+    torch::jit::IValue raw_output = method(inputs);
+    validateModelOutput(raw_output, 2);
     return computeOutput(
         fetchEnergiesFromOutput(raw_output),
-        atomic_charges,
+        fetchExtraOutputs(raw_output),
         coords,
         /* mm_coords= */ std::nullopt,
         calc_forces,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -417,12 +421,11 @@ auto TorchScriptMlipModel::computeFromExternalNeighbors(
     const torch::Tensor& neighborlist,
     const torch::Tensor& shifts,
     int net_charge,
+    int spin_mult,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not supportsComputeFromExternalNeighbors()) {
@@ -438,32 +441,25 @@ auto TorchScriptMlipModel::computeFromExternalNeighbors(
             "computeFromExternalNeighbors doesn't support ensemble_values=true"
         );
     }
-    if (calc_charges_grad and not calc_charges) {
-        throw std::runtime_error("calc_charges_grad=true requires calc_charges=true");
-    }
-    torch::jit::IValue raw_output = m_module.get_method("compute_from_external_neighbors")(
-        setupInputsExternalNeighbors(
-            atomic_numbers,
-            coords,
-            neighborlist,
-            shifts,
-            /* ensemble_values= */ calc_qbc_and_qbc_grad,
-            net_charge,
-            m_legacy_charge_type,
-            molecule_idxs
-        )
+    std::vector<torch::jit::IValue> inputs = setupInputsExternalNeighbors(
+        atomic_numbers,
+        coords,
+        neighborlist,
+        shifts,
+        /* ensemble_values= */ calc_qbc_and_qbc_grad,
+        net_charge,
+        m_legacy_charge_type,
+        molecule_idxs
     );
-    std::optional<torch::Tensor> atomic_charges;
-    if (calc_charges) {
-        atomic_charges = fetchAtomicChargesFromOutput(raw_output);
-    }
+    torch::jit::Method method = m_module.get_method("compute_from_external_neighbors");
+    insertSpinMultInput(method, inputs, spin_mult, coords);
+    torch::jit::IValue raw_output = method(inputs);
     return computeOutput(
         fetchEnergiesFromOutput(raw_output),
-        atomic_charges,
+        fetchExtraOutputs(raw_output),
         coords,
         /* mm_coords= */ std::nullopt,
         calc_forces,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -484,8 +480,6 @@ auto TorchScriptMlipModel::computeMlmm(
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     std::vector<torch::jit::IValue> inputs = setupInputsCustomMlmm(
@@ -514,8 +508,6 @@ auto TorchScriptMlipModel::computeMlmm(
         atomic,
         ensemble_values,
         calc_forces,
-        calc_charges,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -538,8 +530,6 @@ auto TorchScriptMlipModel::computeMultipoleMlmm(
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     std::vector<torch::jit::IValue> inputs = setupInputsCustomMlmm(
@@ -568,8 +558,6 @@ auto TorchScriptMlipModel::computeMultipoleMlmm(
         atomic,
         ensemble_values,
         calc_forces,
-        calc_charges,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -587,8 +575,6 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
     bool atomic,
     bool ensemble_values,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not m_module.find_method(method_name).has_value()) {
@@ -599,9 +585,6 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
     }
     if (ensemble_values) {
         throw std::runtime_error(method_name + " doesn't support ensemble_values=true");
-    }
-    if (calc_charges_grad and not calc_charges) {
-        throw std::runtime_error("calc_charges_grad=true requires calc_charges=true");
     }
     torch::jit::Method method = m_module.get_method(method_name);
     torch::TensorOptions long_options = ml_coords.options().dtype(torch::kLong);
@@ -638,30 +621,22 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
     torch::jit::IValue raw_output = method(inputs);
     // The method returns either the energies, or a tuple (energies, atomic_charges)
     torch::Tensor energy;
-    std::optional<torch::Tensor> atomic_charges;
-    std::string no_charges_msg = "The model's '" + method_name + "' doesn't return atomic charges";
+    mlip::MlipOutput extra_outputs;
     if (raw_output.isTensor()) {
         energy = raw_output.toTensor();
-        if (calc_charges) {
-            throw std::runtime_error(no_charges_msg);
-        }
     } else {
         const auto& elements = raw_output.toTuple()->elements();
         energy = elements.at(0).toTensor();
-        if (calc_charges) {
-            if (elements.at(1).isNone()) {
-                throw std::runtime_error(no_charges_msg);
-            }
-            atomic_charges = elements.at(1).toTensor();
+        if (not elements.at(1).isNone()) {
+            extra_outputs["atomic_charges"] = elements.at(1).toTensor();
         }
     }
     return computeOutput(
         energy,
-        atomic_charges,
+        extra_outputs,
         ml_coords,
         mm_coords,
         calc_forces,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }

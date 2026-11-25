@@ -7,47 +7,298 @@
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - torchani_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of torchani_initialize
+! - mlip_initialize calls internal_initialize, the bind(c) interface
+!   generated from interface/interface.yaml. If the args of mlip_initialize
 !   change in the yaml, that call must be updated.
+! - mlip_calc_energy_force_assumed_size and
+!   mlip_calc_energy_force_from_external_neighbors call internal_calc_energy_force and
+!   internal_calc_energy_force_from_external_neighbors,
+!   generated from interface/interface.yaml. If their args change in the yaml, those
+!   calls must be updated.
+! - mlip_calc_energy_force_mlmm calls internal_calc_energy_force_mlmm or
+!   internal_calc_energy_force_mlmm_qbc, generated from interface/interface.yaml. If
+!   their args change in the yaml, those calls must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
+!   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
-subroutine torchani_initialize( &
+subroutine mlip_initialize( &
     atomic_nums, &
-    no_eval_atoms, &
-    device_index, &
-    model_type, &
-    network_index, &
-    use_double_precision, &
-    use_cuda_device, &
-    use_cuaev &
+    config_path, &
+    read_mlmm_config, &
+    calling_program, &
+    print_config_info &
 )
     integer(c_int), contiguous, intent(in) :: atomic_nums(:)
-    integer(c_int), contiguous, intent(in) :: no_eval_atoms(:)
-    integer(c_int), value, intent(in) :: device_index
-    character(len=*, kind=kind("a")), intent(in) :: model_type
-    integer(c_int), intent(in) :: network_index
-    ! Flags
-    logical, intent(in) :: use_double_precision
-    logical, intent(in) :: use_cuda_device
-    logical, intent(in) :: use_cuaev
+    character(len=*, kind=kind("a")), intent(in) :: config_path
+    logical, intent(in) :: read_mlmm_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
+    logical, optional, intent(in) :: print_config_info
 
-    character(len=len_trim(model_type) + 1, kind=c_char) :: c_model_type
+    character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
+    character(len=:, kind=c_char), allocatable :: c_calling_program
+    logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
-    c_model_type = trim(model_type) // c_null_char
+    c_config_path = trim(config_path) // c_null_char
+    c_calling_program = "none" // c_null_char
+    if (present(calling_program)) then
+        c_calling_program = trim(calling_program) // c_null_char
+    endif
+    do_print_config_info = .false.
+    if (present(print_config_info)) then
+        do_print_config_info = print_config_info
+    endif
     call internal_initialize( &
         size(atomic_nums), &
         atomic_nums, &
-        no_eval_atoms, &
-        device_index, &
-        c_model_type, &
-        network_index, &
-        fbool_to_cbool(use_double_precision), &
-        fbool_to_cbool(use_cuda_device), &
-        fbool_to_cbool(use_cuaev) &
+        c_config_path, &
+        fbool_to_cbool(read_mlmm_config), &
+        c_calling_program, &
+        fbool_to_cbool(do_print_config_info) &
     )
+endsubroutine
+
+! PBC are used only if cell is present. molecule_idxs and calc_only_bonded must be both
+! present or both absent, if absent calc_only_bonded is false
+subroutine mlip_calc_energy_force( &
+    coords, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy, &
+    cell &
+)
+    real(c_double), contiguous, intent(in) :: coords(:, :)  ! Shape (3, atoms)
+    integer(c_int), optional, contiguous, intent(in) :: molecule_idxs(:)  ! Shape (atoms,)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), contiguous, intent(out) :: out_forces(:, :)  ! Shape (3, atoms)
+    real(c_double), intent(out) :: out_pot_energy
+    real(c_double), optional, intent(in) :: cell(3, 3)
+
+    if (size(coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force: coords must have shape (3, atoms)")
+    endif
+    if (any(shape(out_forces) /= shape(coords))) then
+        call exit_with_error("mlip_calc_energy_force: out_forces and coords shapes differ")
+    endif
+    if (present(molecule_idxs)) then
+        if (size(molecule_idxs) /= size(coords, 2)) then
+            call exit_with_error("mlip_calc_energy_force: molecule_idxs and coords sizes differ")
+        endif
+    endif
+    call mlip_calc_energy_force_assumed_size( &
+        size(coords, 2), &
+        coords, &
+        molecule_idxs, &
+        calc_only_bonded, &
+        out_forces, &
+        out_pot_energy, &
+        cell &
+    )
+endsubroutine
+
+! Same as mlip_calc_energy_force, for arrays whose size is not known (e.g. assumed-size)
+subroutine mlip_calc_energy_force_assumed_size( &
+    num_atoms, &
+    coords, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy, &
+    cell &
+)
+    integer(c_int), intent(in) :: num_atoms
+    real(c_double), intent(in) :: coords(*)
+    integer(c_int), optional, intent(in) :: molecule_idxs(*)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), intent(out) :: out_forces(*)
+    real(c_double), intent(out) :: out_pot_energy
+    real(c_double), optional, intent(in) :: cell(3, 3)
+
+    real(c_double) :: pbc_cell(3, 3)
+    integer(c_int) :: used_molecule_idxs(num_atoms)
+    logical :: do_calc_only_bonded
+    if (present(molecule_idxs) .neqv. present(calc_only_bonded)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force: molecule_idxs and calc_only_bonded must be both" &
+            // " present or both absent" &
+        )
+    endif
+    used_molecule_idxs = 0
+    do_calc_only_bonded = .false.
+    if (present(molecule_idxs)) then
+        used_molecule_idxs = molecule_idxs(1:num_atoms)
+        do_calc_only_bonded = calc_only_bonded
+    endif
+    pbc_cell = 0.0d0
+    if (present(cell)) then
+        pbc_cell = cell
+    endif
+    call internal_calc_energy_force( &
+        num_atoms, &
+        coords, &
+        pbc_cell, &
+        fbool_to_cbool(present(cell)), &
+        used_molecule_idxs, &
+        fbool_to_cbool(do_calc_only_bonded), &
+        out_forces, &
+        out_pot_energy &
+    )
+endsubroutine
+
+! molecule_idxs and calc_only_bonded must be both present or both absent, if absent
+! calc_only_bonded is false
+subroutine mlip_calc_energy_force_from_external_neighbors( &
+    coords, &
+    neighborlist, &
+    shifts, &
+    molecule_idxs, &
+    calc_only_bonded, &
+    out_forces, &
+    out_pot_energy &
+)
+    real(c_double), contiguous, intent(in) :: coords(:, :)  ! Shape (3, atoms)
+    integer(c_int), contiguous, intent(in) :: neighborlist(:, :)  ! Shape (neighbors, 2)
+    real(c_double), contiguous, intent(in) :: shifts(:, :)  ! Shape (3, neighbors)
+    integer(c_int), optional, contiguous, intent(in) :: molecule_idxs(:)  ! Shape (atoms,)
+    logical, optional, intent(in) :: calc_only_bonded
+    ! Outputs
+    real(c_double), intent(out) :: out_forces(*)  ! 3 * atoms values
+    real(c_double), intent(out) :: out_pot_energy
+
+    integer(c_int) :: used_molecule_idxs(size(coords, 2))
+    logical :: do_calc_only_bonded
+    if (size(coords, 1) /= 3 .or. size(shifts, 1) /= 3 .or. size(neighborlist, 2) /= 2) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: coords, shifts or" &
+            // " neighborlist have the wrong shape" &
+        )
+    endif
+    if (size(shifts, 2) /= size(neighborlist, 1)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: shifts and neighborlist" &
+            // " sizes differ" &
+        )
+    endif
+    if (present(molecule_idxs) .neqv. present(calc_only_bonded)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_from_external_neighbors: molecule_idxs and" &
+            // " calc_only_bonded must be both present or both absent" &
+        )
+    endif
+    used_molecule_idxs = 0
+    do_calc_only_bonded = .false.
+    if (present(molecule_idxs)) then
+        if (size(molecule_idxs) /= size(coords, 2)) then
+            call exit_with_error( &
+                "mlip_calc_energy_force_from_external_neighbors: molecule_idxs and coords" &
+                // " sizes differ" &
+            )
+        endif
+        used_molecule_idxs = molecule_idxs
+        do_calc_only_bonded = calc_only_bonded
+    endif
+    call internal_calc_energy_force_from_external_neighbors( &
+        size(coords, 2), &
+        size(neighborlist, 1), &
+        coords, &
+        neighborlist, &
+        shifts, &
+        used_molecule_idxs, &
+        fbool_to_cbool(do_calc_only_bonded), &
+        out_forces, &
+        out_pot_energy &
+    )
+endsubroutine
+
+! If calc_qbc_and_qbc_grad, calls mlip_calc_energy_force_mlmm_qbc instead of
+! mlip_calc_energy_force_mlmm
+! If return_grads_instead_of_forces, out_ml_forces and out_mm_forces hold the energy grads
+! PBC are used only if cell is present
+subroutine mlip_calc_energy_force_mlmm( &
+    ml_coords, &
+    mm_coords, &
+    mm_atomic_charges, &
+    cell, &
+    calc_qbc_and_qbc_grad, &
+    return_grads_instead_of_forces, &
+    verbose, &
+    out_ml_forces, &
+    out_mm_forces, &
+    out_pot_energy &
+)
+    real(c_double), contiguous, intent(in) :: ml_coords(:, :)  ! Shape (3, ML)
+    real(c_double), contiguous, intent(in) :: mm_coords(:, :)  ! Shape (3, MM)
+    real(c_double), contiguous, intent(in) :: mm_atomic_charges(:)  ! Shape (MM,)
+    real(c_double), optional, intent(in) :: cell(3, 3)
+    logical, optional, intent(in) :: calc_qbc_and_qbc_grad
+    logical, optional, intent(in) :: return_grads_instead_of_forces
+    logical, intent(in) :: verbose
+    ! Outputs
+    real(c_double), contiguous, intent(out) :: out_ml_forces(:, :)  ! Shape (3, ML)
+    real(c_double), contiguous, intent(out) :: out_mm_forces(:, :)  ! Shape (3, MM)
+    real(c_double), intent(out) :: out_pot_energy
+
+    real(c_double) :: pbc_cell(3, 3)
+    logical :: do_calc_qbc_and_qbc_grad
+    if (any(shape(out_ml_forces) /= shape(ml_coords))) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: out_ml_forces and ml_coords shapes differ")
+    endif
+    if (any(shape(out_mm_forces) /= shape(mm_coords))) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: out_mm_forces and mm_coords shapes differ")
+    endif
+    if (size(mm_atomic_charges) /= size(mm_coords, 2)) then
+        call exit_with_error( &
+            "mlip_calc_energy_force_mlmm: mm_atomic_charges and mm_coords sizes differ" &
+        )
+    endif
+    pbc_cell = 0.0d0
+    if (present(cell)) then
+        pbc_cell = cell
+    endif
+    do_calc_qbc_and_qbc_grad = .false.
+    if (present(calc_qbc_and_qbc_grad)) then
+        do_calc_qbc_and_qbc_grad = calc_qbc_and_qbc_grad
+    endif
+    if (do_calc_qbc_and_qbc_grad) then
+        call internal_calc_energy_force_mlmm_qbc( &
+            size(ml_coords, 2), &
+            size(mm_coords, 2), &
+            ml_coords, &
+            mm_coords, &
+            mm_atomic_charges, &
+            pbc_cell, &
+            fbool_to_cbool(present(cell)), &
+            fbool_to_cbool(verbose), &
+            out_ml_forces, &
+            out_mm_forces, &
+            out_pot_energy &
+        )
+    else
+        call internal_calc_energy_force_mlmm( &
+            size(ml_coords, 2), &
+            size(mm_coords, 2), &
+            ml_coords, &
+            mm_coords, &
+            mm_atomic_charges, &
+            pbc_cell, &
+            fbool_to_cbool(present(cell)), &
+            fbool_to_cbool(verbose), &
+            out_ml_forces, &
+            out_mm_forces, &
+            out_pot_energy &
+        )
+    endif
+    if (present(return_grads_instead_of_forces)) then
+        if (return_grads_instead_of_forces) then
+            out_ml_forces = -out_ml_forces
+            out_mm_forces = -out_mm_forces
+        endif
+    endif
 endsubroutine
 
 ! Coordinates must be mapped to central cell in sander!!!
@@ -203,6 +454,14 @@ subroutine get_pmemd_img_neighbors_num(pmemd_neighborlist, img_neighbors_num)
     end do
 end subroutine
 
+! Same format and exit code as the errors of libtorchani
+subroutine exit_with_error(message)
+    character(len=*), intent(in) :: message
+    write(error_unit, "(a)") "ERROR (libtorchani)"
+    write(error_unit, "(a)") message
+    error stop 2
+endsubroutine
+
 logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     logical, intent(in) :: fbool
     if (fbool) then
@@ -212,7 +471,103 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
     endif
 endfunction
 
-subroutine torchani_dump_walltime()
+subroutine mlip_set_no_eval_atoms_mask(values)
+    integer(c_int), contiguous, intent(in) :: values(:)
+    call internal_set_no_eval_atoms_mask(int(size(values), c_int), values)
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_store_float_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_float_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_store_int_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_int_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_store_mask_tensor(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    integer(c_int), contiguous, target, intent(in) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    integer(c_int), pointer :: flat_values(:)
+    integer(c_int), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_store_mask_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_fetch_result(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(out) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_fetch_result( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Dims in C (row-major) order, from the shape of a Fortran (column-major) array
+pure function c_order_dims(fortran_shape) result(dims)
+    integer, intent(in) :: fortran_shape(:)
+    integer(c_int) :: dims(size(fortran_shape))
+    dims = int(fortran_shape(size(fortran_shape):1:-1), c_int)
+endfunction
+
+subroutine mlip_dump_walltime()
     ! State, clock count rate is assumed to be constant between calls
     logical, save :: first_call = .true.
     character(len=1), save :: need_walltime = "0"  ! Only set once

@@ -18,12 +18,13 @@ namespace compile {
  *
  * The package holds one model per device and precision for each computation:
  *
- * "single_point/<device>/<dtype>": (species, coords, net_charge)
+ * "single_point/<device>/<dtype>": (species, coords, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
- * "single_point_pbc/<device>/<dtype>": (species, coords, cell, pbc, net_charge)
+ * "single_point_pbc/<device>/<dtype>":
+ *     (species, coords, cell, pbc, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
  * "external_neighbors/<device>/<dtype>":
- *     (species, coords, neighbor_idxs, shifts, net_charge)
+ *     (species, coords, neighbor_idxs, shifts, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
  * "custom_mlmm/<device>/<dtype>":
  *     (species, ml_coords, mm_coords, mm_charges, net_charge, spin_mult, mm_cutoff,
@@ -66,8 +67,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput;
 
@@ -77,7 +76,7 @@ class CompiledMlipModel : public mlip::MlipModel {
     );
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void override;
-    auto readExtraFeaturesFromFile(const std::string& fpath) -> void override;
+    auto setExtraFeatures(torch::Tensor extra_features) -> void override;
     auto setStrategy(const std::string& strat) -> void override;
     auto supportsCustomMlmm() const -> bool override;
     auto supportsMultipoleMlmm() const -> bool override;
@@ -87,12 +86,11 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& coords,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeFromExternalNeighbors(
@@ -101,12 +99,11 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& neighborlist,
         const torch::Tensor& shifts,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMlmm(
@@ -125,8 +122,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMultipoleMlmm(
@@ -147,8 +142,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
 };

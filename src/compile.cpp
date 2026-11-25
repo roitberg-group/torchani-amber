@@ -88,7 +88,7 @@ auto CompiledMlipModel::useOnlyEnsembleMember(std::int64_t /* member_idx */) -> 
     throw std::runtime_error("Compiled models don't support selecting ensemble members");
 }
 
-auto CompiledMlipModel::readExtraFeaturesFromFile(const std::string& /* fpath */) -> void {
+auto CompiledMlipModel::setExtraFeatures(torch::Tensor /* extra_features */) -> void {
     throw std::runtime_error("Compiled models don't support extra features");
 }
 
@@ -112,12 +112,11 @@ auto CompiledMlipModel::computeSinglePoint(
     const torch::Tensor& coords,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
+    int spin_mult,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (atomic) {
@@ -128,9 +127,6 @@ auto CompiledMlipModel::computeSinglePoint(
     }
     if (molecule_idxs.has_value()) {
         throw std::runtime_error("Compiled models don't support molecule_idxs");
-    }
-    if (calc_charges_grad) {
-        throw std::runtime_error("Compiled models don't support calc_charges_grad=true");
     }
     if (calc_qbc_and_qbc_grad) {
         throw std::runtime_error(
@@ -151,14 +147,18 @@ auto CompiledMlipModel::computeSinglePoint(
              coords,
              *cell,
              pbc,
-             perMoleculeTensor(net_charge, coords.size(0))}
+             perMoleculeTensor(net_charge, coords.size(0)),
+             perMoleculeTensor(spin_mult, coords.size(0))}
         );
     } else {
         if (not m_single_point_loader) {
             m_single_point_loader = makeLoader("single_point/");
         }
         raw_output = m_single_point_loader->run(
-            {atomic_numbers, coords, perMoleculeTensor(net_charge, coords.size(0))}
+            {atomic_numbers,
+             coords,
+             perMoleculeTensor(net_charge, coords.size(0)),
+             perMoleculeTensor(spin_mult, coords.size(0))}
         );
     }
     mlip::MlipOutput output;
@@ -166,10 +166,8 @@ auto CompiledMlipModel::computeSinglePoint(
     if (calc_forces) {
         output["forces"] = raw_output.at(1);
     }
-    if (calc_charges) {
-        if (raw_output.size() < 3 or raw_output[2].numel() == 0) {
-            throw std::runtime_error("Compiled model doesn't support atomic charges");
-        }
+    // Models that don't predict atomic charges return an empty tensor
+    if (raw_output.size() >= 3 and raw_output[2].numel() > 0) {
         output["atomic_charges"] = raw_output[2];
     }
     return output;
@@ -181,12 +179,11 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
     const torch::Tensor& neighborlist,
     const torch::Tensor& shifts,
     int net_charge,
+    int spin_mult,
     bool atomic,
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not m_supports_external_neighbors) {
@@ -203,9 +200,6 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
     if (molecule_idxs.has_value()) {
         throw std::runtime_error("Compiled models don't support molecule_idxs");
     }
-    if (calc_charges_grad) {
-        throw std::runtime_error("Compiled models don't support calc_charges_grad=true");
-    }
     if (calc_qbc_and_qbc_grad) {
         throw std::runtime_error(
             "Compiled models don't support calc_qbc_and_qbc_grad=true"
@@ -219,17 +213,16 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
          coords,
          neighborlist,
          shifts,
-         perMoleculeTensor(net_charge, coords.size(0))}
+         perMoleculeTensor(net_charge, coords.size(0)),
+         perMoleculeTensor(spin_mult, coords.size(0))}
     );
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
     if (calc_forces) {
         output["forces"] = raw_output.at(1);
     }
-    if (calc_charges) {
-        if (raw_output.size() < 3 or raw_output[2].numel() == 0) {
-            throw std::runtime_error("Compiled model doesn't support atomic charges");
-        }
+    // Models that don't predict atomic charges return an empty tensor
+    if (raw_output.size() >= 3 and raw_output[2].numel() > 0) {
         output["atomic_charges"] = raw_output[2];
     }
     return output;
@@ -251,8 +244,6 @@ auto CompiledMlipModel::computeMlmm(
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     std::vector<torch::Tensor> inputs = {
@@ -277,8 +268,6 @@ auto CompiledMlipModel::computeMlmm(
         ensemble_values,
         molecule_idxs,
         calc_forces,
-        calc_charges,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -301,8 +290,6 @@ auto CompiledMlipModel::computeMultipoleMlmm(
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     std::vector<torch::Tensor> inputs = {
@@ -329,8 +316,6 @@ auto CompiledMlipModel::computeMultipoleMlmm(
         ensemble_values,
         molecule_idxs,
         calc_forces,
-        calc_charges,
-        calc_charges_grad,
         calc_qbc_and_qbc_grad
     );
 }
@@ -345,8 +330,6 @@ auto CompiledMlipModel::runMlmmLoader(
     bool ensemble_values,
     const std::optional<torch::Tensor>& molecule_idxs,
     bool calc_forces,
-    bool calc_charges,
-    bool calc_charges_grad,
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not package_has_model) {
@@ -364,9 +347,6 @@ auto CompiledMlipModel::runMlmmLoader(
     if (molecule_idxs.has_value()) {
         throw std::runtime_error("Compiled models don't support molecule_idxs");
     }
-    if (calc_charges_grad) {
-        throw std::runtime_error("Compiled models don't support calc_charges_grad=true");
-    }
     if (calc_qbc_and_qbc_grad) {
         throw std::runtime_error(
             "Compiled models don't support calc_qbc_and_qbc_grad=true"
@@ -382,12 +362,9 @@ auto CompiledMlipModel::runMlmmLoader(
         output["forces"] = raw_output.at(1);
         output["mm_forces"] = raw_output.at(2);
     }
-    if (calc_charges) {
-        torch::Tensor atomic_charges = raw_output.at(3);
-        if (atomic_charges.numel() == 0) {
-            throw std::runtime_error("Compiled model doesn't support atomic charges");
-        }
-        output["atomic_charges"] = atomic_charges;
+    // Models that don't predict atomic charges return an empty tensor
+    if (raw_output.at(3).numel() > 0) {
+        output["atomic_charges"] = raw_output.at(3);
     }
     return output;
 }

@@ -57,6 +57,10 @@ function(_Torchani_AmberHelper_hide_amber_cuda_sources_now)
         pmemd_cuda_DPFP
         pmemd_cuda_SPFP_mpi
         pmemd_cuda_DPFP_mpi
+        cpptraj_cuda_routines
+        xc_cuda
+        quick_cuda_kernels
+        quick_cuda_kernels_mpi
     )
     foreach(target IN LISTS AMBER_FINDCUDA_TARGETS)
         if(NOT TARGET ${target})
@@ -86,5 +90,37 @@ function(Torchani_AmberHelper_disable_torch_mkl_if_not_found)
     )
     if(NOT _FN_MKL_FOUND AND NOT TARGET caffe2::mkl)
         add_library(caffe2::mkl INTERFACE IMPORTED)
+    endif()
+endfunction()
+
+# Without a GPU at configure time Torch falls back to its "common" arch list, which
+# includes very old archs. Amber's CUDA_NVCC_FLAGS are applied to cuaev anyway
+# so forward the archs to Torch too, from AMBER_NVCC_FLAGS
+# A user-set TORCH_CUDA_ARCH_LIST (variable or env) is respected.
+# Must be called before find_package(Torch)
+function(Torchani_AmberHelper_set_torch_cuda_arch_list)
+    set(options "")
+    set(oneValueArgs "")
+    set(multiValueArgs AMBER_NVCC_FLAGS)
+    cmake_parse_arguments(
+        _FN
+        "${options}"
+        "${oneValueArgs}"
+        "${multiValueArgs}"
+        ${ARGN}
+    )
+    if(DEFINED TORCH_CUDA_ARCH_LIST OR DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+        return()
+    endif()
+    string(REGEX MATCHALL "code=sm_[0-9]+" _SM_CODES "${_FN_AMBER_NVCC_FLAGS}")
+    set(_ARCH_LIST "")
+    foreach(_SM_CODE IN LISTS _SM_CODES)
+        string(REGEX REPLACE "code=sm_([0-9]+)([0-9])" "\\1.\\2" _ARCH "${_SM_CODE}")
+        list(APPEND _ARCH_LIST "${_ARCH}")
+    endforeach()
+    list(REMOVE_DUPLICATES _ARCH_LIST)
+    if(_ARCH_LIST)
+        Torchani_Msg_info("Using Amber's CUDA archs for LibTorch: ${_ARCH_LIST}")
+        set(TORCH_CUDA_ARCH_LIST "${_ARCH_LIST}" PARENT_SCOPE)
     endif()
 endfunction()
