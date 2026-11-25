@@ -334,6 +334,8 @@ struct OutputFiles {
     std::string forces;
     std::string mm_forces;  // Empty if there is no MM region
     std::string atomic_charges;
+    std::string atomic_volumes;
+    std::string atomic_alphas;
     std::string coords_comment;
 };
 
@@ -342,6 +344,8 @@ const OutputFiles OUTPUT_FILES{
     "forces.mlip.dat",
     "",
     "atomic_charges.mlip.dat",
+    "atomic_volumes.mlip.dat",
+    "atomic_alphas.mlip.dat",
     "MLIP: .xyz trajectory file",
 };
 
@@ -350,6 +354,8 @@ const OutputFiles MLMM_OUTPUT_FILES{
     "forces_ml_region.mlip.dat",
     "forces_mlmm_mm_region.mlip.dat",
     "atomic_charges_ml_region.mlip.dat",
+    "atomic_volumes_ml_region.mlip.dat",
+    "atomic_alphas_ml_region.mlip.dat",
     "ML/MM: .xyz trajectory file of the ML region",
 };
 
@@ -368,7 +374,9 @@ std::string outputPath(const std::string& fname) {
 void createOutputFiles(const OutputFiles& files) {
     bool writes_outputs = global_config.getBool("write_coords")
         or global_config.getBool("write_forces")
-        or global_config.getBool("write_atomic_charges");
+        or global_config.getBool("write_atomic_charges")
+        or global_config.getBool("write_atomic_volumes")
+        or global_config.getBool("write_atomic_alphas");
     if (not writes_outputs) {
         return;
     }
@@ -389,10 +397,28 @@ void createOutputFiles(const OutputFiles& files) {
         if (global_config.getBool("write_atomic_charges")) {
             io::createEmptyFile(outputPath(files.atomic_charges));
         }
+        if (global_config.getBool("write_atomic_volumes")) {
+            io::createEmptyFile(outputPath(files.atomic_volumes));
+        }
+        if (global_config.getBool("write_atomic_alphas")) {
+            io::createEmptyFile(outputPath(files.atomic_alphas));
+        }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
         std::exit(2);
     }
+}
+
+// Throws if the model doesn't predict the atomic scalars
+void appendAtomicScalarsFrame(
+    const mlip::MlipOutput& output, const std::string& key, const std::string& fname
+) {
+    if (output.count(key) == 0) {
+        throw std::runtime_error(
+            "write_" + key + " = T, but the model doesn't predict " + key
+        );
+    }
+    io::appendDatFrame(outputPath(fname), output.at(key).view({-1}));
 }
 
 // Append the outputs of a calculation requested by the write_* options, if the current
@@ -435,14 +461,13 @@ void writeOutputs(
             }
         }
         if (global_config.getBool("write_atomic_charges")) {
-            if (output.count("atomic_charges") == 0) {
-                throw std::runtime_error(
-                    "write_atomic_charges = T, but the model doesn't predict atomic charges"
-                );
-            }
-            io::appendDatFrame(
-                outputPath(files.atomic_charges), output.at("atomic_charges").view({-1})
-            );
+            appendAtomicScalarsFrame(output, "atomic_charges", files.atomic_charges);
+        }
+        if (global_config.getBool("write_atomic_volumes")) {
+            appendAtomicScalarsFrame(output, "atomic_volumes", files.atomic_volumes);
+        }
+        if (global_config.getBool("write_atomic_alphas")) {
+            appendAtomicScalarsFrame(output, "atomic_alphas", files.atomic_alphas);
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;

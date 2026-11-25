@@ -129,6 +129,8 @@ auto defaultMlipConfig() -> ConfigDict {
         {"write_coords", {false, NamelistType::BOOL}},
         {"write_forces", {false, NamelistType::BOOL}},
         {"write_atomic_charges", {false, NamelistType::BOOL}},
+        {"write_atomic_volumes", {false, NamelistType::BOOL}},
+        {"write_atomic_alphas", {false, NamelistType::BOOL}},
         // The write_* outputs are written at MD steps that are multiples of write_interval
         {"write_interval", {1L, NamelistType::INT}},
         // Dir of the write_* output files, the current working directory if empty
@@ -140,6 +142,8 @@ auto defaultMlmmConfig() -> ConfigDict {
     std::map<std::string, ConfigOption> options{
         {"mlmm_coupling", {std::string{"coulombic"}, NamelistType::INT_OR_STR}},
         {"use_mlip_atomic_charges", {false, NamelistType::BOOL}},
+        // Currently has no effect
+        {"use_mlip_atomic_volumes", {false, NamelistType::BOOL}},
         // No longer supported, validation throws if it is False
         {"use_charges_derivatives", {true, NamelistType::BOOL}},
         // No longer available, validation throws if it is True
@@ -480,17 +484,6 @@ auto GlobalConfig::validateConfig(
                 " set use_mlip_atomic_charges = F"
             );
         }
-        if (mlip_config.getBool("write_atomic_charges")) {
-            throw config_validation_error(
-                "mlmm_coupling = 'custom' returns no charges, set write_atomic_charges = F"
-            );
-        }
-    }
-    if (mlip_config.getBool("write_atomic_charges") && !use_mlip_atomic_charges) {
-        throw config_validation_error(
-            "write_atomic_charges = T requires use_mlip_atomic_charges = T for ML/MM, only"
-            " the charges predicted by the model are written"
-        );
     }
     if (use_qm_coupling && !isOneOf(qm_coupling_method, {"amber-dftb", "orca", "gau", "lio"})) {
         throw config_validation_error(
@@ -646,6 +639,8 @@ auto GlobalConfig::printInfo() const -> void {
              "write_coords",
              "write_forces",
              "write_atomic_charges",
+             "write_atomic_volumes",
+             "write_atomic_alphas",
              "write_interval",
          }) {
         out << configLine(mlip(), key);
@@ -665,6 +660,7 @@ auto GlobalConfig::printInfo() const -> void {
     bool use_qm_coupling = getBool("use_qm_coupling");
     const std::string& qm_coupling_method = getString("qm_coupling_method");
     out << configLine(mlmm(), "use_mlip_atomic_charges");
+    out << configLine(mlmm(), "use_mlip_atomic_volumes");
     if (m_amber_qmmm_int == 1) {
         out << configLine(mlmm(), "mlmm_coupling");
     }

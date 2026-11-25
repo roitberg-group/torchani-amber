@@ -103,8 +103,8 @@ subroutine mlip_set_ml_charge_and_spin_mult( &
     integer(c_int), value, intent(in) :: spin_mult
 endsubroutine
 
-! The outputs requested by the write_coords, write_forces and write_atomic_charges
-! options are appended to their files, every write_interval steps (see
+! The outputs requested by the write_coords, write_forces, write_atomic_charges,
+! write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
 ! mlip_update_md_step)
 subroutine internal_calc_energy_force( &
     num_atoms, &
@@ -128,8 +128,8 @@ subroutine internal_calc_energy_force( &
     real(c_double), intent(out) :: out_pot_energy
 endsubroutine
 
-! The outputs requested by the write_coords, write_forces and write_atomic_charges
-! options are appended to their files, every write_interval steps (see
+! The outputs requested by the write_coords, write_forces, write_atomic_charges,
+! write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
 ! mlip_update_md_step)
 subroutine internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &

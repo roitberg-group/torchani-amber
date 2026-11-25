@@ -221,15 +221,22 @@ Output related options:
 - `write_atomic_charges` (*bool*)
    Dump the atomic charges predicted by the model as a `.dat` file. Requires a
    charge-predicting model
+- `write_atomic_volumes` (*bool*)
+   Dump the atomic volumes predicted by the model as a `.dat` file. Requires a
+   volume-predicting model
+- `write_atomic_alphas` (*bool*)
+   Dump the atomic polarizabilities predicted by the model as a `.dat` file. Requires
+   a polarizability-predicting model
 - `write_interval` (*int*)
    The outputs are written every `write_interval` MD steps. Default is `1`
 - `output_dir` (*string*)
    Directory of the output files. Default is the current working directory
 
-The files are `coords.xyz`, `forces.mlip.dat` and `atomic_charges.mlip.dat`. For
-ML/MM, they are named `ml_region.xyz`,
-`forces_ml_region.mlip.dat` (and `forces_mlmm_mm_region.mlip.dat` for the MM atoms)
-and `atomic_charges_ml_region.mlip.dat`.
+The files are `coords.xyz`, `forces.mlip.dat`, `atomic_charges.mlip.dat`,
+`atomic_volumes.mlip.dat` and `atomic_alphas.mlip.dat`. For ML/MM, they are named
+`ml_region.xyz`, `forces_ml_region.mlip.dat` (and `forces_mlmm_mm_region.mlip.dat` for
+the MM atoms), `atomic_charges_ml_region.mlip.dat`, `atomic_volumes_ml_region.mlip.dat`
+and `atomic_alphas_ml_region.mlip.dat`.
 
 An example `mdin` input file with the correct format:
 
@@ -309,7 +316,6 @@ For ML/MM, set the charge and spin multiplicity of the ML region with `qmcharge`
 `qmcharge` (e.g. to adjust the MM charges, see `adjust_q`).
 
 The `&mlip` namelist remains the same, with the following extra available options.
-`write_atomic_charges` requires `use_mlip_atomic_charges = .true.` for ML/MM.
 
 ML/MM and electrostatic related options:
 - `use_mlip_atomic_charges` (bool)
@@ -319,6 +325,8 @@ ML/MM and electrostatic related options:
    the `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. These
    charges are geometry-dependent, and the derivatives w.r.t. coordinates are used to
    calculate their contribution to the forces.
+- `use_mlip_atomic_volumes` (bool)
+   Currently has no effect.
 - `mlmm_coupling` (str, case-insensitive)
    Currently available are: `'coulombic'` (*coulombic coupling*, the default),
    `'simple-polarizable'` (*simple polarizable* coupling), `'custom'` (custom ML/MM model,

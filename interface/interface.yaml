@@ -77,8 +77,8 @@ functions:
   - name: mlip_calc_energy_force
     fortran_wrapper: manual
     comment: |
-      The outputs requested by the write_coords, write_forces and write_atomic_charges
-      options are appended to their files, every write_interval steps (see
+      The outputs requested by the write_coords, write_forces, write_atomic_charges,
+      write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
       mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}
@@ -93,8 +93,8 @@ functions:
   - name: mlip_calc_energy_force_from_external_neighbors
     fortran_wrapper: manual
     comment: |
-      The outputs requested by the write_coords, write_forces and write_atomic_charges
-      options are appended to their files, every write_interval steps (see
+      The outputs requested by the write_coords, write_forces, write_atomic_charges,
+      write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
       mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}

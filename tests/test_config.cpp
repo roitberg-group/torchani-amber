@@ -242,8 +242,6 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
         "&mlip mlmm_coupling = 'custom', use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
         "&mlip mlmm_coupling = 'custom', use_mlip_atomic_charges = T,\n"
         "  allow_untested_protocols = T /\n",
-        "&mlip mlmm_coupling = 'custom', write_atomic_charges = T /\n",
-        "&mlip write_atomic_charges = T /\n",
         "&mlip write_interval = 0 /\n",
         "&mlip use_qm_coupling = T /\n",
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
