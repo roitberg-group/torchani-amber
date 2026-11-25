@@ -149,8 +149,8 @@ class AmberIntegration(unittest.TestCase):
         else:
             self.d = tempfile.TemporaryDirectory()
             test_dir = Path(self.d.name)
-        string = env.get_template("input.mdin.jinja").render(**asdict(config))
-        (test_dir / "input.mdin").write_text(string)
+        string = env.get_template("mdin.jinja").render(**asdict(config))
+        (test_dir / "mdin").write_text(string)
         self._run_engine("pmemd", test_dir)
 
         # Generate expected values
@@ -213,10 +213,10 @@ class AmberIntegration(unittest.TestCase):
             use_amber_neighborlist=True,
             netcdf=True,
         )
-        string = env.get_template("input.mdin.jinja").render(**asdict(config))
+        string = env.get_template("mdin.jinja").render(**asdict(config))
         self.d = tempfile.TemporaryDirectory()
         test_dir = Path(self.d.name)
-        (test_dir / "input.mdin").write_text(string)
+        (test_dir / "mdin").write_text(string)
         self._run_engine(engine, test_dir)
         path = test_dir / "mdcrd"
         ds = netcdf.Dataset(str(path), "r", format="NETCDF3_64BIT_OFFSET")
@@ -232,8 +232,8 @@ class AmberIntegration(unittest.TestCase):
             test_dir = Path(self.d.name)
 
         # Fix amber neighborlist
-        string = env.get_template("input.mdin.jinja").render(**asdict(config))
-        (test_dir / "input.mdin").write_text(string)
+        string = env.get_template("mdin.jinja").render(**asdict(config))
+        (test_dir / "mdin").write_text(string)
         self._run_engine("sander", test_dir)
 
         # Generate expected values
@@ -292,7 +292,7 @@ class AmberIntegration(unittest.TestCase):
             [
                 name,
                 "-i",
-                "input.mdin",
+                "mdin",
                 "-p",
                 "prmtop",
                 "-c",
