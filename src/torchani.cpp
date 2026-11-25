@@ -204,18 +204,53 @@ torch::Tensor mlAtomicPolarizabilities() {
     );
 }
 
+// Factors kz of the ML atoms (AU), such that their polarizabilities are kz times their
+// atomic volumes, from the ML/MM config. Exits if the ML/MM config was not read, or if
+// an element has no kz
+torch::Tensor mlVolumeKzs() {
+    std::vector<double> kzs;
+    for (long atomic_num : mlAtomicNumbers()) {
+        double kz = std::numeric_limits<double>::quiet_NaN();
+        try {
+            kz = global_config.getVolumeKz(atomic_num);
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
+        kzs.push_back(kz);
+    }
+    return global_config.tensorToTorchaniDtypeAndDevice(
+        torch::tensor(kzs, torch::TensorOptions().dtype(torch::kDouble))
+    );
+}
+
 void printPolarizabilitiesInUse() {
     std::set<long> atomic_nums;
     for (long atomic_num : mlAtomicNumbers()) {
         atomic_nums.insert(atomic_num);
     }
-    std::cout << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
-              << "Element Symbol, Alpha (AU)\n";
+    bool use_mlip_atomic_volumes = global_config.getBool("use_mlip_atomic_volumes");
+    if (use_mlip_atomic_volumes) {
+        std::cout << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
+                  << "Element Symbol, kz (AU)\n";
+    } else {
+        std::cout << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
+                  << "Element Symbol, Alpha (AU)\n";
+    }
     for (long atomic_num : atomic_nums) {
+        double value = 0.0;
+        try {
+            if (use_mlip_atomic_volumes) {
+                value = global_config.getVolumeKz(atomic_num);
+            } else {
+                value = global_config.getPolarizability(atomic_num);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
         std::cout << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
-                  << std::fixed << std::setprecision(4)
-                  << global_config.getPolarizability(atomic_num)
-                  << "\n";
+                  << std::fixed << std::setprecision(4) << value << "\n";
     }
     std::cout << std::defaultfloat << std::flush;
 }
@@ -676,7 +711,18 @@ void calcEnergyForceMlmm(
         );
         if (mlmm_coupling == "simple-polarizable") {
             // Exits if the ML/MM config was not read, so it can be read afterwards
-            torch::Tensor atomic_alphas = mlAtomicPolarizabilities();
+            torch::Tensor atomic_alphas;
+            if (global_config.getBool("use_mlip_atomic_volumes")) {
+                if (output.count("atomic_volumes") == 0) {
+                    std::cerr << "ERROR (libtorchani)\n"
+                              << "use_mlip_atomic_volumes = T, but the model doesn't"
+                              << " predict atomic volumes" << std::endl;
+                    std::exit(2);
+                }
+                atomic_alphas = mlVolumeKzs() * output.at("atomic_volumes").view({-1});
+            } else {
+                atomic_alphas = mlAtomicPolarizabilities();
+            }
             double inv_pol_dielectric = global_config.getDouble("inv_pol_dielectric");
             ene_pot_pol = electro::polarizableEmbeddingEnergy(
                 ml_coords,
@@ -937,6 +983,10 @@ void mlip_initialize(
 
     // (7) Epilogue
     global_config.setMlipInterfaceIsInit(true);
+    if (read_mlmm_config && global_config.getBool("use_mlip_atomic_volumes")) {
+        // Exits if an element of the ML atoms has no kz
+        mlVolumeKzs();
+    }
     if (
         print_config_info
         && read_mlmm_config

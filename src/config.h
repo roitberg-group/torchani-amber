@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <c10/core/ScalarType.h>
 #include <torch/all.h>
@@ -19,8 +20,24 @@ namespace config {
 // TODO: The type is redundant, it could be derived from the value with
 // std::holds_alternative, and ConfigDict could map keys directly to values
 struct ConfigOption {
-    fortran_utils::NamelistValue value;
+    // Scalars have exactly one value, VEC_* and VEC3_* any number
+    std::vector<fortran_utils::NamelistValue> values;
     fortran_utils::NamelistType type;
+
+    ConfigOption(
+        fortran_utils::NamelistValue option_value, fortran_utils::NamelistType option_type
+    ):
+        values{std::move(option_value)},
+        type{option_type}
+    {}
+
+    ConfigOption(
+        std::vector<fortran_utils::NamelistValue> option_values,
+        fortran_utils::NamelistType option_type
+    ):
+        values{std::move(option_values)},
+        type{option_type}
+    {}
 };
 
 // Thin wrapper over a map of (lowercase) namelist keys to options. The getters throw
@@ -41,13 +58,25 @@ class ConfigDict {
         return m_options.count(key) > 0;
     }
 
+    // Value of a scalar option
     auto value(const std::string& key) const -> const fortran_utils::NamelistValue& {
-        return m_options.at(key).value;
+        return m_options.at(key).values.front();
     }
 
-    // Copy of the config, with the value of an existing option replaced
+    auto values(const std::string& key) const
+        -> const std::vector<fortran_utils::NamelistValue>& {
+        return m_options.at(key).values;
+    }
+
+    // Copy of the config, with the value of an existing scalar option replaced
     auto withValue(const std::string& key, fortran_utils::NamelistValue value) const
-        -> ConfigDict;
+        -> ConfigDict {
+        return withValues(key, {std::move(value)});
+    }
+
+    // Copy of the config, with the values of an existing option replaced
+    auto withValues(const std::string& key, std::vector<fortran_utils::NamelistValue> values)
+        const -> ConfigDict;
 
     auto getInt(const std::string& key) const -> int;
 
@@ -211,6 +240,11 @@ class GlobalConfig {
     // config was not read, or if the element has no polarizability
     auto getPolarizability(const std::string& element_symbol) const -> double;
     auto getPolarizability(long atomic_num) const -> double;
+
+    // Factor kz (AU) of an element, such that its polarizability is kz times its atomic
+    // volume, from the ML/MM config, or a builtin default if volume_kzs is not set.
+    // Throws if the ML/MM config was not read, or if the element has no kz
+    auto getVolumeKz(long atomic_num) const -> double;
 
     // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
     // was read

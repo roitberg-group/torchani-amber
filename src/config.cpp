@@ -34,7 +34,8 @@ constexpr bool BUILT_WITH_CUDA = true;
 constexpr bool BUILT_WITH_CUDA = false;
 #endif
 
-// Null values, and keys not in the group, keep the value in config
+// Values are assigned element-wise. Null values, and keys not in the group, keep the
+// values in config
 ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
     ConfigDict updated_config = config;
     for (const auto& [key, option] : config.options()) {
@@ -42,20 +43,30 @@ ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
         if (values_it == group.values.end()) {
             continue;
         }
-        const fortran_utils::NamelistValue& value = values_it->second.front();
-        if (!std::holds_alternative<std::monostate>(value)) {
-            updated_config = updated_config.withValue(key, value);
+        const std::vector<fortran_utils::NamelistValue>& new_values = values_it->second;
+        std::vector<fortran_utils::NamelistValue> values = option.values;
+        if (values.size() < new_values.size()) {
+            values.resize(new_values.size());
         }
+        for (std::size_t i = 0; i != new_values.size(); ++i) {
+            if (!std::holds_alternative<std::monostate>(new_values[i])) {
+                values[i] = new_values[i];
+            }
+        }
+        updated_config = updated_config.withValues(key, values);
     }
     return updated_config;
 }
 
 bool isDefault(const ConfigDict& config, const ConfigDict& defaults, const std::string& key) {
-    return config.value(key) == defaults.value(key);
+    return config.values(key) == defaults.values(key);
 }
 
-// Values written as Fortran does, e.g. logicals as T and F
+// Values written as Fortran does, e.g. logicals as T and F, and nulls as empty strings
 std::string valueString(const fortran_utils::NamelistValue& value) {
+    if (std::holds_alternative<std::monostate>(value)) {
+        return "";
+    }
     if (std::holds_alternative<bool>(value)) {
         return std::get<bool>(value) ? "T" : "F";
     }
@@ -72,8 +83,15 @@ std::string valueString(const fortran_utils::NamelistValue& value) {
 
 std::string configLine(const ConfigDict& config, const std::string& key) {
     std::ostringstream line;
-    line << "ML/MM:  " << std::left << std::setw(29) << key << valueString(config.value(key))
-         << "\n";
+    line << "ML/MM:  " << std::left << std::setw(29) << key;
+    const std::vector<fortran_utils::NamelistValue>& values = config.values(key);
+    for (std::size_t i = 0; i != values.size(); ++i) {
+        if (i != 0) {
+            line << ", ";
+        }
+        line << valueString(values[i]);
+    }
+    line << "\n";
     return line.str();
 }
 
@@ -83,6 +101,74 @@ void printWarning(const std::string& msg) {
 
 bool isOneOf(const std::string& value, const std::vector<std::string>& options) {
     return std::find(options.begin(), options.end(), value) != options.end();
+}
+
+// volume_kzs may be the name of one of these, or the kz of each element. They are
+// indexed by atomic number, starting at H. NaN means the element has no kz
+constexpr double NO_KZ = std::numeric_limits<double>::quiet_NaN();
+const std::map<std::string, std::vector<double>> BUILTIN_VOLUME_KZS{
+    {
+        "builtin-mbis-charges",
+        {
+            0.0, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.7190062581351027, 0.9894465754783003,
+            0.5712807132434742, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.0,
+            0.47491014980647467,
+        },
+    },
+    {
+        "builtin-fixed-resp-charges",
+        {
+            0.7659661617582175, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.36055843774225754,
+            0.32324322791847215, 0.26476340834055967, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ,
+            NO_KZ, NO_KZ, 0.030818228617190933, 1.1044386233759735,
+        },
+    },
+};
+
+// Builtin volume_kzs used if none are given
+std::string defaultVolumeKzsName(const ConfigDict& mlmm) {
+    if (mlmm.getBool("use_mlip_atomic_charges")) {
+        return "builtin-mbis-charges";
+    }
+    return "builtin-fixed-resp-charges";
+}
+
+// The kz of each element, indexed by atomic number starting at H, NaN if the element has
+// no kz. Builtin names are replaced by their values
+std::vector<double> resolvedVolumeKzs(const ConfigDict& mlmm) {
+    std::vector<fortran_utils::NamelistValue> volume_kzs = mlmm.values("volume_kzs");
+    if (volume_kzs.empty()) {
+        volume_kzs = {defaultVolumeKzsName(mlmm)};
+    }
+    std::vector<double> kzs(constants::NUM_ELEMENTS, NO_KZ);
+    if (volume_kzs.size() == 1 && std::holds_alternative<std::string>(volume_kzs.front())) {
+        const std::string& name = std::get<std::string>(volume_kzs.front());
+        auto builtin_it = BUILTIN_VOLUME_KZS.find(name);
+        if (builtin_it == BUILTIN_VOLUME_KZS.end()) {
+            throw config_validation_error(
+                "Valid volume_kzs names are 'builtin-mbis-charges' and"
+                " 'builtin-fixed-resp-charges'"
+            );
+        }
+        std::copy(builtin_it->second.begin(), builtin_it->second.end(), kzs.begin());
+        return kzs;
+    }
+    if (volume_kzs.size() > constants::NUM_ELEMENTS) {
+        throw config_validation_error(
+            "volume_kzs has more values than there are elements"
+        );
+    }
+    for (std::size_t i = 0; i != volume_kzs.size(); ++i) {
+        if (std::holds_alternative<std::string>(volume_kzs[i])) {
+            throw config_validation_error(
+                "volume_kzs must be a single builtin name, or a list of numbers"
+            );
+        }
+        if (std::holds_alternative<double>(volume_kzs[i])) {
+            kzs[i] = std::get<double>(volume_kzs[i]);
+        }
+    }
+    return kzs;
 }
 
 // mlmm_coupling may be one of the deprecated integers, or a string in any case
@@ -142,8 +228,8 @@ auto defaultMlmmConfig() -> ConfigDict {
     std::map<std::string, ConfigOption> options{
         {"mlmm_coupling", {std::string{"coulombic"}, NamelistType::INT_OR_STR}},
         {"use_mlip_atomic_charges", {false, NamelistType::BOOL}},
-        // Currently has no effect
         {"use_mlip_atomic_volumes", {false, NamelistType::BOOL}},
+        {"volume_kzs", {std::vector<fortran_utils::NamelistValue>{}, NamelistType::VEC_FLOAT_OR_STR}},
         // No longer supported, validation throws if it is False
         {"use_charges_derivatives", {true, NamelistType::BOOL}},
         // No longer available, validation throws if it is True
@@ -193,10 +279,11 @@ auto defaultAmberQmmmConfig() -> ConfigDict {
     }};
 }
 
-auto ConfigDict::withValue(const std::string& key, fortran_utils::NamelistValue value) const
-    -> ConfigDict {
+auto ConfigDict::withValues(
+    const std::string& key, std::vector<fortran_utils::NamelistValue> values
+) const -> ConfigDict {
     std::map<std::string, ConfigOption> options = m_options;
-    options.at(key).value = std::move(value);
+    options.at(key).values = std::move(values);
     return ConfigDict{options};
 }
 
@@ -472,6 +559,19 @@ auto GlobalConfig::validateConfig(
             );
         }
     }
+    bool use_mlip_atomic_volumes = mlmm.getBool("use_mlip_atomic_volumes");
+    bool volume_kzs_is_set = !mlmm.values("volume_kzs").empty();
+    resolvedVolumeKzs(mlmm);
+    if (use_mlip_atomic_volumes && mlmm_coupling != "simple-polarizable") {
+        throw config_validation_error(
+            "use_mlip_atomic_volumes = T requires mlmm_coupling = 'simple-polarizable'"
+        );
+    }
+    if (!use_mlip_atomic_volumes && volume_kzs_is_set) {
+        throw config_validation_error(
+            "volume_kzs only has an effect with use_mlip_atomic_volumes = T"
+        );
+    }
     if (!inv_pol_dielectric_is_default && mlmm_coupling != "simple-polarizable") {
         throw config_validation_error(
             "inv_pol_dielectric only has an effect with mlmm_coupling = 'simple-polarizable'"
@@ -619,6 +719,22 @@ auto GlobalConfig::getPolarizability(const std::string& element_symbol) const ->
     return polarizability;
 }
 
+auto GlobalConfig::getVolumeKz(long atomic_num) const -> double {
+    if (atomic_num < 1 || atomic_num > static_cast<long>(constants::NUM_ELEMENTS)) {
+        throw std::out_of_range("Invalid atomic number " + std::to_string(atomic_num));
+    }
+    std::vector<double> kzs = resolvedVolumeKzs(mlmm());
+    auto idx = static_cast<std::size_t>(atomic_num - 1);
+    if (std::isnan(kzs[idx])) {
+        throw std::runtime_error(
+            "volume_kzs has no value for element "
+            + std::string(constants::ELEMENT_SYMBOLS[idx])
+            + " (atomic number " + std::to_string(atomic_num) + ")"
+        );
+    }
+    return kzs[idx];
+}
+
 auto GlobalConfig::getPolarizability(long atomic_num) const -> double {
     if (atomic_num < 1 || atomic_num > static_cast<long>(constants::NUM_ELEMENTS)) {
         throw std::out_of_range("Invalid atomic number " + std::to_string(atomic_num));
@@ -661,6 +777,13 @@ auto GlobalConfig::printInfo() const -> void {
     const std::string& qm_coupling_method = getString("qm_coupling_method");
     out << configLine(mlmm(), "use_mlip_atomic_charges");
     out << configLine(mlmm(), "use_mlip_atomic_volumes");
+    if (getBool("use_mlip_atomic_volumes") && mlmm().values("volume_kzs").empty()) {
+        out << configLine(
+            mlmm().withValue("volume_kzs", defaultVolumeKzsName(mlmm())), "volume_kzs"
+        );
+    } else if (getBool("use_mlip_atomic_volumes")) {
+        out << configLine(mlmm(), "volume_kzs");
+    }
     if (m_amber_qmmm_int == 1) {
         out << configLine(mlmm(), "mlmm_coupling");
     }
@@ -733,6 +856,11 @@ auto GlobalConfig::printInfo() const -> void {
             << " taking into account dq/dr\n";
     } else if (mlmm_coupling != "custom") {
         out << "ML/MM: Will use fixed charges read from the topology file for the QM-region\n";
+    }
+    if (getBool("use_mlip_atomic_volumes")) {
+        out << "ML/MM: Will use polarizabilities proportional to the NN-predicted atomic"
+            << " volumes for the QM-region, alpha = kz * volume, taking into account"
+            << " dvolume/dr\n";
     }
     std::cout << out.str() << std::flush;
 }

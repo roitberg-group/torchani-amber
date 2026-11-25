@@ -130,8 +130,12 @@ std::string typeName(NamelistType type) {
             return "BOOL";
         case NamelistType::INT_OR_STR:
             return "INT_OR_STR";
+        case NamelistType::FLOAT_OR_STR:
+            return "FLOAT_OR_STR";
         case NamelistType::VEC_FLOAT:
             return "VEC_FLOAT";
+        case NamelistType::VEC_FLOAT_OR_STR:
+            return "VEC_FLOAT_OR_STR";
         case NamelistType::VEC_INT:
             return "VEC_INT";
         case NamelistType::VEC_STR:
@@ -155,6 +159,8 @@ NamelistType elementType(NamelistType type) {
         case NamelistType::VEC_FLOAT:
         case NamelistType::VEC3_FLOAT:
             return NamelistType::FLOAT;
+        case NamelistType::VEC_FLOAT_OR_STR:
+            return NamelistType::FLOAT_OR_STR;
         case NamelistType::VEC_INT:
         case NamelistType::VEC3_INT:
             return NamelistType::INT;
@@ -173,6 +179,7 @@ NamelistType elementType(NamelistType type) {
 std::size_t requiredNumValues(NamelistType type) {
     switch (type) {
         case NamelistType::VEC_FLOAT:
+        case NamelistType::VEC_FLOAT_OR_STR:
         case NamelistType::VEC_INT:
         case NamelistType::VEC_STR:
         case NamelistType::VEC_BOOL:
@@ -281,7 +288,8 @@ NamelistValue convertUnquotedWithType(
     if (type_is_int && isInt(token)) {
         return convertNumber(text, token_start, token, key, NamelistType::INT);
     }
-    if (type == NamelistType::FLOAT && isReal(token)) {
+    bool type_is_float = type == NamelistType::FLOAT || type == NamelistType::FLOAT_OR_STR;
+    if (type_is_float && isReal(token)) {
         return convertNumber(text, token_start, token, key, NamelistType::FLOAT);
     }
     if (type == NamelistType::BOOL && isTrue(token)) {
@@ -291,7 +299,9 @@ NamelistValue convertUnquotedWithType(
         return false;
     }
     bool token_is_value = isReal(token) || isTrue(token) || isFalse(token);
-    if (type == NamelistType::STR || (type == NamelistType::INT_OR_STR && !token_is_value)) {
+    bool type_is_or_str =
+        type == NamelistType::INT_OR_STR || type == NamelistType::FLOAT_OR_STR;
+    if (type == NamelistType::STR || (type_is_or_str && !token_is_value)) {
         throwUnquotedStringError(text, token_start, token, key);
     }
     throwParseError<namelist_type_error>(
@@ -354,7 +364,8 @@ std::vector<NamelistValue> parseValues(
         bool is_quoted = token.empty() && pos < text.size()
             && (text[pos] == '\'' || text[pos] == '"');
         bool type_accepts_str = element_type == NamelistType::STR
-            || element_type == NamelistType::INT_OR_STR;
+            || element_type == NamelistType::INT_OR_STR
+            || element_type == NamelistType::FLOAT_OR_STR;
         NamelistValue value;
         if (is_quoted && element_type && !type_accepts_str) {
             throwParseError<namelist_type_error>(

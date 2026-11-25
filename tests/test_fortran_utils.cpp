@@ -313,6 +313,22 @@ TEST_CASE("Namelist schema int or str", "[namelist]") {
     CHECK_THROWS_AS(parseNamelists("&g k = 1, 2 /", "", schema), namelist_type_error);
 }
 
+TEST_CASE("Namelist schema float or str", "[namelist]") {
+    NamelistSchema schema{
+        {"k", NamelistType::FLOAT_OR_STR},
+        {"vk", NamelistType::VEC_FLOAT_OR_STR},
+    };
+    CHECK(parseSingleGroup("&g k = 2 /", schema).at("k") == Values{2.0});
+    CHECK(parseSingleGroup("&g k = 1.5 /", schema).at("k") == Values{1.5});
+    CHECK(parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}});
+    CHECK(parseSingleGroup("&g vk = 1, , 2.5 /", schema).at("vk") == Values{1.0, null_value, 2.5});
+    CHECK(parseSingleGroup("&g vk = 'a' /", schema).at("vk") == Values{std::string{"a"}});
+    CHECK_THROWS_AS(parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error);
+    CHECK_THROWS_AS(parseNamelists("&g k = t /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(parseNamelists("&g k = 1, 2 /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(parseNamelists("&g vk = 1, t /", "", schema), namelist_type_error);
+}
+
 TEST_CASE("Namelist aliases", "[namelist]") {
     NamelistAliases aliases{{"old", "new"}, {"Old2", "NEW"}};
     std::vector<NamelistGroup> groups = parseNamelists("&g old=1 x=2 /", "", {}, aliases);

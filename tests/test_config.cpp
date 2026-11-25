@@ -243,6 +243,14 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
         "&mlip mlmm_coupling = 'custom', use_mlip_atomic_charges = T,\n"
         "  allow_untested_protocols = T /\n",
         "&mlip write_interval = 0 /\n",
+        "&mlip mlmm_coupling = 'coulombic', use_mlip_atomic_volumes = T,\n"
+        "  volume_kzs = 1.0 /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  volume_kzs = 1.0 /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, volume_kzs = 'builtin-nonexistent' /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, volume_kzs = 1.0, 'builtin-mbis-charges' /\n",
         "&mlip use_qm_coupling = T /\n",
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca' /\n",
         "&mlip use_hybrid_mlqm = T /\n",
@@ -457,6 +465,67 @@ TEST_CASE("GlobalConfig polarizabilities", "[config]") {
     CHECK_THROWS_AS(config.getPolarizability(0L), std::out_of_range);
     CHECK_THROWS_AS(config.getPolarizability(119L), std::out_of_range);
     CHECK_THROWS_AS(config.getPolarizability("Xx"), std::out_of_range);
+}
+
+TEST_CASE("GlobalConfig volume kzs", "[config]") {
+    config::ConfigDict mlip_config = config::defaultMlipConfig();
+    mlip_config = mlip_config.withValue("use_cuda_device", false);
+    CHECK_THROWS_AS(GlobalConfig{mlip_config}.getVolumeKz(6L), std::logic_error);
+
+    std::filesystem::path path = writeTmpFile(
+        "torchani_test_config_volume_kzs.in",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, volume_kzs = 0.5, , 1 /\n"
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getVolumeKz(1L) == 0.5);
+    CHECK(config.getVolumeKz(3L) == 1.0);
+    CHECK_THROWS_AS(config.getVolumeKz(2L), std::runtime_error);
+    CHECK_THROWS_AS(config.getVolumeKz(4L), std::runtime_error);
+    CHECK_THROWS_AS(config.getVolumeKz(0L), std::out_of_range);
+
+    writeTmpFile(
+        "torchani_test_config_volume_kzs.in",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, volume_kzs = 'builtin-mbis-charges' /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getVolumeKz(1L) == 0.0);
+    CHECK(config.getVolumeKz(6L) == 0.7190062581351027);
+    CHECK(config.getVolumeKz(16L) == 0.0);
+    CHECK(config.getVolumeKz(17L) == 0.47491014980647467);
+    CHECK_THROWS_AS(config.getVolumeKz(2L), std::runtime_error);
+    CHECK_THROWS_AS(config.getVolumeKz(9L), std::runtime_error);
+    CHECK_THROWS_AS(config.getVolumeKz(18L), std::runtime_error);
+
+    writeTmpFile(
+        "torchani_test_config_volume_kzs.in",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getVolumeKz(1L) == 0.0);
+    CHECK(config.getVolumeKz(6L) == 0.7190062581351027);
+
+    writeTmpFile(
+        "torchani_test_config_volume_kzs.in",
+        "&mlip mlmm_coupling = 'simple-polarizable', allow_untested_protocols = T,\n"
+        "  use_mlip_atomic_volumes = T /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getVolumeKz(1L) == 0.7659661617582175);
+    CHECK(config.getVolumeKz(6L) == 0.36055843774225754);
+
+    writeTmpFile(
+        "torchani_test_config_volume_kzs.in",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  use_mlip_atomic_volumes = T, volume_kzs = 'builtin-fixed-resp-charges' /\n"
+    );
+    config = GlobalConfig::fromNamelistFile(path.string(), true);
+    CHECK(config.getVolumeKz(1L) == 0.7659661617582175);
+    CHECK(config.getVolumeKz(16L) == 0.030818228617190933);
+    CHECK_THROWS_AS(config.getVolumeKz(3L), std::runtime_error);
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("GlobalConfig charge and spin from &qmmm", "[config]") {

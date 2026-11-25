@@ -13,7 +13,7 @@ namespace fortran_utils {
 using NamelistValue = std::variant<std::monostate, bool, long, double, std::string>;
 
 // FLOAT -> double, INT -> long, STR -> std::string, BOOL -> bool, INT_OR_STR -> long
-// or std::string. Scalars take one value, VEC_* any number of values, and VEC3_*
+// or std::string, FLOAT_OR_STR -> double or std::string. Scalars take one value, VEC_* any number of values, and VEC3_*
 // exactly 3
 enum class NamelistType {
     FLOAT,
@@ -21,7 +21,9 @@ enum class NamelistType {
     STR,
     BOOL,
     INT_OR_STR,
+    FLOAT_OR_STR,
     VEC_FLOAT,
+    VEC_FLOAT_OR_STR,
     VEC_INT,
     VEC_STR,
     VEC_BOOL,
@@ -123,7 +125,8 @@ struct NamelistGroup {
  * in it are rejected, or ignored if ignore_unknown_keys. Ignored keys must still be
  * valid namelist syntax, since their values are parsed to find where they end. FLOAT
  * accepts integers and reals, INT only integers, BOOL only logicals, STR only quoted
- * strings, and INT_OR_STR integers or quoted strings, and the same for the elements of
+ * strings, INT_OR_STR integers or quoted strings, and FLOAT_OR_STR integers, reals or
+ * quoted strings, and the same for the elements of
  * VEC_* and VEC3_*. Each assignment of a key must give one value for scalars and 3 for
  * VEC3_* (null values count, e.g. "a = 1,,3").
  *
