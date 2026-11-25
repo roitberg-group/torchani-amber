@@ -397,7 +397,7 @@ limitations will be lifted in the future:
 ## Support for custom models
 
 Custom models are supported by passing a full path to the jit-compiled file to
-`model_type`. Custom models must fullfil some API requiremets.
+`model_type`. Custom models must fullfil some API requirements.
 
 The easiest way to fullfil requirements needed for usage of custom models is for your
 model to be an instance of `ANI` or `ANIq`. This is flexible, since they are highly
