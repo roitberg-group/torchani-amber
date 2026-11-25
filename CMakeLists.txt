@@ -260,6 +260,7 @@ Torchani_Msg_banner(
 
 if(INSIDE_AMBER)
     Torchani_AmberHelper_disable_torch_mkl_if_not_found(MKL_FOUND "${MKL_FOUND}")
+    Torchani_AmberHelper_set_torch_cuda_arch_list(AMBER_NVCC_FLAGS ${CUDA_NVCC_FLAGS})
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
