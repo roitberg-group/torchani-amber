@@ -29,16 +29,19 @@ functions:
     fortran_wrapper: manual
     comment: |
       Read the config from the first &mlip namelist of the file at config_path (the
-      mdin), and load the MLIP. The ML/MM options are only read if read_mlmm_config.
-      If validate_amber_config too, the &qmmm namelist is also read, and the config is
-      validated against it. If print_config_info, the config is printed to stdout.
-      In Fortran, validate_amber_config and print_config_info are optional, default false
+      mdin, relative paths are resolved wrt the current working directory), and load
+      the MLIP. The ML/MM options are only read if read_mlmm_config.
+      calling_program is the md engine, "none", "sander" or "pmemd". If it is "sander"
+      and read_mlmm_config, the &qmmm namelist is also read, and the config is validated
+      against it. If print_config_info, the config is printed to stdout.
+      In Fortran, calling_program and print_config_info are optional, default "none"
+      and false
     args:
       - {name: num_atoms, dtype: int}
       - {name: atomic_nums, dtype: int, shape: [num_atoms]}
       - {name: config_path, dtype: str}
       - {name: read_mlmm_config, dtype: bool}
-      - {name: validate_amber_config, dtype: bool}
+      - {name: calling_program, dtype: str}
       - {name: print_config_info, dtype: bool}
 
   - name: mlip_set_no_eval_atoms_mask
@@ -82,18 +85,6 @@ functions:
       - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
       - {name: calc_only_bonded, dtype: bool}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: potential_energy, dtype: double, intent: out}
-
-  - name: mlip_calc_energy_force_atomic_charges
-    args:
-      - {name: num_atoms, dtype: int}
-      - {name: coords, dtype: double, shape: [num_atoms, 3]}
-      - {name: cell, dtype: double, shape: [3, 3]}
-      - {name: use_pbc, dtype: bool}
-      - {name: molecule_idxs, dtype: int, shape: [num_atoms]}
-      - {name: calc_only_bonded, dtype: bool}
-      - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
-      - {name: atomic_charges, dtype: double, shape: [num_atoms], intent: out}
       - {name: potential_energy, dtype: double, intent: out}
 
   - name: mlip_calc_energy_atomic_charges_retain
@@ -141,18 +132,20 @@ functions:
 
   - name: mlip_calc_energy_force_mlmm
     comment: |
-      mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
-      (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
-      'simple-polarizable', the atomic polarizabilities and the inverse polarization
-      dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-      ML/MM config, which must have been read. With 'custom', the TorchScript model
+      Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
+      otherwise. The coupling is its mlmm_coupling option: 'coulombic',
+      'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
+      0. With 'simple-polarizable', the atomic polarizabilities and the inverse
+      polarization dielectric are read from the pol_<symbol> and inv_pol_dielectric
+      options of the ML/MM config. 'coulombic' and 'simple-polarizable' use the atomic
+      charges predicted by the model if the use_mlip_atomic_charges option is set, and
+      otherwise the ones stored as 'fixed_atomic_charges' (with mlip_store_tensor),
+      exiting if they are missing. With 'custom', the TorchScript model
       receives ML species+coords and MM coords+charges and computes the total energy
       internally. The model must export a 'compute_mlmm' method (see README). Forces on
-      both regions via autograd. use_pbc and calc_only_bonded are only supported with
-      'custom', and predict_charges is not supported with 'custom'. cell is ignored when
-      use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
-      verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
-      'custom') are printed to stdout
+      both regions via autograd. use_pbc is only supported with 'custom'. cell is
+      ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
+      energy, with 'custom') are printed to stdout
     args:
       - {name: ml_atoms_num, dtype: int}
       - {name: mm_atoms_num, dtype: int}
@@ -161,21 +154,17 @@ functions:
       - {name: mm_atomic_charges, dtype: double, shape: [mm_atoms_num]}
       - {name: cell, dtype: double, shape: [3, 3]}
       - {name: use_pbc, dtype: bool}
-      - {name: molecule_idxs, dtype: int, shape: [ml_atoms_num]}
-      - {name: calc_only_bonded, dtype: bool}
-      - {name: predict_charges, dtype: bool}
-      - {name: mlmm_coupling, dtype: str}
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
-      - {name: ml_atomic_charges, dtype: double, shape: [ml_atoms_num], intent: inout}
       - {name: ene_pot_total, dtype: double, intent: out}
 
   - name: mlip_calc_energy_force_mlmm_qbc
     comment: |
-      Same as mlip_calc_energy_force_mlmm, but also outputs the QBC of the
-      ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
-      not supported
+      Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
+      ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
+      fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+      supported
     args:
       - {name: ml_atoms_num, dtype: int}
       - {name: mm_atoms_num, dtype: int}
@@ -184,17 +173,10 @@ functions:
       - {name: mm_atomic_charges, dtype: double, shape: [mm_atoms_num]}
       - {name: cell, dtype: double, shape: [3, 3]}
       - {name: use_pbc, dtype: bool}
-      - {name: molecule_idxs, dtype: int, shape: [ml_atoms_num]}
-      - {name: calc_only_bonded, dtype: bool}
-      - {name: predict_charges, dtype: bool}
-      - {name: mlmm_coupling, dtype: str}
       - {name: verbose, dtype: bool}
       - {name: ml_forces, dtype: double, shape: [ml_atoms_num, 3], intent: out}
       - {name: mm_forces, dtype: double, shape: [mm_atoms_num, 3], intent: out}
-      - {name: ml_atomic_charges, dtype: double, shape: [ml_atoms_num], intent: inout}
       - {name: ene_pot_total, dtype: double, intent: out}
-      - {name: qbc, dtype: double, intent: out}
-      - {name: qbc_grad, dtype: double, shape: [ml_atoms_num, 3], intent: out}
 
   - name: mlip_store_float_tensor
     fortran_wrapper: manual
@@ -234,6 +216,21 @@ functions:
     args:
       - {name: name, dtype: str}
       - {name: values, dtype: int, shape: [prod(dims)]}
+      - {name: dims, dtype: int, shape: [dims_num]}
+      - {name: dims_num, dtype: int}
+
+  - name: mlip_fetch_result
+    fortran_wrapper: manual
+    comment: |
+      Copy a result of the last calculation into values, with shape dims (C order). The
+      results are the outputs of the model other than the energy and the forces (e.g.
+      'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+      the molecules dim. Exits if there is no such result, or if the shapes don't match.
+      In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
+      of any rank, or a scalar. dims is taken from its shape
+    args:
+      - {name: name, dtype: str}
+      - {name: values, dtype: double, shape: [prod(dims)], intent: out}
       - {name: dims, dtype: int, shape: [dims_num]}
       - {name: dims_num, dtype: int}
 

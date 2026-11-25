@@ -36,7 +36,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool atomic,
         bool ensemble_values,
         bool calc_forces,
-        bool calc_charges,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput;
 
@@ -61,7 +60,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeFromExternalNeighbors(
@@ -75,7 +73,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMlmm(
@@ -94,7 +91,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMultipoleMlmm(
@@ -115,7 +111,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
 };

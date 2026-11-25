@@ -128,12 +128,13 @@ class GlobalConfig {
     );
 
     // Read the config from the first "&mlip" namelist in an Amber input file (mdin).
-    // If read_mlmm_config, also read the ML/MM options. If validate_amber_config too,
-    // also read the first "&qmmm" namelist, and validate the config against it
+    // If read_mlmm_config, also read the ML/MM options. If calling_program is "sander"
+    // too, also read the first "&qmmm" namelist, and validate the config against it.
+    // calling_program is "none", "sander" or "pmemd" (case-insensitive)
     static auto fromNamelistFile(
         const std::string& fpath,
         bool read_mlmm_config = false,
-        bool validate_amber_config = false
+        const std::string& calling_program = "none"
     ) -> GlobalConfig;
 
     auto dtype() const -> torch::ScalarType {
@@ -173,6 +174,10 @@ class GlobalConfig {
             );
         }
         return *m_mlip_config;
+    }
+
+    auto hasMlmmConfig() const -> bool {
+        return m_mlmm_config.has_value();
     }
 
     auto mlmm() const -> const ConfigDict& {

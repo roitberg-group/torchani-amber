@@ -49,8 +49,8 @@ Experimental *hybrid ML-QM* feature:
 Experimental *QM coupling* feature:
 - `use_qm_coupling = .false.` (bool)
   Dispatch a QM program as a helper to calculate the QM/MM interaction. Requires
-  `qmmm_int = 1`, and can't be used together with `use_hybrid_mlqm` or with
-  `mlmm_coupling = 'custom'`.
+  `qmmm_int = 1` and `mlmm_coupling = 'none'`, and can't be used together with
+  `use_hybrid_mlqm`.
 - `qm_coupling_method` (string)
   The name of the QM helper program. Available options are `'amber-dftb'`
   (uses builtin DFTB code in Amber), `'orca'`, `'gau'` and `'lio'`. If `'orca'`,
@@ -64,6 +64,7 @@ An example `&mlip` namelist for use with the *QM coupling* feature:
   use_cuda_device= .true. ,
   qm_coupling_method='amber-dftb',
   use_qm_coupling =.true.,
+  mlmm_coupling = 'none',
 /
 ```
 

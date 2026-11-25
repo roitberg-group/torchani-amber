@@ -20,23 +20,23 @@ subroutine mlip_initialize( &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
-    validate_amber_config, &
+    calling_program, &
     print_config_info &
 )
     integer(c_int), contiguous, intent(in) :: atomic_nums(:)
     character(len=*, kind=kind("a")), intent(in) :: config_path
     logical, intent(in) :: read_mlmm_config
-    logical, optional, intent(in) :: validate_amber_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
     logical, optional, intent(in) :: print_config_info
 
     character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
-    logical :: do_validate_amber_config
+    character(len=:, kind=c_char), allocatable :: c_calling_program
     logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_config_path = trim(config_path) // c_null_char
-    do_validate_amber_config = .false.
-    if (present(validate_amber_config)) then
-        do_validate_amber_config = validate_amber_config
+    c_calling_program = "none" // c_null_char
+    if (present(calling_program)) then
+        c_calling_program = trim(calling_program) // c_null_char
     endif
     do_print_config_info = .false.
     if (present(print_config_info)) then
@@ -47,7 +47,7 @@ subroutine mlip_initialize( &
         atomic_nums, &
         c_config_path, &
         fbool_to_cbool(read_mlmm_config), &
-        fbool_to_cbool(do_validate_amber_config), &
+        c_calling_program, &
         fbool_to_cbool(do_print_config_info) &
     )
 endsubroutine
@@ -275,6 +275,27 @@ subroutine mlip_store_mask_tensor(name, values)
         call c_f_pointer(c_loc(values), flat_values, [size(values)])
     endif
     call internal_store_mask_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_fetch_result(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(out) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_fetch_result( &
         c_name, &
         flat_values, &
         c_order_dims(shape(values)), &

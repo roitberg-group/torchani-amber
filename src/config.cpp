@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -230,11 +231,21 @@ GlobalConfig::GlobalConfig(
 auto GlobalConfig::fromNamelistFile(
     const std::string& fpath,
     bool read_mlmm_config,
-    bool validate_amber_config
+    const std::string& calling_program
 ) -> GlobalConfig {
-    std::ifstream file(fpath);
+    std::string program = calling_program;
+    std::transform(program.begin(), program.end(), program.begin(), ::tolower);
+    if (!isOneOf(program, {"none", "sander", "pmemd"})) {
+        throw std::runtime_error(
+            "calling_program must be 'none', 'sander' or 'pmemd', but it is '"
+            + calling_program + "'"
+        );
+    }
+    // Relative paths are resolved wrt the current working directory
+    std::string abs_fpath = std::filesystem::absolute(fpath).string();
+    std::ifstream file(abs_fpath);
     if (!file) {
-        throw std::runtime_error("Could not open " + fpath);
+        throw std::runtime_error("Could not open " + abs_fpath);
     }
     std::stringstream buffer;
     buffer << file.rdbuf();
@@ -245,15 +256,15 @@ auto GlobalConfig::fromNamelistFile(
     bool file_has_ani = std::count(group_names.begin(), group_names.end(), "ani") > 0;
     if (file_has_mlip && file_has_ani) {
         throw std::runtime_error(
-            "Both &mlip and &ani namelists found in " + fpath + ", only one can be used"
+            "Both &mlip and &ani namelists found in " + abs_fpath + ", only one can be used"
         );
     }
     if (!file_has_mlip && !file_has_ani) {
-        throw std::runtime_error("No &mlip namelist found in " + fpath);
+        throw std::runtime_error("No &mlip namelist found in " + abs_fpath);
     }
     if (file_has_ani) {
         std::cerr << "WARNING (libtorchani)\n"
-                  << "The &ani namelist in " << fpath << " is deprecated,"
+                  << "The &ani namelist in " << abs_fpath << " is deprecated,"
                   << " use &mlip instead" << std::endl;
     }
     std::string group_name = file_has_mlip ? "mlip" : "ani";
@@ -319,9 +330,10 @@ auto GlobalConfig::fromNamelistFile(
     validateConfig(mlip_config, mlmm_config);
 
     std::optional<ConfigDict> amber_qmmm_config;
-    if (read_mlmm_config && validate_amber_config) {
+    // Only sander supports ML/MM, through its &qmmm namelist
+    if (read_mlmm_config && program == "sander") {
         if (std::count(group_names.begin(), group_names.end(), "qmmm") == 0) {
-            throw std::runtime_error("No &qmmm namelist found in " + fpath);
+            throw std::runtime_error("No &qmmm namelist found in " + abs_fpath);
         }
         ConfigDict qmmm_defaults = defaultAmberQmmmConfig();
         fortran_utils::NamelistSchema qmmm_schema;
@@ -421,6 +433,12 @@ auto GlobalConfig::validateConfig(
             "use_hybrid_mlqm and use_qm_coupling can't be used together"
         );
     }
+    if (use_qm_coupling && mlmm_coupling != "none") {
+        throw config_validation_error(
+            "use_qm_coupling = T requires mlmm_coupling = 'none', since the ML/MM coupling"
+            " is calculated by the helper QM program"
+        );
+    }
     if (use_hybrid_mlqm && mlmm_coupling == "custom") {
         throw config_validation_error(
             "use_hybrid_mlqm is not supported with mlmm_coupling = 'custom'"
@@ -447,11 +465,6 @@ auto GlobalConfig::validateConfig(
         );
     }
     if (mlmm_coupling == "custom") {
-        if (use_qm_coupling) {
-            throw config_validation_error(
-                "mlmm_coupling = 'custom' is incompatible with use_qm_coupling = T"
-            );
-        }
         if (use_mlip_atomic_charges) {
             throw config_validation_error(
                 "mlmm_coupling = 'custom' handles charges internally,"

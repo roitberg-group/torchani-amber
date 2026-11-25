@@ -10,8 +10,8 @@
 
 namespace mlip {
 
-// Keys: "energy", "forces", "atomic_charges", "qbc", "qbc_grads", "mm_forces". All
-// values are in Hartree and Angstrom.
+// Keys: "energy", "forces", "qbc", "qbc_grads", "mm_forces", and the extra outputs of
+// the model, if any (e.g. "atomic_charges"). All values are in Hartree and Angstrom.
 using MlipOutput = std::unordered_map<std::string, torch::Tensor>;
 
 enum class ModelFormat { TORCHSCRIPT, PT2_AOTI, PYTHON, AUTO };
@@ -55,7 +55,6 @@ class MlipModel {
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
-        bool calc_charges = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeFromExternalNeighbors(
@@ -69,7 +68,6 @@ class MlipModel {
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
-        bool calc_charges = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeMlmm(
@@ -88,7 +86,6 @@ class MlipModel {
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
-        bool calc_charges = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
     virtual auto computeMultipoleMlmm(
@@ -109,7 +106,6 @@ class MlipModel {
         bool ensemble_values = false,
         const std::optional<torch::Tensor>& molecule_idxs = std::nullopt,
         bool calc_forces = false,
-        bool calc_charges = false,
         bool calc_qbc_and_qbc_grad = false
     ) -> MlipOutput = 0;
 };

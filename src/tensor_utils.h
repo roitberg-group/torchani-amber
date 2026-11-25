@@ -37,6 +37,17 @@ class TensorContainer {
     auto clear(const std::string& name) -> void {
         m_tensors.erase(name);
     }
+
+    auto clearStartingWith(const std::string& prefix) -> void {
+        auto it = m_tensors.begin();
+        while (it != m_tensors.end()) {
+            if (it->first.compare(0, prefix.size(), prefix) == 0) {
+                it = m_tensors.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 };
 
 /**

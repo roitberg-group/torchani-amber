@@ -7,16 +7,19 @@ extern "C" {
 #include <stdbool.h>
 #endif
 // Read the config from the first &mlip namelist of the file at config_path (the
-// mdin), and load the MLIP. The ML/MM options are only read if read_mlmm_config.
-// If validate_amber_config too, the &qmmm namelist is also read, and the config is
-// validated against it. If print_config_info, the config is printed to stdout.
-// In Fortran, validate_amber_config and print_config_info are optional, default false
+// mdin, relative paths are resolved wrt the current working directory), and load
+// the MLIP. The ML/MM options are only read if read_mlmm_config.
+// calling_program is the md engine, "none", "sander" or "pmemd". If it is "sander"
+// and read_mlmm_config, the &qmmm namelist is also read, and the config is validated
+// against it. If print_config_info, the config is printed to stdout.
+// In Fortran, calling_program and print_config_info are optional, default "none"
+// and false
 void mlip_initialize(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
     const char* config_path,
     bool read_mlmm_config,
-    bool validate_amber_config,
+    const char* calling_program,
     bool print_config_info
 );
 
@@ -59,19 +62,6 @@ void mlip_calc_energy_force_from_external_neighbors(
     bool calc_only_bonded,
     /* outputs */
     double forces[][3],  // Shape (num_atoms, 3)
-    double* potential_energy
-);
-
-void mlip_calc_energy_force_atomic_charges(
-    int num_atoms,
-    double coords[][3],  // Shape (num_atoms, 3)
-    double cell[][3],  // Shape (3, 3)
-    bool use_pbc,
-    int molecule_idxs[],  // Shape (num_atoms,)
-    bool calc_only_bonded,
-    /* outputs */
-    double forces[][3],  // Shape (num_atoms, 3)
-    double atomic_charges[],  // Shape (num_atoms,)
     double* potential_energy
 );
 
@@ -118,18 +108,20 @@ void mlip_calc_energy_atomic_charges_vjp(
     double forces[][3]  // Shape (num_atoms, 3)
 );
 
-// mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
-// (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
-// 'simple-polarizable', the atomic polarizabilities and the inverse polarization
-// dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-// ML/MM config, which must have been read. With 'custom', the TorchScript model
+// Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
+// otherwise. The coupling is its mlmm_coupling option: 'coulombic',
+// 'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
+// 0. With 'simple-polarizable', the atomic polarizabilities and the inverse
+// polarization dielectric are read from the pol_<symbol> and inv_pol_dielectric
+// options of the ML/MM config. 'coulombic' and 'simple-polarizable' use the atomic
+// charges predicted by the model if the use_mlip_atomic_charges option is set, and
+// otherwise the ones stored as 'fixed_atomic_charges' (with mlip_store_tensor),
+// exiting if they are missing. With 'custom', the TorchScript model
 // receives ML species+coords and MM coords+charges and computes the total energy
 // internally. The model must export a 'compute_mlmm' method (see README). Forces on
-// both regions via autograd. use_pbc and calc_only_bonded are only supported with
-// 'custom', and predict_charges is not supported with 'custom'. cell is ignored when
-// use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
-// verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
-// 'custom') are printed to stdout
+// both regions via autograd. use_pbc is only supported with 'custom'. cell is
+// ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
+// energy, with 'custom') are printed to stdout
 void mlip_calc_energy_force_mlmm(
     int ml_atoms_num,
     int mm_atoms_num,
@@ -138,21 +130,17 @@ void mlip_calc_energy_force_mlmm(
     double mm_atomic_charges[],  // Shape (mm_atoms_num,)
     double cell[][3],  // Shape (3, 3)
     bool use_pbc,
-    int molecule_idxs[],  // Shape (ml_atoms_num,)
-    bool calc_only_bonded,
-    bool predict_charges,
-    const char* mlmm_coupling,
     bool verbose,
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)
     double mm_forces[][3],  // Shape (mm_atoms_num, 3)
-    double ml_atomic_charges[],  // Shape (ml_atoms_num,)
     double* ene_pot_total
 );
 
-// Same as mlip_calc_energy_force_mlmm, but also outputs the QBC of the
-// ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
-// not supported
+// Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
+// ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
+// fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+// supported
 void mlip_calc_energy_force_mlmm_qbc(
     int ml_atoms_num,
     int mm_atoms_num,
@@ -161,18 +149,11 @@ void mlip_calc_energy_force_mlmm_qbc(
     double mm_atomic_charges[],  // Shape (mm_atoms_num,)
     double cell[][3],  // Shape (3, 3)
     bool use_pbc,
-    int molecule_idxs[],  // Shape (ml_atoms_num,)
-    bool calc_only_bonded,
-    bool predict_charges,
-    const char* mlmm_coupling,
     bool verbose,
     /* outputs */
     double ml_forces[][3],  // Shape (ml_atoms_num, 3)
     double mm_forces[][3],  // Shape (mm_atoms_num, 3)
-    double ml_atomic_charges[],  // Shape (ml_atoms_num,)
-    double* ene_pot_total,
-    double* qbc,
-    double qbc_grad[][3]  // Shape (ml_atoms_num, 3)
+    double* ene_pot_total
 );
 
 // Store a copy of values, with shape dims, as a tensor named name, with the dtype
@@ -204,6 +185,20 @@ void mlip_store_int_tensor(
 void mlip_store_mask_tensor(
     const char* name,
     int values[],  // Shape (prod(dims),)
+    int dims[],  // Shape (dims_num,)
+    int dims_num
+);
+
+// Copy a result of the last calculation into values, with shape dims (C order). The
+// results are the outputs of the model other than the energy and the forces (e.g.
+// 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+// the molecules dim. Exits if there is no such result, or if the shapes don't match.
+// In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
+// of any rank, or a scalar. dims is taken from its shape
+void mlip_fetch_result(
+    const char* name,
+    /* outputs */
+    double values[],  // Shape (prod(dims),)
     int dims[],  // Shape (dims_num,)
     int dims_num
 );

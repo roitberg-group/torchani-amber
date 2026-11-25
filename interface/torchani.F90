@@ -10,12 +10,12 @@ public :: &
     mlip_set_ml_charge_and_spin_mult, &
     mlip_calc_energy_force, &
     mlip_calc_energy_force_from_external_neighbors, &
-    mlip_calc_energy_force_atomic_charges, &
     mlip_calc_energy_atomic_charges_retain, &
     mlip_calc_energy_atomic_charges_vjp, &
     mlip_calc_energy_force_mlmm, &
     mlip_calc_energy_force_mlmm_qbc, &
     mlip_store_mask_tensor, &
+    mlip_fetch_result, &
     mlip_store_tensor, &
     mlip_get_config_option, &
     convert_sander_neighborlist_to_ani_fmt, &
@@ -43,16 +43,19 @@ endinterface
 
 interface
 ! Read the config from the first &mlip namelist of the file at config_path (the
-! mdin), and load the MLIP. The ML/MM options are only read if read_mlmm_config.
-! If validate_amber_config too, the &qmmm namelist is also read, and the config is
-! validated against it. If print_config_info, the config is printed to stdout.
-! In Fortran, validate_amber_config and print_config_info are optional, default false
+! mdin, relative paths are resolved wrt the current working directory), and load
+! the MLIP. The ML/MM options are only read if read_mlmm_config.
+! calling_program is the md engine, "none", "sander" or "pmemd". If it is "sander"
+! and read_mlmm_config, the &qmmm namelist is also read, and the config is validated
+! against it. If print_config_info, the config is printed to stdout.
+! In Fortran, calling_program and print_config_info are optional, default "none"
+! and false
 subroutine internal_initialize( &
     num_atoms, &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
-    validate_amber_config, &
+    calling_program, &
     print_config_info &
 ) bind(c, name="mlip_initialize")
     use, intrinsic :: iso_c_binding
@@ -60,7 +63,7 @@ subroutine internal_initialize( &
     integer(c_int), intent(in) :: atomic_nums(*)
     character(len=1, kind=c_char), intent(in) :: config_path(*)
     logical(c_bool), value, intent(in) :: read_mlmm_config
-    logical(c_bool), value, intent(in) :: validate_amber_config
+    character(len=1, kind=c_char), intent(in) :: calling_program(*)
     logical(c_bool), value, intent(in) :: print_config_info
 endsubroutine
 
@@ -135,30 +138,6 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(out) :: potential_energy
 endsubroutine
 
-subroutine internal_calc_energy_force_atomic_charges( &
-    num_atoms, &
-    coords, &
-    cell, &
-    use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    forces, &
-    atomic_charges, &
-    potential_energy &
-) bind(c, name="mlip_calc_energy_force_atomic_charges")
-    use, intrinsic :: iso_c_binding
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: cell(*)
-    logical(c_bool), value, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical(c_bool), value, intent(in) :: calc_only_bonded
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: potential_energy
-endsubroutine
-
 ! This two-call API (retain + vjp) is only needed if the md engine's energy includes
 ! interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
 ! with periodic images of ML charges (including their own images). If the ML charges
@@ -213,18 +192,20 @@ subroutine mlip_calc_energy_atomic_charges_vjp( &
     real(c_double), intent(out) :: forces(*)
 endsubroutine
 
-! mlmm_coupling is 'coulombic', 'simple-polarizable', 'none' or 'custom'
-! (case-insensitive). With 'none', the ML/MM coupling energy is 0. With
-! 'simple-polarizable', the atomic polarizabilities and the inverse polarization
-! dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-! ML/MM config, which must have been read. With 'custom', the TorchScript model
+! Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
+! otherwise. The coupling is its mlmm_coupling option: 'coulombic',
+! 'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
+! 0. With 'simple-polarizable', the atomic polarizabilities and the inverse
+! polarization dielectric are read from the pol_<symbol> and inv_pol_dielectric
+! options of the ML/MM config. 'coulombic' and 'simple-polarizable' use the atomic
+! charges predicted by the model if the use_mlip_atomic_charges option is set, and
+! otherwise the ones stored as 'fixed_atomic_charges' (with mlip_store_tensor),
+! exiting if they are missing. With 'custom', the TorchScript model
 ! receives ML species+coords and MM coords+charges and computes the total energy
 ! internally. The model must export a 'compute_mlmm' method (see README). Forces on
-! both regions via autograd. use_pbc and calc_only_bonded are only supported with
-! 'custom', and predict_charges is not supported with 'custom'. cell is ignored when
-! use_pbc is false, and molecule_idxs is ignored when calc_only_bonded is false. If
-! verbose, the in vacuo and the ML/MM coupling energies (or the total energy, with
-! 'custom') are printed to stdout
+! both regions via autograd. use_pbc is only supported with 'custom'. cell is
+! ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
+! energy, with 'custom') are printed to stdout
 subroutine internal_calc_energy_force_mlmm( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -233,14 +214,9 @@ subroutine internal_calc_energy_force_mlmm( &
     mm_atomic_charges, &
     cell, &
     use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    predict_charges, &
-    mlmm_coupling, &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ml_atomic_charges, &
     ene_pot_total &
 ) bind(c, name="mlip_calc_energy_force_mlmm")
     use, intrinsic :: iso_c_binding
@@ -251,21 +227,17 @@ subroutine internal_calc_energy_force_mlmm( &
     real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical(c_bool), value, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical(c_bool), value, intent(in) :: calc_only_bonded
-    logical(c_bool), value, intent(in) :: predict_charges
-    character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
     logical(c_bool), value, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
 endsubroutine
 
-! Same as mlip_calc_energy_force_mlmm, but also outputs the QBC of the
-! ensemble and its grad wrt the coords of the ML atoms. mlmm_coupling = 'custom' is
-! not supported
+! Same as mlip_calc_energy_force_mlmm, but also calculates the QBC of the
+! ensemble and its grad wrt the coords of the ML atoms (kcal/mol), which can be
+! fetched as the results 'qbc' and 'qbc_grads'. The 'custom' mlmm_coupling is not
+! supported
 subroutine internal_calc_energy_force_mlmm_qbc( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -274,17 +246,10 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     mm_atomic_charges, &
     cell, &
     use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    predict_charges, &
-    mlmm_coupling, &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ml_atomic_charges, &
-    ene_pot_total, &
-    qbc, &
-    qbc_grad &
+    ene_pot_total &
 ) bind(c, name="mlip_calc_energy_force_mlmm_qbc")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: ml_atoms_num
@@ -294,18 +259,11 @@ subroutine internal_calc_energy_force_mlmm_qbc( &
     real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical(c_bool), value, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical(c_bool), value, intent(in) :: calc_only_bonded
-    logical(c_bool), value, intent(in) :: predict_charges
-    character(len=1, kind=c_char), intent(in) :: mlmm_coupling(*)
     logical(c_bool), value, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
 endsubroutine
 
 ! Store a copy of values, with shape dims, as a tensor named name, with the dtype
@@ -355,6 +313,26 @@ subroutine internal_store_mask_tensor( &
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
     integer(c_int), intent(in) :: values(*)
+    integer(c_int), intent(in) :: dims(*)
+    integer(c_int), value, intent(in) :: dims_num
+endsubroutine
+
+! Copy a result of the last calculation into values, with shape dims (C order). The
+! results are the outputs of the model other than the energy and the forces (e.g.
+! 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grads', kcal/mol), without
+! the molecules dim. Exits if there is no such result, or if the shapes don't match.
+! In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
+! of any rank, or a scalar. dims is taken from its shape
+subroutine internal_fetch_result( &
+    name, &
+    values, &
+    dims, &
+    dims_num &
+) bind(c, name="mlip_fetch_result")
+    use, intrinsic :: iso_c_binding
+    character(len=1, kind=c_char), intent(in) :: name(*)
+    ! Outputs
+    real(c_double), intent(out) :: values(*)
     integer(c_int), intent(in) :: dims(*)
     integer(c_int), value, intent(in) :: dims_num
 endsubroutine
@@ -485,43 +463,6 @@ endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-subroutine mlip_calc_energy_force_atomic_charges( &
-    num_atoms, &
-    coords, &
-    cell, &
-    use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    forces, &
-    atomic_charges, &
-    potential_energy &
-)
-    integer(c_int), value, intent(in) :: num_atoms
-    real(c_double), intent(in) :: coords(*)
-    real(c_double), intent(in) :: cell(*)
-    logical, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical, intent(in) :: calc_only_bonded
-    ! Outputs
-    real(c_double), intent(out) :: forces(*)
-    real(c_double), intent(out) :: atomic_charges(*)
-    real(c_double), intent(out) :: potential_energy
-    call internal_calc_energy_force_atomic_charges( &
-        num_atoms, &
-        coords, &
-        cell, &
-        fbool_to_cbool(use_pbc), &
-        molecule_idxs, &
-        fbool_to_cbool(calc_only_bonded), &
-        forces, &
-        atomic_charges, &
-        potential_energy &
-    )
-endsubroutine
-
-! Wrapper needed in case fortran logicals don't have the same binary
-! representation as c_bool
-! Wrapper needed to convert between fortran strings and null-terminated C strings
 subroutine mlip_calc_energy_force_mlmm( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -530,14 +471,9 @@ subroutine mlip_calc_energy_force_mlmm( &
     mm_atomic_charges, &
     cell, &
     use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    predict_charges, &
-    mlmm_coupling, &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ml_atomic_charges, &
     ene_pot_total &
 )
     integer(c_int), value, intent(in) :: ml_atoms_num
@@ -547,18 +483,11 @@ subroutine mlip_calc_energy_force_mlmm( &
     real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical, intent(in) :: calc_only_bonded
-    logical, intent(in) :: predict_charges
-    character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
     logical, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
-    character(len=len_trim(mlmm_coupling) + 1, kind=c_char) :: c_mlmm_coupling
-    c_mlmm_coupling = trim(mlmm_coupling) // c_null_char
     call internal_calc_energy_force_mlmm( &
         ml_atoms_num, &
         mm_atoms_num, &
@@ -567,21 +496,15 @@ subroutine mlip_calc_energy_force_mlmm( &
         mm_atomic_charges, &
         cell, &
         fbool_to_cbool(use_pbc), &
-        molecule_idxs, &
-        fbool_to_cbool(calc_only_bonded), &
-        fbool_to_cbool(predict_charges), &
-        c_mlmm_coupling, &
         fbool_to_cbool(verbose), &
         ml_forces, &
         mm_forces, &
-        ml_atomic_charges, &
         ene_pot_total &
     )
 endsubroutine
 
 ! Wrapper needed in case fortran logicals don't have the same binary
 ! representation as c_bool
-! Wrapper needed to convert between fortran strings and null-terminated C strings
 subroutine mlip_calc_energy_force_mlmm_qbc( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -590,17 +513,10 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
     mm_atomic_charges, &
     cell, &
     use_pbc, &
-    molecule_idxs, &
-    calc_only_bonded, &
-    predict_charges, &
-    mlmm_coupling, &
     verbose, &
     ml_forces, &
     mm_forces, &
-    ml_atomic_charges, &
-    ene_pot_total, &
-    qbc, &
-    qbc_grad &
+    ene_pot_total &
 )
     integer(c_int), value, intent(in) :: ml_atoms_num
     integer(c_int), value, intent(in) :: mm_atoms_num
@@ -609,20 +525,11 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
     real(c_double), intent(in) :: mm_atomic_charges(*)
     real(c_double), intent(in) :: cell(*)
     logical, intent(in) :: use_pbc
-    integer(c_int), intent(in) :: molecule_idxs(*)
-    logical, intent(in) :: calc_only_bonded
-    logical, intent(in) :: predict_charges
-    character(len=*, kind=kind("a")), intent(in) :: mlmm_coupling
     logical, intent(in) :: verbose
     ! Outputs
     real(c_double), intent(out) :: ml_forces(*)
     real(c_double), intent(out) :: mm_forces(*)
-    real(c_double), intent(inout) :: ml_atomic_charges(*)
     real(c_double), intent(out) :: ene_pot_total
-    real(c_double), intent(out) :: qbc
-    real(c_double), intent(out) :: qbc_grad(*)
-    character(len=len_trim(mlmm_coupling) + 1, kind=c_char) :: c_mlmm_coupling
-    c_mlmm_coupling = trim(mlmm_coupling) // c_null_char
     call internal_calc_energy_force_mlmm_qbc( &
         ml_atoms_num, &
         mm_atoms_num, &
@@ -631,17 +538,10 @@ subroutine mlip_calc_energy_force_mlmm_qbc( &
         mm_atomic_charges, &
         cell, &
         fbool_to_cbool(use_pbc), &
-        molecule_idxs, &
-        fbool_to_cbool(calc_only_bonded), &
-        fbool_to_cbool(predict_charges), &
-        c_mlmm_coupling, &
         fbool_to_cbool(verbose), &
         ml_forces, &
         mm_forces, &
-        ml_atomic_charges, &
-        ene_pot_total, &
-        qbc, &
-        qbc_grad &
+        ene_pot_total &
     )
 endsubroutine
 
@@ -743,23 +643,23 @@ subroutine mlip_initialize( &
     atomic_nums, &
     config_path, &
     read_mlmm_config, &
-    validate_amber_config, &
+    calling_program, &
     print_config_info &
 )
     integer(c_int), contiguous, intent(in) :: atomic_nums(:)
     character(len=*, kind=kind("a")), intent(in) :: config_path
     logical, intent(in) :: read_mlmm_config
-    logical, optional, intent(in) :: validate_amber_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
     logical, optional, intent(in) :: print_config_info
 
     character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
-    logical :: do_validate_amber_config
+    character(len=:, kind=c_char), allocatable :: c_calling_program
     logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_config_path = trim(config_path) // c_null_char
-    do_validate_amber_config = .false.
-    if (present(validate_amber_config)) then
-        do_validate_amber_config = validate_amber_config
+    c_calling_program = "none" // c_null_char
+    if (present(calling_program)) then
+        c_calling_program = trim(calling_program) // c_null_char
     endif
     do_print_config_info = .false.
     if (present(print_config_info)) then
@@ -770,7 +670,7 @@ subroutine mlip_initialize( &
         atomic_nums, &
         c_config_path, &
         fbool_to_cbool(read_mlmm_config), &
-        fbool_to_cbool(do_validate_amber_config), &
+        c_calling_program, &
         fbool_to_cbool(do_print_config_info) &
     )
 endsubroutine
@@ -998,6 +898,27 @@ subroutine mlip_store_mask_tensor(name, values)
         call c_f_pointer(c_loc(values), flat_values, [size(values)])
     endif
     call internal_store_mask_tensor( &
+        c_name, &
+        flat_values, &
+        c_order_dims(shape(values)), &
+        int(rank(values), c_int) &
+    )
+endsubroutine
+
+! Wrapper needed to take arrays of any rank, and convert between fortran strings and
+! null-terminated C strings
+subroutine mlip_fetch_result(name, values)
+    character(len=*, kind=kind("a")), intent(in) :: name
+    real(c_double), contiguous, target, intent(out) :: values(..)
+    character(len=len_trim(name) + 1, kind=c_char) :: c_name
+    real(c_double), pointer :: flat_values(:)
+    real(c_double), target :: no_values(0)
+    c_name = trim(name) // c_null_char
+    flat_values => no_values
+    if (size(values) > 0) then
+        call c_f_pointer(c_loc(values), flat_values, [size(values)])
+    endif
+    call internal_fetch_result( &
         c_name, &
         flat_values, &
         c_order_dims(shape(values)), &
