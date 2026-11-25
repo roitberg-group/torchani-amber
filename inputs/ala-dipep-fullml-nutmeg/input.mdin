@@ -17,14 +17,16 @@
 &extpot
 extprog = "torchani",  ! Use the ANI as an external potential
 /
-&ani
+&mlip
     cuda_device_index = 0
     use_cuda_device = .True.
     use_cuaev = .False.
-    model_type = "nutmeg-small::<full-path-to-charges-file>"  ! Full path must be passed
-    use_all_amber_nonbond = .True.  ! Run in Amber-NB configuration since Nutmeg is very memory hungry
+    model_type = "nutmeg-small"
+    ! Gasteiger charges of all the atoms, relative to the current working directory
+    extra_features_file_path = "ala-dipep-bulk.charges"
+    use_external_nonbond = .True.  ! Run in Amber-NB configuration since Nutmeg is very memory hungry
     use_double_precision = .False.
     model_index = -1
-    use_amber_neighborlist = .False.
+    use_external_neighborlist = .False.
 /
 ! End TorchANI-Amber test input

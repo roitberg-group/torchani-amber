@@ -45,53 +45,29 @@
     extprog = "TORCHANI"  ! External program is TorchANI-Amber
 /
 {% endif %}
-&ani
+&mlip
 {% if cuda %}
     cuda_device_index = 0
     use_cuda_device = .True.
-    {% if not legacy %}
     use_cuaev = .{{ cuda.cuaev }}.
-    {% endif %}
 {% else %}
     use_cuda_device = .False.
 {% endif %}
     model_type = "animbis"  ! ANI-mbis can be used for all kinds of dynamics
     use_double_precision = .{{ float64 }}.
 {% if mlmm %}
-    {% if mlmm.use_torch_coupling %}
-    use_torch_coupling=.True.
-    {% else %}
-    use_torch_coupling=.False.
-    {% endif %}
     {% if mlmm.protocol == "me" %}
-    use_torchani_charges = .False.
-        {% if not legacy %}
+    use_mlip_atomic_charges = .False.
     mlmm_coupling = 'coulombic'  ! Coulombic coupling
-        {% else %}
-    use_charges_derivatives = .False.
-    polarize_qm_charges = .False.
-    distort_qm_energy = .False.
-        {% endif %}
     {% else %}
-    use_torchani_charges = .True.
-        {% if not legacy %}
+    use_mlip_atomic_charges = .True.
     mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
-        {% else %}
-    use_charges_derivatives = .True.
-    polarize_qm_charges = .True.
-    distort_qm_energy = .True.
-        {% endif %}
+    write_mlmm_atomic_charges = .True.  ! Only predicted charges are written
     {% endif %}
-    write_charges = .True.
-    {% if not legacy %}
-    write_charges_grad = .True.
-    {% endif %}
-    write_forces = .True.
-    write_xyz = .True.
+    write_mlmm_forces = .True.
+    write_mlmm_coords = .True.
 {% endif %}
     model_index = -1
-    {% if not legacy %}
-    use_amber_neighborlist = .{{ use_amber_neighborlist }}.
-    {% endif %}
+    use_external_neighborlist = .{{ use_amber_neighborlist }}.
 /
 ! End TorchANI-Amber test input

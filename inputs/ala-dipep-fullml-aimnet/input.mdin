@@ -17,13 +17,13 @@
 &extpot
 extprog = "torchani",  ! Use ANI as an external potential
 /
-&ani
+&mlip
     cuda_device_index = 0
     use_cuda_device = .True.
     use_cuaev = .False.
     model_type = "aimnet2-b973c-dsf"
     use_double_precision = .False.
     model_index = -1
-    use_amber_neighborlist = .False.
+    use_external_neighborlist = .False.
 /
 ! End TorchANI-Amber test input
