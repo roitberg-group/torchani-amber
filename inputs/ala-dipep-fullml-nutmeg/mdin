@@ -12,10 +12,7 @@
     ntf = 1  ! Shake OFF
     ig = 5541  ! Manual seed for reproducibility
     cut = 10.0  ! Cutoff for the inter-molecular FF non-bonded interactions
-    iextpot=2  ! Use ANI as an external potential
-/
-&extpot
-extprog = "torchani",  ! Use the ANI as an external potential
+    imlip = 1  ! Use the MLIP Interface
 /
 &mlip
     cuda_device_index = 0

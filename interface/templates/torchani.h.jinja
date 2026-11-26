@@ -6,6 +6,10 @@ extern "C" {
 #else
 #include <stdbool.h>
 #endif
+
+// Called by libtorchani to print one line (without the newline) to unit, see
+// mlip_set_output_unit
+typedef void (*mlip_write_line_fn)(int unit, const char* line, int line_len);
 {% for fn in functions %}
 {% for line in fn.comment_lines %}
 // {{ line }}

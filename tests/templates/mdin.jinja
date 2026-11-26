@@ -1,9 +1,9 @@
 ! TorchANI-Amber test input
 &cntrl
     {% if mlmm %}
-    ifqnt = 1  ! Use QM/MM
+    ifmlmm = 1  ! Use ML/MM
     {% else %}
-    iextpot = 2  ! Use an external potential
+    imlip = 1  ! Use the MLIP Interface
     {% endif %}
     imin = 0  ! Dynamics
     nstlim = 5  ! Total num of dynamics steps
@@ -34,18 +34,12 @@
     {% endif %}
 /
 {% if mlmm %}
-&qmmm
-    qm_theory = "EXTERN"  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmask = ":1"  ! Select the first molecule as the QM-region
-    qmcut = 8.0  ! 15.0 is recommended, 8.0 used for tests
-/
+&mlmm
+    ml_mask = ":1"  ! Select the first molecule as the ML region
+    mm_cutoff = 8.0  ! 15.0 is recommended, 8.0 used for tests
 {% else %}
-&extpot
-    extprog = "TORCHANI"  ! External program is TorchANI-Amber
-/
-{% endif %}
 &mlip
+{% endif %}
 {% if cuda %}
     cuda_device_index = 0
     use_cuda_device = .True.

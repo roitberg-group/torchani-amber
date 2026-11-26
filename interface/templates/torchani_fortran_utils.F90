@@ -19,45 +19,56 @@
 !   internal_calc_energy_force_mlmm_qbc, generated from interface/interface.yaml. If
 !   their args change in the yaml, those calls must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - mlip_set_output_unit calls internal_set_output_unit, generated from
+!   interface/interface.yaml, and passes it mlip_write_line_to_unit. The args of
+!   mlip_write_line_to_unit must match mlip_write_line_fn in include/torchani.h.
 ! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
 subroutine mlip_initialize( &
-    atomic_nums, &
     config_path, &
-    read_mlmm_config, &
-    calling_program, &
-    print_config_info &
+    from_namelist, &
+    calling_program &
 )
-    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
     character(len=*, kind=kind("a")), intent(in) :: config_path
-    logical, intent(in) :: read_mlmm_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: from_namelist
     character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
-    logical, optional, intent(in) :: print_config_info
 
     character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
+    character(len=:, kind=c_char), allocatable :: c_from_namelist
     character(len=:, kind=c_char), allocatable :: c_calling_program
-    logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_config_path = trim(config_path) // c_null_char
+    c_from_namelist = "mlip" // c_null_char
+    if (present(from_namelist)) then
+        c_from_namelist = trim(from_namelist) // c_null_char
+    endif
     c_calling_program = "none" // c_null_char
     if (present(calling_program)) then
         c_calling_program = trim(calling_program) // c_null_char
     endif
-    do_print_config_info = .false.
-    if (present(print_config_info)) then
-        do_print_config_info = print_config_info
-    endif
     call internal_initialize( &
-        size(atomic_nums), &
-        atomic_nums, &
         c_config_path, &
-        fbool_to_cbool(read_mlmm_config), &
-        c_calling_program, &
-        fbool_to_cbool(do_print_config_info) &
+        c_from_namelist, &
+        c_calling_program &
     )
+endsubroutine
+
+! The output printed by libtorchani is written to unit instead of stdout. Must be called
+! after each mlip_initialize
+subroutine mlip_set_output_unit(unit)
+    integer, intent(in) :: unit
+    call internal_set_output_unit(int(unit, c_int), c_funloc(mlip_write_line_to_unit))
+endsubroutine
+
+! Called by libtorchani, once per line
+subroutine mlip_write_line_to_unit(unit, line, line_len) bind(c)
+    integer(c_int), value, intent(in) :: unit
+    integer(c_int), value, intent(in) :: line_len
+    character(len=1, kind=c_char), intent(in) :: line(line_len)
+    write(unit, '(*(a))') line
 endsubroutine
 
 ! PBC are used only if cell is present. molecule_idxs and calc_only_bonded must be both
@@ -470,6 +481,21 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
         ret = .false._c_bool
     endif
 endfunction
+
+subroutine mlip_set_atomic_numbers(atomic_nums, print_info)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    logical, optional, intent(in) :: print_info
+    logical :: do_print_info
+    do_print_info = .false.
+    if (present(print_info)) then
+        do_print_info = print_info
+    endif
+    call internal_set_atomic_numbers( &
+        int(size(atomic_nums), c_int), &
+        atomic_nums, &
+        fbool_to_cbool(do_print_info) &
+    )
+endsubroutine
 
 subroutine mlip_set_no_eval_atoms_mask(values)
     integer(c_int), contiguous, intent(in) :: values(:)

@@ -43,7 +43,10 @@ jit/nutmeg/
 !jit/*.raw.pt
 
 *.info
-*.mdcrd
-*.restart
 *mdout
+*mdinfo
+*mdcrd
+*restart
+*mdcrd.nc
+*restart.nc
 .vscode/

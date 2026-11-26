@@ -6,6 +6,10 @@ use, intrinsic :: iso_c_binding
 implicit none (type, external)
 public :: &
     mlip_initialize, &
+    mlip_print_config_info, &
+    mlip_set_output_unit, &
+    mlip_is_init, &
+    mlip_set_atomic_numbers, &
     mlip_set_no_eval_atoms_mask, &
     mlip_update_md_step, &
     mlip_set_ml_charge_and_spin_mult, &
@@ -43,34 +47,85 @@ interface mlip_get_config_option
 endinterface
 
 interface
-! Read the config from the first &mlip namelist of the file at config_path (the
-! mdin, relative paths are resolved wrt the current working directory), and load
-! the MLIP. The ML/MM options are only read if read_mlmm_config.
-! calling_program is the md engine, "none", "sander" or "pmemd". If it is "sander"
-! and read_mlmm_config, the &qmmm namelist is also read, and the config is validated
-! against it. If print_config_info, the config is printed to stdout.
-! In Fortran, calling_program and print_config_info are optional, default "none"
-! and false
+! Read the config from the file at config_path (the mdin, relative paths are
+! resolved wrt the current working directory), and load the MLIP. from_namelist is
+! (case-insensitive):
+! - "mlip": read the first &mlip namelist, without the ML/MM options
+! - "qmmm-and-mlip" (deprecated): read the first &mlip namelist, with the ML/MM
+!   options. If calling_program is "sander", the &qmmm namelist is also read, and
+!   the config is validated against it
+! - "mlmm": read the first &mlmm namelist, with the ML/MM options. A &qmmm
+!   namelist is an error
+! calling_program is the md engine, "none", "sander" or "pmemd".
+! In Fortran, from_namelist and calling_program are optional, default "mlip" and
+! "none"
 subroutine internal_initialize( &
+    config_path, &
+    from_namelist, &
+    calling_program &
+) bind(c, name="mlip_initialize")
+    use, intrinsic :: iso_c_binding
+    character(len=1, kind=c_char), intent(in) :: config_path(*)
+    character(len=1, kind=c_char), intent(in) :: from_namelist(*)
+    character(len=1, kind=c_char), intent(in) :: calling_program(*)
+endsubroutine
+
+! Print the config read by mlip_initialize to stdout, or to the unit set by
+! mlip_set_output_unit. Exits if mlip_initialize was not called
+subroutine mlip_print_config_info( &
+) bind(c, name="mlip_print_config_info")
+    use, intrinsic :: iso_c_binding
+endsubroutine
+
+! Print the output of mlip_print_config_info, and the print_info and verbose
+! output of mlip_set_atomic_numbers and mlip_calc_energy_force_mlmm, by calling
+! write_line(unit, line, line_len) once per line (without the newline), instead of
+! to stdout. Exits if mlip_initialize was not called. Each mlip_initialize resets
+! the output to stdout. In Fortran, only unit is passed, and the lines are written
+! to it
+subroutine internal_set_output_unit( &
+    unit, &
+    write_line &
+) bind(c, name="mlip_set_output_unit")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: unit
+    type(c_funptr), value, intent(in) :: write_line
+endsubroutine
+
+! Whether mlip_initialize has been called. Can be called before mlip_initialize
+subroutine internal_is_init( &
+    out_is_init &
+) bind(c, name="mlip_is_init")
+    use, intrinsic :: iso_c_binding
+    ! Outputs
+    logical(c_bool), intent(out) :: out_is_init
+endsubroutine
+
+! Set the atomic numbers of the atoms. Required by mlip_set_no_eval_atoms_mask and
+! the mlip_calc_* functions, which exit if they are not set. Can only be called once
+! after each mlip_initialize, exits otherwise. The extra features file
+! (extra_features_file_path) is read here, and must have one value per atom. With
+! use_mlip_atomic_volumes, exits if an element has no kz. With mlmm_coupling
+! 'coulombic-geep' or 'simple-polarizable-geep', exits if an element has no GEEP
+! width. If print_info and mlmm_coupling is 'simple-polarizable' or
+! 'simple-polarizable-geep', the polarizabilities (or kz factors) in use are printed
+! to stdout, or to the unit set by mlip_set_output_unit. In Fortran, num_atoms is
+! size(atomic_nums), and print_info is optional, default false
+subroutine internal_set_atomic_numbers( &
     num_atoms, &
     atomic_nums, &
-    config_path, &
-    read_mlmm_config, &
-    calling_program, &
-    print_config_info &
-) bind(c, name="mlip_initialize")
+    print_info &
+) bind(c, name="mlip_set_atomic_numbers")
     use, intrinsic :: iso_c_binding
     integer(c_int), value, intent(in) :: num_atoms
     integer(c_int), intent(in) :: atomic_nums(*)
-    character(len=1, kind=c_char), intent(in) :: config_path(*)
-    logical(c_bool), value, intent(in) :: read_mlmm_config
-    character(len=1, kind=c_char), intent(in) :: calling_program(*)
-    logical(c_bool), value, intent(in) :: print_config_info
+    logical(c_bool), value, intent(in) :: print_info
 endsubroutine
 
 ! Exclude the atoms with value 1 from the evaluation: they feel no forces, and don't
 ! contribute to the energy. values has one 0 or 1 per atom passed to
-! mlip_initialize. Exits if any value is not 0 or 1, or if num_atoms doesn't match.
+! mlip_set_atomic_numbers. Exits if any value is not 0 or 1, or if num_atoms doesn't
+! match.
 ! Not supported by the ML/MM functions. In Fortran, num_atoms is size(values)
 subroutine internal_set_no_eval_atoms_mask( &
     num_atoms, &
@@ -210,20 +265,24 @@ subroutine mlip_calc_energy_atomic_charges_vjp( &
     real(c_double), intent(out) :: forces(*)
 endsubroutine
 
-! Requires the ML/MM config (mlip_initialize with read_mlmm_config), exits
+! Requires the ML/MM config (mlip_initialize with from_namelist "mlmm"), exits
 ! otherwise. The coupling is its mlmm_coupling option: 'coulombic',
-! 'simple-polarizable', 'none' or 'custom'. With 'none', the ML/MM coupling energy is
-! 0. With 'simple-polarizable', the atomic polarizabilities and the inverse
-! polarization dielectric are read from the pol_<symbol> and inv_pol_dielectric
-! options of the ML/MM config. 'coulombic' and 'simple-polarizable' use the atomic
-! charges predicted by the model if the use_mlip_atomic_charges option is set, and
-! otherwise the ones stored as 'fixed_atomic_charges' (with mlip_store_tensor),
-! exiting if they are missing. With 'custom', the TorchScript model
+! 'simple-polarizable', 'coulombic-geep', 'simple-polarizable-geep', 'none' or
+! 'custom'. With 'none', the ML/MM coupling energy is 0. With 'simple-polarizable'
+! (and its GEEP variant), the atomic polarizabilities and the inverse polarization
+! dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
+! ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths read
+! from the geep_sigmas and geep_factor options. 'coulombic', 'simple-polarizable' and
+! their GEEP variants use the atomic charges predicted by the model if the
+! use_mlip_atomic_charges option is set, and otherwise the ones stored as
+! 'fixed_atomic_charges' (with mlip_store_tensor), exiting if they are missing. With
+! 'custom', the TorchScript model
 ! receives ML species+coords and MM coords+charges and computes the total energy
 ! internally. The model must export a 'compute_mlmm' method (see README). Forces on
 ! both regions via autograd. use_pbc is only supported with 'custom'. cell is
 ! ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-! energy, with 'custom') are printed to stdout
+! energy, with 'custom') are printed to stdout, or to the unit set by
+! mlip_set_output_unit
 subroutine internal_calc_energy_force_mlmm( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -410,6 +469,20 @@ endinterface
 
 contains
 
+! Wrapper needed in case fortran logicals don't have the same binary
+! representation as c_bool
+subroutine mlip_is_init( &
+    out_is_init &
+)
+    ! Outputs
+    logical, intent(out) :: out_is_init
+    logical(c_bool) :: c_out_is_init
+    call internal_is_init( &
+        c_out_is_init &
+    )
+    out_is_init = c_out_is_init
+endsubroutine
+
 ! Wrapper needed to convert between fortran strings and null-terminated C strings
 subroutine mlip_get_config_int_option( &
     name, &
@@ -507,45 +580,56 @@ endsubroutine
 !   internal_calc_energy_force_mlmm_qbc, generated from interface/interface.yaml. If
 !   their args change in the yaml, those calls must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - mlip_set_output_unit calls internal_set_output_unit, generated from
+!   interface/interface.yaml, and passes it mlip_write_line_to_unit. The args of
+!   mlip_write_line_to_unit must match mlip_write_line_fn in include/torchani.h.
 ! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
 
 subroutine mlip_initialize( &
-    atomic_nums, &
     config_path, &
-    read_mlmm_config, &
-    calling_program, &
-    print_config_info &
+    from_namelist, &
+    calling_program &
 )
-    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
     character(len=*, kind=kind("a")), intent(in) :: config_path
-    logical, intent(in) :: read_mlmm_config
+    character(len=*, kind=kind("a")), optional, intent(in) :: from_namelist
     character(len=*, kind=kind("a")), optional, intent(in) :: calling_program
-    logical, optional, intent(in) :: print_config_info
 
     character(len=len_trim(config_path) + 1, kind=c_char) :: c_config_path
+    character(len=:, kind=c_char), allocatable :: c_from_namelist
     character(len=:, kind=c_char), allocatable :: c_calling_program
-    logical :: do_print_config_info
     ! Copying to a temporary string with kind=c_char "casts" the kind to c_char
     c_config_path = trim(config_path) // c_null_char
+    c_from_namelist = "mlip" // c_null_char
+    if (present(from_namelist)) then
+        c_from_namelist = trim(from_namelist) // c_null_char
+    endif
     c_calling_program = "none" // c_null_char
     if (present(calling_program)) then
         c_calling_program = trim(calling_program) // c_null_char
     endif
-    do_print_config_info = .false.
-    if (present(print_config_info)) then
-        do_print_config_info = print_config_info
-    endif
     call internal_initialize( &
-        size(atomic_nums), &
-        atomic_nums, &
         c_config_path, &
-        fbool_to_cbool(read_mlmm_config), &
-        c_calling_program, &
-        fbool_to_cbool(do_print_config_info) &
+        c_from_namelist, &
+        c_calling_program &
     )
+endsubroutine
+
+! The output printed by libtorchani is written to unit instead of stdout. Must be called
+! after each mlip_initialize
+subroutine mlip_set_output_unit(unit)
+    integer, intent(in) :: unit
+    call internal_set_output_unit(int(unit, c_int), c_funloc(mlip_write_line_to_unit))
+endsubroutine
+
+! Called by libtorchani, once per line
+subroutine mlip_write_line_to_unit(unit, line, line_len) bind(c)
+    integer(c_int), value, intent(in) :: unit
+    integer(c_int), value, intent(in) :: line_len
+    character(len=1, kind=c_char), intent(in) :: line(line_len)
+    write(unit, '(*(a))') line
 endsubroutine
 
 ! PBC are used only if cell is present. molecule_idxs and calc_only_bonded must be both
@@ -958,6 +1042,21 @@ logical(c_bool) function fbool_to_cbool(fbool) result(ret)
         ret = .false._c_bool
     endif
 endfunction
+
+subroutine mlip_set_atomic_numbers(atomic_nums, print_info)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    logical, optional, intent(in) :: print_info
+    logical :: do_print_info
+    do_print_info = .false.
+    if (present(print_info)) then
+        do_print_info = print_info
+    endif
+    call internal_set_atomic_numbers( &
+        int(size(atomic_nums), c_int), &
+        atomic_nums, &
+        fbool_to_cbool(do_print_info) &
+    )
+endsubroutine
 
 subroutine mlip_set_no_eval_atoms_mask(values)
     integer(c_int), contiguous, intent(in) :: values(:)

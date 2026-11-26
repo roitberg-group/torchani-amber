@@ -12,6 +12,8 @@
 #include <torch/all.h>
 #include <torch/types.h>
 
+#include <torchani.h>
+
 #include "fortran_utils.h"
 
 namespace config {
@@ -103,6 +105,12 @@ auto defaultMlmmConfig() -> ConfigDict;
 // other options of the group are ignored
 auto defaultAmberQmmmConfig() -> ConfigDict;
 
+// mlmm_coupling values that add the polarization correction to the coulombic coupling
+auto isPolarizableCoupling(const std::string& mlmm_coupling) -> bool;
+
+// mlmm_coupling values that use the potential and field of Gaussian MM charges (GEEP)
+auto isGeepCoupling(const std::string& mlmm_coupling) -> bool;
+
 // An invalid combination of config options
 class config_validation_error : public std::runtime_error {
     public:
@@ -123,11 +131,15 @@ class GlobalConfig {
         torch::TensorOptions().device(torch::Device{torch::kCPU, -1}).dtype(torch::kFloat)
     };
     bool m_use_no_eval_atoms = false;
+    bool m_has_atomic_numbers = false;
     bool m_mlip_interface_is_init = false;
     std::optional<ConfigDict> m_mlip_config;
     std::optional<ConfigDict> m_mlmm_config;
     // From Amber's &qmmm namelist, if read
     int m_amber_qmmm_int = 1;
+    // Set by mlip_set_output_unit. If unset, print() writes to stdout
+    std::optional<int> m_output_unit;
+    mlip_write_line_fn m_write_line = nullptr;
 
     // Mirrors ani_nml_validate in sander, assuming qmmm_int = 1
     static auto validateConfig(
@@ -156,13 +168,15 @@ class GlobalConfig {
         std::optional<ConfigDict> amber_qmmm_config = std::nullopt
     );
 
-    // Read the config from the first "&mlip" namelist in an Amber input file (mdin).
-    // If read_mlmm_config, also read the ML/MM options. If calling_program is "sander"
-    // too, also read the first "&qmmm" namelist, and validate the config against it.
-    // calling_program is "none", "sander" or "pmemd" (case-insensitive)
+    // Read the config from an Amber input file (mdin). from_namelist is "mlip" (first
+    // "&mlip" namelist, no ML/MM options), "qmmm-and-mlip" (deprecated, first "&mlip"
+    // namelist with the ML/MM options, and if calling_program is "sander" also the
+    // first "&qmmm" namelist, the config is validated against it) or "mlmm" (first
+    // "&mlmm" namelist with the ML/MM options, a "&qmmm" namelist is an error).
+    // calling_program is "none", "sander" or "pmemd". Both are case-insensitive
     static auto fromNamelistFile(
         const std::string& fpath,
-        bool read_mlmm_config = false,
+        const std::string& from_namelist = "mlip",
         const std::string& calling_program = "none"
     ) -> GlobalConfig;
 
@@ -180,6 +194,14 @@ class GlobalConfig {
 
     auto setNoEvalAtoms(bool use_no_eval_atoms) -> void {
         m_use_no_eval_atoms = use_no_eval_atoms;
+    }
+
+    auto hasAtomicNumbers() const -> bool {
+        return m_has_atomic_numbers;
+    }
+
+    auto setHasAtomicNumbers(bool has_atomic_numbers) -> void {
+        m_has_atomic_numbers = has_atomic_numbers;
     }
 
     auto setMlChargeAndSpinMult(int ml_charge, int ml_spin_mult) -> void {
@@ -246,8 +268,22 @@ class GlobalConfig {
     // Throws if the ML/MM config was not read, or if the element has no kz
     auto getVolumeKz(long atomic_num) const -> double;
 
-    // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
-    // was read
+    // GEEP width (bohr) of the Gaussian MM charges that interact with an ML atom of a
+    // given element, geep_sigmas times geep_factor, from the ML/MM config, or a builtin
+    // default if geep_sigmas is not set. Throws if the ML/MM config was not read, or if
+    // the element has no width
+    auto getGeepSigma(long atomic_num) const -> double;
+
+    auto setOutputUnit(int unit, mlip_write_line_fn write_line) -> void {
+        m_output_unit = unit;
+        m_write_line = write_line;
+    }
+
+    // Print to stdout, or with one write_line call per line if setOutputUnit was called
+    auto print(const std::string& text) const -> void;
+
+    // Print the config with print(), and the ML/MM setup it selects, if the ML/MM
+    // config was read
     auto printInfo() const -> void;
 
     auto tensorToTorchaniDevice(torch::Tensor x) const -> torch::Tensor {

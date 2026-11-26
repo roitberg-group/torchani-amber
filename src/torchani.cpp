@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <source_location>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -152,7 +153,7 @@ void exitIfNoMlmmConfig(
     if (not config.hasMlmmConfig()) {
         std::cerr << "ERROR (libtorchani)\n"
                   << loc.function_name() << " requires the ML/MM config, call"
-                  << " mlip_initialize with read_mlmm_config = true first" << std::endl;
+                  << " mlip_initialize with from_namelist = \"mlmm\" first" << std::endl;
         std::exit(2);
     }
 }
@@ -164,6 +165,18 @@ void exitIfNotInitialized(
     if (not config.mlipInterfaceIsInit()) {
         std::cerr << "ERROR (libtorchani)\n"
                   << loc.function_name() << " was called before mlip_initialize" << std::endl;
+        std::exit(2);
+    }
+}
+
+void exitIfNoAtomicNumbers(
+    const config::GlobalConfig& config,
+    std::source_location loc = std::source_location::current()
+) {
+    if (not config.hasAtomicNumbers()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " requires the atomic numbers, call"
+                  << " mlip_set_atomic_numbers first" << std::endl;
         std::exit(2);
     }
 }
@@ -224,18 +237,38 @@ torch::Tensor mlVolumeKzs() {
     );
 }
 
+// GEEP widths of the ML atoms (bohr), from the ML/MM config. Exits if the ML/MM config
+// was not read, or if an element has no width
+torch::Tensor mlGeepSigmas() {
+    std::vector<double> sigmas;
+    for (long atomic_num : mlAtomicNumbers()) {
+        double sigma = std::numeric_limits<double>::quiet_NaN();
+        try {
+            sigma = global_config.getGeepSigma(atomic_num);
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::exit(2);
+        }
+        sigmas.push_back(sigma);
+    }
+    return global_config.tensorToTorchaniDtypeAndDevice(
+        torch::tensor(sigmas, torch::TensorOptions().dtype(torch::kDouble))
+    );
+}
+
 void printPolarizabilitiesInUse() {
     std::set<long> atomic_nums;
     for (long atomic_num : mlAtomicNumbers()) {
         atomic_nums.insert(atomic_num);
     }
     bool use_mlip_atomic_volumes = global_config.getBool("use_mlip_atomic_volumes");
+    std::ostringstream out;
     if (use_mlip_atomic_volumes) {
-        std::cout << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
-                  << "Element Symbol, kz (AU)\n";
+        out << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
+            << "Element Symbol, kz (AU)\n";
     } else {
-        std::cout << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
-                  << "Element Symbol, Alpha (AU)\n";
+        out << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
+            << "Element Symbol, Alpha (AU)\n";
     }
     for (long atomic_num : atomic_nums) {
         double value = 0.0;
@@ -249,10 +282,10 @@ void printPolarizabilitiesInUse() {
             std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
             std::exit(2);
         }
-        std::cout << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
-                  << std::fixed << std::setprecision(4) << value << "\n";
+        out << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
+            << std::fixed << std::setprecision(4) << value << "\n";
     }
-    std::cout << std::defaultfloat << std::flush;
+    global_config.print(out.str());
 }
 
 void exitWithConfigOptionError(
@@ -595,9 +628,11 @@ void calcEnergyForceCustomMlmm(
     );
     populateEnergyScalar(energy, pot_energy_buf);
     if (verbose) {
-        std::cout << std::fixed << std::setprecision(4)
-                  << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
-                  << *pot_energy_buf << std::defaultfloat << std::endl;
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(4)
+            << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
+            << *pot_energy_buf << "\n";
+        global_config.print(out.str());
     }
 }
 
@@ -653,8 +688,11 @@ void calcEnergyForceMlmm(
     torch::Tensor ml_coords = tensor_utils::dblBufToCoordsTensor(global_config, ml_coords_buf, ml_atoms_num);
 
     // Without coupling, the energy doesn't depend on the MM coords, so the model
-    // calculates the forces on the ML atoms directly
-    bool coupling_is_none = mlmm_coupling == "none";
+    // calculates the forces on the ML atoms directly. With mechanical embedding the MD
+    // engine calculates the coupling
+    bool coupling_is_none = mlmm_coupling == "none"
+        || mlmm_coupling == "mechanical-embedding"
+        || mlmm_coupling == "mechanical-embedding-no-electrostatics";
     mlip::MlipOutput output = model->computeSinglePoint(
         atomic_numbers,
         ml_coords,
@@ -706,10 +744,14 @@ void calcEnergyForceMlmm(
         torch::Tensor mm_to_ml_distances =
             torch::linalg_norm(delta, std::nullopt, 2);
 
+        std::optional<torch::Tensor> ml_geep_sigmas;
+        if (config::isGeepCoupling(mlmm_coupling)) {
+            ml_geep_sigmas = mlGeepSigmas() / constants::CODATA08_ANGSTROM_TO_BOHR;
+        }
         ene_pot_coulomb = electro::coulombicEmbeddingEnergy(
-            ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances
+            ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances, ml_geep_sigmas
         );
-        if (mlmm_coupling == "simple-polarizable") {
+        if (config::isPolarizableCoupling(mlmm_coupling)) {
             // Exits if the ML/MM config was not read, so it can be read afterwards
             torch::Tensor atomic_alphas;
             if (global_config.getBool("use_mlip_atomic_volumes")) {
@@ -730,7 +772,8 @@ void calcEnergyForceMlmm(
                 mm_coords,
                 mm_atomic_charges,
                 mm_to_ml_distances,
-                inv_pol_dielectric
+                inv_pol_dielectric,
+                ml_geep_sigmas
             );
             ene_pot_dist = -0.5 * ene_pot_pol;
         }
@@ -771,16 +814,18 @@ void calcEnergyForceMlmm(
         populateEnergyScalar(ene_pot_dist, &ene_pot_dist_kcal);
         populateEnergyScalar(ene_pot_coulomb, &ene_pot_coulomb_kcal);
         double ene_pot_embed_kcal = ene_pot_coulomb_kcal + ene_pot_dist_kcal + ene_pot_pol_kcal;
-        std::cout << std::fixed << std::setprecision(4)
-                  << " ML/MM: IN VACUO ENERGY = " << std::setw(14) << ene_pot_invacuo_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (COULOMBIC) =" << std::setw(14)
-                  << ene_pot_coulomb_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (DISTORTION) =" << std::setw(14)
-                  << ene_pot_dist_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (POLARIZATION) =" << std::setw(14)
-                  << ene_pot_pol_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14) << ene_pot_embed_kcal
-                  << std::defaultfloat << std::endl;
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(4)
+            << " ML/MM: IN VACUO ENERGY = " << std::setw(14) << ene_pot_invacuo_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (COULOMBIC) =" << std::setw(14)
+            << ene_pot_coulomb_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (DISTORTION) =" << std::setw(14)
+            << ene_pot_dist_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (POLARIZATION) =" << std::setw(14)
+            << ene_pot_pol_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14) << ene_pot_embed_kcal
+            << "\n";
+        global_config.print(out.str());
     }
 }
 
@@ -830,20 +875,17 @@ std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
 
 extern "C" {
 void mlip_initialize(
-    int num_atoms,
-    int atomic_nums[],  // Shape (num_atoms,)
     const char* config_path,
-    bool read_mlmm_config,
-    const char* calling_program,
-    bool print_config_info
+    const char* from_namelist,
+    const char* calling_program
 ) {
     // (0) Clear tensors stored in previous runs of the MLIP Interface
     tensor_container.clear();
 
-    // (1) Read and print configuration, fail immediatly if running on an unsupported device
+    // (1) Read configuration, fail immediatly if running on an unsupported device
     try {
         global_config = config::GlobalConfig::fromNamelistFile(
-            config_path, read_mlmm_config, calling_program
+            config_path, from_namelist, calling_program
         );
     } catch (const config::unsupported_device_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
@@ -854,36 +896,9 @@ void mlip_initialize(
                   << e.what() << std::endl;
         std::exit(2);
     }
-    if (print_config_info) {
-        global_config.printInfo();
-    }
 
     // (2) Disable TF32 and FP16 for accuracy
     disableTorchReducedFloatPrecisionOptimizations();
-
-    // It is VERY important to get types correctly here. If the
-    // types don't match then from_blob will not interpret the pointers correctly
-    // and as a consequence the tensor will have junk memory inside. If the blob
-    // is int then the tensor should be torch::kInt. If the blob is double
-    // then the tensor should be torch::kDouble
-    //
-    // PBC tensor is initialized even if pbc is not needed afterwards,
-    // since the tensor occupies almost no space
-    torch::Tensor atomic_numbers = torch::from_blob(
-        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
-    );
-
-    atomic_numbers = atomic_numbers.to(global_config.device());
-    atomic_numbers = atomic_numbers.to(torch::kLong);
-    // This is necessary since torch has to use this tensor to index internally,
-    // and only long tensors can be used for this, so widening of the ints has
-    // to be performed.
-    // Also, torchani needs an extra dimension as batch dimension
-    atomic_numbers = atomic_numbers.unsqueeze(0);
-    LOG(INFO) << "Initialized MLIP with atomic numbers:\n" << atomic_numbers;
-    // All atoms are evaluated until mlip_set_no_eval_atoms_mask is called
-    tensor_container.store("__all_atomic_numbers", atomic_numbers);
-    tensor_container.store("__atomic_numbers", atomic_numbers);
 
     // (3) Load compiled extensions
     std::vector<std::string> extension_names = {"cuaev.so", "cell_list.so"};
@@ -966,6 +981,60 @@ void mlip_initialize(
                   << " you can safely disregard this warning."
                   << std::endl;
     }
+    createOutputFiles(global_config.hasMlmmConfig() ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
+    last_written_md_step.reset();
+
+    // (7) Epilogue
+    global_config.setMlipInterfaceIsInit(true);
+    LOG(INFO) << "Loaded MLIP model and finished MLIP Interface initialization";
+}
+
+void mlip_print_config_info() {
+    exitIfNotInitialized(global_config);
+    global_config.printInfo();
+}
+
+void mlip_set_output_unit(int unit, mlip_write_line_fn write_line) {
+    exitIfNotInitialized(global_config);
+    global_config.setOutputUnit(unit, write_line);
+}
+
+void mlip_is_init(bool* out_is_init) {
+    *out_is_init = global_config.mlipInterfaceIsInit();
+}
+
+void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) {
+    exitIfNotInitialized(global_config);
+    exitIfChargesGraphIsRetained();
+    if (global_config.hasAtomicNumbers()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_set_atomic_numbers can only be called once after each"
+                  << " mlip_initialize" << std::endl;
+        std::exit(2);
+    }
+    // It is VERY important to get types correctly here. If the
+    // types don't match then from_blob will not interpret the pointers correctly
+    // and as a consequence the tensor will have junk memory inside. If the blob
+    // is int then the tensor should be torch::kInt. If the blob is double
+    // then the tensor should be torch::kDouble
+    torch::Tensor atomic_numbers = torch::from_blob(
+        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
+    );
+
+    atomic_numbers = atomic_numbers.to(global_config.device());
+    atomic_numbers = atomic_numbers.to(torch::kLong);
+    // This is necessary since torch has to use this tensor to index internally,
+    // and only long tensors can be used for this, so widening of the ints has
+    // to be performed.
+    // Also, torchani needs an extra dimension as batch dimension
+    atomic_numbers = atomic_numbers.unsqueeze(0);
+    LOG(INFO) << "Set atomic numbers:\n" << atomic_numbers;
+    // All atoms are evaluated until mlip_set_no_eval_atoms_mask is called
+    tensor_container.store("__all_atomic_numbers", atomic_numbers);
+    tensor_container.store("__atomic_numbers", atomic_numbers);
+
+    global_config.setHasAtomicNumbers(true);
+
     // Models can read arbitrary features from a newline separated
     // file with floats (e.g. Nutmeg potentials use this)
     // Relative paths are resolved wrt the current working directory
@@ -977,28 +1046,29 @@ void mlip_initialize(
         tensor_container.store("__extra_features", extra_features);
         setModelExtraFeatures(extra_features);
     }
-
-    createOutputFiles(read_mlmm_config ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
-    last_written_md_step.reset();
-
-    // (7) Epilogue
-    global_config.setMlipInterfaceIsInit(true);
-    if (read_mlmm_config && global_config.getBool("use_mlip_atomic_volumes")) {
+    if (global_config.hasMlmmConfig() && global_config.getBool("use_mlip_atomic_volumes")) {
         // Exits if an element of the ML atoms has no kz
         mlVolumeKzs();
     }
     if (
-        print_config_info
-        && read_mlmm_config
-        && global_config.getString("mlmm_coupling") == "simple-polarizable"
+        global_config.hasMlmmConfig()
+        && config::isGeepCoupling(global_config.getString("mlmm_coupling"))
+    ) {
+        // Exits if an element of the ML atoms has no GEEP width
+        mlGeepSigmas();
+    }
+    if (
+        print_info
+        && global_config.hasMlmmConfig()
+        && config::isPolarizableCoupling(global_config.getString("mlmm_coupling"))
     ) {
         printPolarizabilitiesInUse();
     }
-    LOG(INFO) << "Loaded MLIP model and finished MLIP Interface initialization";
 }
 
 void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     exitIfChargesGraphIsRetained();
     torch::Tensor all_atomic_numbers = tensor_container.get("__all_atomic_numbers");
     if (num_atoms != all_atomic_numbers.size(1)) {
@@ -1052,6 +1122,7 @@ void mlip_calc_energy_force_from_external_neighbors(
     double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     timing::ScopedTimer timer{};
     if (!model->supportsComputeFromExternalNeighbors()) {
@@ -1120,6 +1191,7 @@ void mlip_calc_energy_force(
     double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     timing::ScopedTimer timer{};
     torch::Tensor coords = tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
@@ -1177,6 +1249,7 @@ void mlip_calc_energy_force_mlmm(
     double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     exitIfNoMlmmConfig(global_config);
     exitIfNoEvalAtoms(global_config);
     calcEnergyForceMlmm(
@@ -1210,6 +1283,7 @@ void mlip_calc_energy_force_mlmm_qbc(
     double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     exitIfNoMlmmConfig(global_config);
     exitIfNoEvalAtoms(global_config);
     calcEnergyForceMlmm(
@@ -1236,6 +1310,7 @@ void mlip_calc_energy_atomic_charges_retain(
     double* pot_energy_buf
 ) {
     exitIfNotInitialized(global_config);
+    exitIfNoAtomicNumbers(global_config);
     exitIfNoEvalAtoms(global_config);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     // The graph outlives this call, so it must not refer to the caller's buffer
