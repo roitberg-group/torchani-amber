@@ -19,6 +19,9 @@
 !   internal_calc_energy_force_mlmm_qbc, generated from interface/interface.yaml. If
 !   their args change in the yaml, those calls must be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
+! - mlip_set_output_unit calls internal_set_output_unit, generated from
+!   interface/interface.yaml, and passes it mlip_write_line_to_unit. The args of
+!   mlip_write_line_to_unit must match mlip_write_line_fn in include/torchani.h.
 ! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
@@ -51,6 +54,21 @@ subroutine mlip_initialize( &
         c_from_namelist, &
         c_calling_program &
     )
+endsubroutine
+
+! The output printed by libtorchani is written to unit instead of stdout. Must be called
+! after each mlip_initialize
+subroutine mlip_set_output_unit(unit)
+    integer, intent(in) :: unit
+    call internal_set_output_unit(int(unit, c_int), c_funloc(mlip_write_line_to_unit))
+endsubroutine
+
+! Called by libtorchani, once per line
+subroutine mlip_write_line_to_unit(unit, line, line_len) bind(c)
+    integer(c_int), value, intent(in) :: unit
+    integer(c_int), value, intent(in) :: line_len
+    character(len=1, kind=c_char), intent(in) :: line(line_len)
+    write(unit, '(*(a))') line
 endsubroutine
 
 ! PBC are used only if cell is present. molecule_idxs and calc_only_bonded must be both

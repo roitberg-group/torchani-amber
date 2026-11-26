@@ -978,6 +978,18 @@ auto GlobalConfig::getPolarizability(long atomic_num) const -> double {
     return getPolarizability(std::string(constants::ELEMENT_SYMBOLS[atomic_num - 1]));
 }
 
+auto GlobalConfig::print(const std::string& text) const -> void {
+    if (!m_output_unit) {
+        std::cout << text << std::flush;
+        return;
+    }
+    std::istringstream lines(text);
+    std::string line;
+    while (std::getline(lines, line)) {
+        m_write_line(*m_output_unit, line.c_str(), static_cast<int>(line.size()));
+    }
+}
+
 auto GlobalConfig::printInfo() const -> void {
     std::ostringstream out;
     out << "ML/MM:------------------ML/MM config----------------\n";
@@ -1005,7 +1017,7 @@ auto GlobalConfig::printInfo() const -> void {
     }
     if (!m_mlmm_config) {
         out << "ML/MM:--------------end config-------------------\n";
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     const std::string& mlmm_coupling = getString("mlmm_coupling");
@@ -1062,14 +1074,14 @@ auto GlobalConfig::printInfo() const -> void {
     }
     out << "ML/MM ELECTROSTATIC COUPLING AND CHARGE CONFIG:\n";
     if (m_amber_qmmm_int != 1) {
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     if (mlmm_coupling == "mechanical-embedding") {
         out << "ML/MM: Will use mechanical embedding, the QM/MM interaction energy is"
             << " calculated by the MD engine\n"
             << "     with fixed charges read from the topology file for the QM-region\n";
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     if (mlmm_coupling == "mechanical-embedding-no-electrostatics") {
@@ -1077,12 +1089,12 @@ auto GlobalConfig::printInfo() const -> void {
             << " interaction energy\n"
             << "     only the van der Waals and bonded QM/MM interactions are calculated"
             << " by the MD engine\n";
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     if (mlmm_coupling == "none" && !use_qm_coupling) {
         out << "ML/MM: Will use no QM/MM interaction energy, only the in vacuo ML energy\n";
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     out << "ML/MM: QM/MM electrostatic coupling will be calculated by MLIP Interface\n";
@@ -1091,7 +1103,7 @@ auto GlobalConfig::printInfo() const -> void {
             << "     Will delegate QM/MM electrostatic coupling to " << qm_coupling_method << "\n"
             << "     The electrostatic coupling approximation will be used\n"
             << "     The QM energies and forces will be also corrected\n";
-        std::cout << out.str() << std::flush;
+        print(out.str());
         return;
     }
     if (mlmm_coupling == "coulombic" || mlmm_coupling == "coulombic-geep") {
@@ -1127,7 +1139,7 @@ auto GlobalConfig::printInfo() const -> void {
             << " volumes for the QM-region, alpha = kz * volume, taking into account"
             << " dvolume/dr\n";
     }
-    std::cout << out.str() << std::flush;
+    print(out.str());
 }
 
 }  // namespace config

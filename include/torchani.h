@@ -6,6 +6,10 @@ extern "C" {
 #else
 #include <stdbool.h>
 #endif
+
+// Called by libtorchani to print one line (without the newline) to unit, see
+// mlip_set_output_unit
+typedef void (*mlip_write_line_fn)(int unit, const char* line, int line_len);
 // Read the config from the file at config_path (the mdin, relative paths are
 // resolved wrt the current working directory), and load the MLIP. from_namelist is
 // (case-insensitive):
@@ -24,9 +28,20 @@ void mlip_initialize(
     const char* calling_program
 );
 
-// Print the config read by mlip_initialize to stdout. Exits if mlip_initialize was
-// not called
+// Print the config read by mlip_initialize to stdout, or to the unit set by
+// mlip_set_output_unit. Exits if mlip_initialize was not called
 void mlip_print_config_info(
+);
+
+// Print the output of mlip_print_config_info, and the print_info and verbose
+// output of mlip_set_atomic_numbers and mlip_calc_energy_force_mlmm, by calling
+// write_line(unit, line, line_len) once per line (without the newline), instead of
+// to stdout. Exits if mlip_initialize was not called. Each mlip_initialize resets
+// the output to stdout. In Fortran, only unit is passed, and the lines are written
+// to it
+void mlip_set_output_unit(
+    int unit,
+    mlip_write_line_fn write_line
 );
 
 // Whether mlip_initialize has been called. Can be called before mlip_initialize
@@ -43,8 +58,8 @@ void mlip_is_init(
 // 'coulombic-geep' or 'simple-polarizable-geep', exits if an element has no GEEP
 // width. If print_info and mlmm_coupling is 'simple-polarizable' or
 // 'simple-polarizable-geep', the polarizabilities (or kz factors) in use are printed
-// to stdout. In Fortran, num_atoms is size(atomic_nums), and print_info is optional,
-// default false
+// to stdout, or to the unit set by mlip_set_output_unit. In Fortran, num_atoms is
+// size(atomic_nums), and print_info is optional, default false
 void mlip_set_atomic_numbers(
     int num_atoms,
     int atomic_nums[],  // Shape (num_atoms,)
@@ -167,7 +182,8 @@ void mlip_calc_energy_atomic_charges_vjp(
 // internally. The model must export a 'compute_mlmm' method (see README). Forces on
 // both regions via autograd. use_pbc is only supported with 'custom'. cell is
 // ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-// energy, with 'custom') are printed to stdout
+// energy, with 'custom') are printed to stdout, or to the unit set by
+// mlip_set_output_unit
 void mlip_calc_energy_force_mlmm(
     int ml_atoms_num,
     int mm_atoms_num,

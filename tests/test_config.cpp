@@ -567,6 +567,29 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     std::filesystem::remove(path);
 }
 
+static std::vector<std::pair<int, std::string>> written_lines;
+
+static void writeLine(int unit, const char* line, int line_len) {
+    written_lines.emplace_back(unit, std::string(line, line_len));
+}
+
+TEST_CASE("GlobalConfig print to output unit", "[config]") {
+    config::ConfigDict mlip_config = config::defaultMlipConfig();
+    mlip_config = mlip_config.withValue("use_cuda_device", false);
+    GlobalConfig config{mlip_config};
+    written_lines.clear();
+    config.setOutputUnit(116, writeLine);
+    std::stringstream captured;
+    std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
+    config.print("\nfirst\nsecond\n");
+    std::cout.rdbuf(cout_buf);
+    CHECK(captured.str().empty());
+    std::vector<std::pair<int, std::string>> expect_lines = {
+        {116, ""}, {116, "first"}, {116, "second"}
+    };
+    CHECK(written_lines == expect_lines);
+}
+
 TEST_CASE("GlobalConfig from config dicts", "[config]") {
     config::ConfigDict mlip_config = config::defaultMlipConfig();
     mlip_config = mlip_config.withValue("use_cuda_device", false);

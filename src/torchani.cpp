@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <source_location>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -261,12 +262,13 @@ void printPolarizabilitiesInUse() {
         atomic_nums.insert(atomic_num);
     }
     bool use_mlip_atomic_volumes = global_config.getBool("use_mlip_atomic_volumes");
+    std::ostringstream out;
     if (use_mlip_atomic_volumes) {
-        std::cout << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
-                  << "Element Symbol, kz (AU)\n";
+        out << "ML/MM: The following kz factors (alpha = kz * volume) are in use:\n"
+            << "Element Symbol, kz (AU)\n";
     } else {
-        std::cout << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
-                  << "Element Symbol, Alpha (AU)\n";
+        out << "ML/MM: The following atomic polarizabilities (alpha) are in use:\n"
+            << "Element Symbol, Alpha (AU)\n";
     }
     for (long atomic_num : atomic_nums) {
         double value = 0.0;
@@ -280,10 +282,10 @@ void printPolarizabilitiesInUse() {
             std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
             std::exit(2);
         }
-        std::cout << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
-                  << std::fixed << std::setprecision(4) << value << "\n";
+        out << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
+            << std::fixed << std::setprecision(4) << value << "\n";
     }
-    std::cout << std::defaultfloat << std::flush;
+    global_config.print(out.str());
 }
 
 void exitWithConfigOptionError(
@@ -626,9 +628,11 @@ void calcEnergyForceCustomMlmm(
     );
     populateEnergyScalar(energy, pot_energy_buf);
     if (verbose) {
-        std::cout << std::fixed << std::setprecision(4)
-                  << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
-                  << *pot_energy_buf << std::defaultfloat << std::endl;
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(4)
+            << "\n ML/MM: CUSTOM ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14)
+            << *pot_energy_buf << "\n";
+        global_config.print(out.str());
     }
 }
 
@@ -810,16 +814,18 @@ void calcEnergyForceMlmm(
         populateEnergyScalar(ene_pot_dist, &ene_pot_dist_kcal);
         populateEnergyScalar(ene_pot_coulomb, &ene_pot_coulomb_kcal);
         double ene_pot_embed_kcal = ene_pot_coulomb_kcal + ene_pot_dist_kcal + ene_pot_pol_kcal;
-        std::cout << std::fixed << std::setprecision(4)
-                  << " ML/MM: IN VACUO ENERGY = " << std::setw(14) << ene_pot_invacuo_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (COULOMBIC) =" << std::setw(14)
-                  << ene_pot_coulomb_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (DISTORTION) =" << std::setw(14)
-                  << ene_pot_dist_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (POLARIZATION) =" << std::setw(14)
-                  << ene_pot_pol_kcal
-                  << "\n ML/MM: ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14) << ene_pot_embed_kcal
-                  << std::defaultfloat << std::endl;
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(4)
+            << " ML/MM: IN VACUO ENERGY = " << std::setw(14) << ene_pot_invacuo_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (COULOMBIC) =" << std::setw(14)
+            << ene_pot_coulomb_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (DISTORTION) =" << std::setw(14)
+            << ene_pot_dist_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (POLARIZATION) =" << std::setw(14)
+            << ene_pot_pol_kcal
+            << "\n ML/MM: ML-MM COUPLING ENERGY (TOTAL) =" << std::setw(14) << ene_pot_embed_kcal
+            << "\n";
+        global_config.print(out.str());
     }
 }
 
@@ -986,6 +992,11 @@ void mlip_initialize(
 void mlip_print_config_info() {
     exitIfNotInitialized(global_config);
     global_config.printInfo();
+}
+
+void mlip_set_output_unit(int unit, mlip_write_line_fn write_line) {
+    exitIfNotInitialized(global_config);
+    global_config.setOutputUnit(unit, write_line);
 }
 
 void mlip_is_init(bool* out_is_init) {

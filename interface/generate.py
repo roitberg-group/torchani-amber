@@ -18,6 +18,7 @@ C_TYPES = {
     "double": "double",
     "bool": "bool",
     "str": "const char*",
+    "write_line_fn": "mlip_write_line_fn",
 }
 
 FORTRAN_TYPES = {
@@ -25,6 +26,7 @@ FORTRAN_TYPES = {
     "double": "real(c_double)",
     "bool": "logical(c_bool)",
     "str": "character(len=1, kind=c_char)",
+    "write_line_fn": "type(c_funptr)",
 }
 
 

@@ -17,14 +17,16 @@
 #
 # Arg fields:
 #   name: argument name
-#   dtype: int | double | bool | str
+#   dtype: int | double | bool | str | write_line_fn
 #   shape: (optional) C (row-major) shape, omit for scalars. If all dims except
 #       the first are integer literals the C arg is typed as e.g. double x[][3],
 #       otherwise as a flat pointer
 #   intent: (optional) in | out | inout, default in. Scalar inputs are passed
 #       by value, everything else by reference. bool and str args can't be inout.
 #       A str output <name> is a C char buffer, and needs an int arg <name>_len with
-#       its length. The Fortran wrapper takes the length from the Fortran string
+#       its length. The Fortran wrapper takes the length from the Fortran string.
+#       A write_line_fn is a C function pointer (type(c_funptr) in Fortran), passed by
+#       value
 
 functions:
   - name: mlip_initialize
@@ -49,9 +51,22 @@ functions:
 
   - name: mlip_print_config_info
     comment: |
-      Print the config read by mlip_initialize to stdout. Exits if mlip_initialize was
-      not called
+      Print the config read by mlip_initialize to stdout, or to the unit set by
+      mlip_set_output_unit. Exits if mlip_initialize was not called
     args: []
+
+  - name: mlip_set_output_unit
+    fortran_wrapper: manual
+    comment: |
+      Print the output of mlip_print_config_info, and the print_info and verbose
+      output of mlip_set_atomic_numbers and mlip_calc_energy_force_mlmm, by calling
+      write_line(unit, line, line_len) once per line (without the newline), instead of
+      to stdout. Exits if mlip_initialize was not called. Each mlip_initialize resets
+      the output to stdout. In Fortran, only unit is passed, and the lines are written
+      to it
+    args:
+      - {name: unit, dtype: int}
+      - {name: write_line, dtype: write_line_fn}
 
   - name: mlip_is_init
     comment: |
@@ -70,8 +85,8 @@ functions:
       'coulombic-geep' or 'simple-polarizable-geep', exits if an element has no GEEP
       width. If print_info and mlmm_coupling is 'simple-polarizable' or
       'simple-polarizable-geep', the polarizabilities (or kz factors) in use are printed
-      to stdout. In Fortran, num_atoms is size(atomic_nums), and print_info is optional,
-      default false
+      to stdout, or to the unit set by mlip_set_output_unit. In Fortran, num_atoms is
+      size(atomic_nums), and print_info is optional, default false
     args:
       - {name: num_atoms, dtype: int}
       - {name: atomic_nums, dtype: int, shape: [num_atoms]}
@@ -202,7 +217,8 @@ functions:
       internally. The model must export a 'compute_mlmm' method (see README). Forces on
       both regions via autograd. use_pbc is only supported with 'custom'. cell is
       ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-      energy, with 'custom') are printed to stdout
+      energy, with 'custom') are printed to stdout, or to the unit set by
+      mlip_set_output_unit
     args:
       - {name: ml_atoms_num, dtype: int}
       - {name: mm_atoms_num, dtype: int}

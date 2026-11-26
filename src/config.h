@@ -12,6 +12,8 @@
 #include <torch/all.h>
 #include <torch/types.h>
 
+#include <torchani.h>
+
 #include "fortran_utils.h"
 
 namespace config {
@@ -135,6 +137,9 @@ class GlobalConfig {
     std::optional<ConfigDict> m_mlmm_config;
     // From Amber's &qmmm namelist, if read
     int m_amber_qmmm_int = 1;
+    // Set by mlip_set_output_unit. If unset, print() writes to stdout
+    std::optional<int> m_output_unit;
+    mlip_write_line_fn m_write_line = nullptr;
 
     // Mirrors ani_nml_validate in sander, assuming qmmm_int = 1
     static auto validateConfig(
@@ -269,8 +274,16 @@ class GlobalConfig {
     // the element has no width
     auto getGeepSigma(long atomic_num) const -> double;
 
-    // Print the config to stdout, and the ML/MM setup it selects, if the ML/MM config
-    // was read
+    auto setOutputUnit(int unit, mlip_write_line_fn write_line) -> void {
+        m_output_unit = unit;
+        m_write_line = write_line;
+    }
+
+    // Print to stdout, or with one write_line call per line if setOutputUnit was called
+    auto print(const std::string& text) const -> void;
+
+    // Print the config with print(), and the ML/MM setup it selects, if the ML/MM
+    // config was read
     auto printInfo() const -> void;
 
     auto tensorToTorchaniDevice(torch::Tensor x) const -> torch::Tensor {
