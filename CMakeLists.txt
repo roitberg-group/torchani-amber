@@ -284,6 +284,8 @@ endif()
 set(TORCHANI_LIBRARY_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_LIBRARY_INSTALL_DIR}")
 set(TORCHANI_MLIPS_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_MLIPS_INSTALL_DIR}")
 file(RELATIVE_PATH TORCHANI_MLIPS_RELATIVE_DIR "/${TORCHANI_LIBRARY_INSTALL_DIR}" "/${TORCHANI_MLIPS_INSTALL_DIR}")
+# The TorchANI Python package only loads the extensions if this file matches its tag
+file(WRITE "${TORCHANI_LIBRARY_BUILD_DIR}/_extensions_build_tag.txt" "${TORCHANI_EXTENSIONS_BUILD_TAG}")
 
 # Build both libcuaev, libcell_list, and libtorchani
 set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
