@@ -20,10 +20,10 @@
     cuda_device_index = 0
     use_cuda_device = .True.
     use_cuaev = .True.
-    model_type = "/home/ipickering/Repos/ani-amber/jit/ani2x-infer.pt"
+    model_type = "ani2x"
     use_double_precision = .False.
     use_mlip_atomic_charges = .False.
-    mlmm_coupling = 'coulombic'  ! Simple polarizable coupling (with MBIS charges)
+    mlmm_coupling = 'coulombic'
     model_index = -1
     use_external_neighborlist = .False.
 /
