@@ -175,38 +175,72 @@ TEST_CASE("GlobalConfig ML/MM mm_cutoff, ml_mask and ml_shake", "[config]") {
     std::filesystem::remove(path);
 }
 
-TEST_CASE("GlobalConfig ML/MM mm_cutoff_kind", "[config]") {
-    // Only one value is supported for each mlmm_coupling, which is the default
-    auto [mlmm_coupling, supported_kind, unsupported_kind] = GENERATE(
-        std::make_tuple(std::string{"coulombic"}, std::string{"hard"}, std::string{"none"}),
+TEST_CASE("GlobalConfig ML/MM electrostatics_kind", "[config]") {
+    // The default is the first supported value
+    auto [mlmm_coupling, supported_kinds, unsupported_kind] = GENERATE(
         std::make_tuple(
-            std::string{"coulombic-geep"}, std::string{"hard"}, std::string{"none"}
+            std::string{"coulombic"},
+            std::vector<std::string>{"hard-cutoff", "ewald"},
+            std::string{"none"}
         ),
-        std::make_tuple(std::string{"none"}, std::string{"hard"}, std::string{"none"}),
-        std::make_tuple(std::string{"me"}, std::string{"none"}, std::string{"hard"}),
         std::make_tuple(
-            std::string{"me-no-electrostatics"}, std::string{"none"}, std::string{"hard"}
+            std::string{"coulombic-geep"},
+            std::vector<std::string>{"hard-cutoff", "ewald"},
+            std::string{"none"}
+        ),
+        std::make_tuple(
+            std::string{"none"},
+            std::vector<std::string>{"hard-cutoff", "ewald"},
+            std::string{"none"}
+        ),
+        std::make_tuple(
+            std::string{"me"}, std::vector<std::string>{"none"}, std::string{"hard-cutoff"}
+        ),
+        std::make_tuple(
+            std::string{"me-no-electrostatics"},
+            std::vector<std::string>{"none"},
+            std::string{"ewald"}
         )
     );
-    const std::string fname = "torchani_test_config_mm_cutoff_kind.in";
+    const std::string fname = "torchani_test_config_electrostatics_kind.in";
     const std::string coupling_line = "&mlmm mlmm_coupling = '" + mlmm_coupling + "'";
     std::filesystem::path path = writeTmpFile(fname, coupling_line + " /\n");
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
-    CHECK(config.getString("mm_cutoff_kind") == supported_kind);
-    // Case-insensitive
-    std::string upper_kind = supported_kind;
-    std::transform(upper_kind.begin(), upper_kind.end(), upper_kind.begin(), ::toupper);
-    writeTmpFile(fname, coupling_line + ", mm_cutoff_kind = '" + upper_kind + "' /\n");
-    config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
-    CHECK(config.getString("mm_cutoff_kind") == supported_kind);
-    for (const std::string& kind : {unsupported_kind, std::string{"switched"}}) {
-        writeTmpFile(fname, coupling_line + ", mm_cutoff_kind = '" + kind + "' /\n");
+    CHECK(config.getString("electrostatics_kind") == supported_kinds.front());
+    for (const std::string& kind : supported_kinds) {
+        // Case-insensitive
+        std::string upper_kind = kind;
+        std::transform(upper_kind.begin(), upper_kind.end(), upper_kind.begin(), ::toupper);
+        writeTmpFile(fname, coupling_line + ", electrostatics_kind = '" + upper_kind + "' /\n");
+        config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
+        INFO(kind);
+        CHECK(config.getString("electrostatics_kind") == kind);
+    }
+    for (const std::string& kind :
+         {unsupported_kind, std::string{"hard"}, std::string{"switched"}}) {
+        writeTmpFile(fname, coupling_line + ", electrostatics_kind = '" + kind + "' /\n");
         INFO(kind);
         CHECK_THROWS_AS(
             GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
             config::config_validation_error
         );
     }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig ML/MM electrostatics_kind ewald requires mlmm", "[config]") {
+    const std::string fname = "torchani_test_config_electrostatics_kind_qmmm.in";
+    const std::string qmmm_line = "&qmmm qmmask = ':1', qm_theory = 'EXTERN', qmcut = 8.0 /\n";
+    std::filesystem::path path = writeTmpFile(
+        fname, "&mlip electrostatics_kind = 'hard-cutoff' /\n" + qmmm_line
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander");
+    CHECK(config.getString("electrostatics_kind") == "hard-cutoff");
+    writeTmpFile(fname, "&mlip electrostatics_kind = 'ewald' /\n" + qmmm_line);
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
+        config::config_validation_error
+    );
     std::filesystem::remove(path);
 }
 
@@ -794,7 +828,7 @@ TEST_CASE("GlobalConfig GEEP validation", "[config]") {
     );
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander");
     CHECK(config.getString("mlmm_coupling") == "simple-polarizable-geep");
-    CHECK(config.getString("mm_cutoff_kind") == "hard");
+    CHECK(config.getString("electrostatics_kind") == "hard-cutoff");
     std::string info = capturedPrintInfo(config);
     CHECK(info.find("geep_sigmas") != std::string::npos);
     CHECK(info.find("builtin") != std::string::npos);

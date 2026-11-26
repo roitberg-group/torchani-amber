@@ -334,8 +334,9 @@ auto defaultMlmmConfig() -> ConfigDict {
         {"mm_cutoff", {15.0, NamelistType::FLOAT}},
         {"ml_mask", {std::string{""}, NamelistType::STR}},
         {"ml_shake", {true, NamelistType::BOOL}},
-        // Set from mlmm_coupling if empty, it only supports one value for each coupling
-        {"mm_cutoff_kind", {std::string{""}, NamelistType::STR}},
+        // 'none' with mechanical embedding, 'hard-cutoff' otherwise if empty. 'ewald' makes
+        // sander also calculate the Ewald potential and field on the ML atoms
+        {"electrostatics_kind", {std::string{""}, NamelistType::STR}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -575,20 +576,40 @@ auto GlobalConfig::fromNamelistFile(
                 " &mlmm namelist"
             );
         }
-        std::string mm_cutoff_kind = mlmm_config->getString("mm_cutoff_kind");
+        std::string electrostatics_kind = mlmm_config->getString("electrostatics_kind");
         std::transform(
-            mm_cutoff_kind.begin(), mm_cutoff_kind.end(), mm_cutoff_kind.begin(), ::tolower
+            electrostatics_kind.begin(),
+            electrostatics_kind.end(),
+            electrostatics_kind.begin(),
+            ::tolower
         );
-        std::string supported_mm_cutoff_kind =
-            isMechanicalEmbedding(mlmm_coupling) ? "none" : "hard";
-        if (!mm_cutoff_kind.empty() && mm_cutoff_kind != supported_mm_cutoff_kind) {
+        std::vector<std::string> supported_electrostatics_kinds = {"none"};
+        if (!isMechanicalEmbedding(mlmm_coupling)) {
+            supported_electrostatics_kinds = {"hard-cutoff"};
+            if (source == "mlmm") {
+                supported_electrostatics_kinds.push_back("ewald");
+            }
+        }
+        if (electrostatics_kind.empty()) {
+            electrostatics_kind = supported_electrostatics_kinds.front();
+        }
+        if (std::find(
+                supported_electrostatics_kinds.begin(),
+                supported_electrostatics_kinds.end(),
+                electrostatics_kind
+            )
+            == supported_electrostatics_kinds.end()) {
+            std::string supported_str;
+            for (const std::string& kind : supported_electrostatics_kinds) {
+                supported_str += (supported_str.empty() ? "'" : ", '") + kind + "'";
+            }
             throw config_validation_error(
-                "mm_cutoff_kind = '" + mm_cutoff_kind + "' is not supported with"
-                " mlmm_coupling = '" + mlmm_coupling + "', the only supported value is '"
-                + supported_mm_cutoff_kind + "'"
+                "electrostatics_kind = '" + electrostatics_kind + "' is not supported with"
+                " mlmm_coupling = '" + mlmm_coupling + "' and the &" + source
+                + " namelist, supported values are: " + supported_str
             );
         }
-        mlmm_config = mlmm_config->withValue("mm_cutoff_kind", supported_mm_cutoff_kind);
+        mlmm_config = mlmm_config->withValue("electrostatics_kind", electrostatics_kind);
     }
     validateConfig(mlip_config, mlmm_config);
 
