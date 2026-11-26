@@ -299,13 +299,6 @@ The `&mlmm` namelist supports, in addition to the `&mlip` options:
 - `mm_cutoff = 15.0` (double)
    Cutoff (in Angstrom) of the MM atoms that interact with the ML region. It can't be
    set with `mlmm_coupling = 'mechanical-embedding'`.
-- `electrostatics_kind` (str, case-insensitive)
-   How the ML/MM electrostatics are treated. `'none'` with mechanical embedding (the
-   only supported value), otherwise `'hard-cutoff'` (the default) or `'ewald'`. With
-   `'hard-cutoff'` only the MM atoms within `mm_cutoff` interact with the ML region. With
-   `'ewald'` (requires PBC and PME), Sander also calculates the Ewald electrostatic
-   potential and field from the MM charges on the ML atoms. They are not used by the
-   models yet.
 - `ml_shake = .true.` (bool)
    Whether the bonds to hydrogen within the ML region are constrained by SHAKE (only if
    SHAKE is turned on with `ntc > 1`).
