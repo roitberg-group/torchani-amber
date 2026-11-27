@@ -23,6 +23,7 @@ public :: &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_energy_atomic_charges_retain, &
     torchani_energy_atomic_charges_vjp, &
+    torchani_select_retained_graph, &
     torchani_calc_energy_force_with_coupling, &
     torchani_calc_data_for_monitored_mlmm, &
     convert_sander_neighborlist_to_ani_fmt, &
@@ -173,6 +174,11 @@ subroutine torchani_energy_atomic_charges_vjp( &
     real(c_double), intent(in) :: charge_weights(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
+endsubroutine
+
+subroutine torchani_select_retained_graph(slot) bind(c, name="torchani_select_retained_graph")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: slot
 endsubroutine
 
 ! TODO: Backwards compat remove when AmberTools26 is released

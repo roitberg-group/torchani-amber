@@ -95,6 +95,13 @@ void torchani_energy_atomic_charges_vjp(
     double forces[][3]  // Shape (num_atoms, 3)
 );
 
+// Select the slot (0 to 7, default 0) of the graph that the next
+// torchani_energy_atomic_charges_retain keeps and the next
+// torchani_energy_atomic_charges_vjp uses, so that several graphs can be kept
+// at once (e.g. one per ligand copy of an alchemical calculation, each with its
+// own atoms, torchani_set_atomic_numbers)
+void torchani_select_retained_graph(int slot);
+
 // Backwards compat, dummy fn, remove when AmberTools26 is released
 void torchani_energy_force_qbc(
     int num_atoms,
