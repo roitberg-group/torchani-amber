@@ -118,7 +118,9 @@ More detailed installation instructions:
     By default the extensions are built for the GPUs detected in the current node. If
     you don't have access to a GPU currently (e.g. you are compiling in a node without
     a GPU and you want to afterwards run in a node with a GPU) use `./run-cmake -a` to
-    build for many GPU architectures (it will take significantly longer)
+    build for the GPU architectures in the `TORCH_CUDA_ARCH_LIST` env var (the conda
+    env sets it to many architectures on activation, which takes significantly longer
+    to build)
 5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
    to both `pmemd` and `sander`. You can refer to [the amber
    website](https://ambermd.org/) for info on how to obtain and install Amber. You can

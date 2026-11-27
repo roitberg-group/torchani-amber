@@ -420,81 +420,155 @@ static void checkCouplingForcesByFiniteDifferences(
     }
 }
 
-TEST_CASE("C bindings for other entry points") {
+using ModelSpec = std::tuple<std::string, int, std::string>;
+using DeviceSpec = std::tuple<int, int, std::string>;
+
+static const std::vector<ModelSpec> ALL_MODELS = {
+    {"ani1x", 0, "_1x"},
+    {"ani1ccx", 0, "_1ccx"},
+    {"ani2x", 0, "_2x"},
+    {"animbis", 0, "_mbis"},
+    {"animbisv", 0, "_mbisv"},
+    {"ani1x", -1, "_1x_ensemble"},
+    {"ani1ccx", -1, "_1ccx_ensemble"},
+    {"ani2x", -1, "_2x_ensemble"},
+    {"animbis", -1, "_mbis_ensemble"},
+    {"animbisv", -1, "_mbisv_ensemble"},
+};
+static const std::vector<ModelSpec> ENSEMBLE_MODELS = {
+    {"ani1x", -1, "_1x_ensemble"},
+    {"ani1ccx", -1, "_1ccx_ensemble"},
+    {"ani2x", -1, "_2x_ensemble"},
+    {"animbis", -1, "_mbis_ensemble"},
+    {"animbisv", -1, "_mbisv_ensemble"},
+};
+static const std::vector<ModelSpec> CHARGE_MODELS = {
+    {"animbis", 0, "_mbis"},
+    {"animbisv", 0, "_mbisv"},
+    {"animbis", -1, "_mbis_ensemble"},
+    {"animbisv", -1, "_mbisv_ensemble"},
+};
+static const std::vector<ModelSpec> ANIMBISV_MODELS = {
+    {"animbisv", 0, "_mbisv"},
+    {"animbisv", -1, "_mbisv_ensemble"},
+};
+// The custom ML/MM model wraps animbis
+static const std::vector<ModelSpec> ANIMBIS_MODELS = {
+    {"animbis", 0, "_mbis"},
+    {"animbis", -1, "_mbis_ensemble"},
+};
+// (use_cuda_device, use_cuaev, suffix of the test values file)
+static const std::vector<DeviceSpec> DEVICES = {
+    {0, 0, "_cpu"},
+    {1, 0, "_cuda"},
+    {1, 1, "_cuda"},
+};
+
+constexpr int ENTRY_POINT_SIZE = 2;
+
+// Inputs and generated parameters shared by the tests of the C binding entry points
+struct EntryPoint {
     // The deprecated "qmmm-and-mlip" reads the ML/MM options from &mlip
-    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
-    std::string namelist = from_namelist == "mlmm" ? "mlmm" : "mlip";
-    const int size = 2;
-    double coords[size][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
-    int molecule_idxs_buf[size] = {1, 1};
-    int atomic_numbers[size] = {1, 6};
-    int no_eval_atoms[size] = {0, 0};
-    double forces[size][3];
-    double pot_energy;
-    int use_double = GENERATE(0, 1);
-    INFO("Comparing with double precision: " << use_double);
+    std::string from_namelist;
+    std::string namelist;
+    int use_double;
+    std::string model_type;
+    int network_index;
+    std::string model_suffix;
+    int use_cuda_device;
+    int use_cuaev;
+    std::string device_suffix;
+    double coords[ENTRY_POINT_SIZE][3] = {{3.0, 3.0, 4.0}, {1.0, 2.0, 1.0}};
+    int molecule_idxs[ENTRY_POINT_SIZE] = {1, 1};
+    int atomic_numbers[ENTRY_POINT_SIZE] = {1, 6};
 
-    using ModelSpec = std::tuple<std::string, int, std::string>;
-    auto model_spec = GENERATE(
-        table<std::string, int, std::string>(
-            {ModelSpec{"ani1x", 0, "_1x"},
-                ModelSpec{"ani1ccx", 0, "_1ccx"},
-                ModelSpec{"ani2x", 0, "_2x"},
-                ModelSpec{"animbis", 0, "_mbis"},
-                ModelSpec{"animbisv", 0, "_mbisv"},
-                ModelSpec{"ani1x", -1, "_1x_ensemble"},
-                ModelSpec{"ani1ccx", -1, "_1ccx_ensemble"},
-                ModelSpec{"ani2x", -1, "_2x_ensemble"},
-                ModelSpec{"animbis", -1, "_mbis_ensemble"},
-                ModelSpec{"animbisv", -1, "_mbisv_ensemble"}}
-        )
-    );
-    std::string model_type = std::get<0>(model_spec);
-    int network_index = std::get<1>(model_spec);
-    std::string model_suffix = std::get<2>(model_spec);
-    INFO("Testing model: " << "ani" << model_suffix);
+    auto description() const -> std::string {
+        return from_namelist + ", double: " + std::to_string(use_double) + ", ani"
+            + model_suffix + device_suffix + ", cuAEV: " + std::to_string(use_cuaev);
+    }
+};
 
-    using DeviceSpec = std::tuple<int, int, std::string>;
-    auto device_spec = GENERATE(
-        table<int, int, std::string>(
-            {DeviceSpec{0, 0, "_cpu"},
-                DeviceSpec{1, 0, "_cuda"},
-                DeviceSpec{1, 1, "_cuda"}}
-        )
-    );
-    int use_cuda_device = std::get<0>(device_spec);
-    if (use_cuda_device and std::getenv("TORCHANI_SKIP_CUDA_TESTS")) {
+static auto makeEntryPoint(
+    const std::string& from_namelist,
+    int use_double,
+    const ModelSpec& model,
+    const DeviceSpec& device
+) -> EntryPoint {
+    if (std::get<0>(device) and std::getenv("TORCHANI_SKIP_CUDA_TESTS")) {
         SKIP("CUDA tests disabled by TORCHANI_SKIP_CUDA_TESTS");
     }
-    int use_cuaev = std::get<1>(device_spec);
-    std::string device_suffix = std::get<2>(device_spec);
-    INFO("Testing model on device: " << "device" << device_suffix);
-    INFO("cuAEV: " << (use_cuaev == 1));
+    EntryPoint entry;
+    entry.from_namelist = from_namelist;
+    entry.namelist = from_namelist == "mlmm" ? "mlmm" : "mlip";
+    entry.use_double = use_double;
+    entry.model_type = std::get<0>(model);
+    entry.network_index = std::get<1>(model);
+    entry.model_suffix = std::get<2>(model);
+    entry.use_cuda_device = std::get<0>(device);
+    entry.use_cuaev = std::get<1>(device);
+    entry.device_suffix = std::get<2>(device);
+    return entry;
+}
 
-    // Polarizabilities of H and C in the config are in AU. A non-default
-    // inv_pol_dielectric requires mlmm_coupling = 'simple-polarizable', which requires ML
-    // atomic charges
+static auto initializeEntryPoint(
+    EntryPoint& entry, const std::string& model_type, const std::string& options
+) -> void {
+    mlip_initialize(
+        writeMlipConfig(
+            model_type,
+            entry.network_index,
+            entry.use_double,
+            entry.use_cuda_device,
+            entry.use_cuaev,
+            0,
+            options,
+            entry.namelist
+        )
+            .c_str(),
+        entry.from_namelist.c_str(),
+        "none"
+    );
+    mlip_set_atomic_numbers(ENTRY_POINT_SIZE, entry.atomic_numbers, false);
+}
+
+// Polarizabilities of H and C in the config are in AU. A non-default
+// inv_pol_dielectric requires mlmm_coupling = 'simple-polarizable', which requires ML
+// atomic charges
+static auto couplingOptions() -> std::string {
     std::ostringstream mlmm_options;
     mlmm_options
         << std::setprecision(17) << "  pol_H = " << COUPLING_ATOMIC_ALPHAS[0] << ",\n"
         << "  pol_C = " << COUPLING_ATOMIC_ALPHAS[1] << ",\n"
         << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC << ",\n"
         << "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n";
-    mlip_initialize(
-        writeMlipConfig(
-            model_type,
-            network_index,
-            use_double,
-            use_cuda_device,
-            use_cuaev,
-            0,
-            mlmm_options.str(),
-            namelist
-        )
-            .c_str(),
-        from_namelist.c_str(),
-        "none"
-    );
+    return mlmm_options.str();
+}
+
+static auto readTestValues(const EntryPoint& entry) -> std::vector<double> {
+    std::string values_path = file_directory + "test_values" + entry.device_suffix
+        + entry.model_suffix + ".txt";
+    std::ifstream values_file(values_path);
+    REQUIRE(values_file.good());
+    std::vector<double> test_values;
+    double value;
+    while (values_file >> value) {
+        test_values.push_back(value);
+    }
+    return test_values;
+}
+
+static auto atomicChargesOffset(const EntryPoint& entry) -> int {
+    return entry.network_index == -1 ? 14 : 7;
+}
+
+TEST_CASE("C bindings initialization", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ALL_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    initializeEntryPoint(entry, entry.model_type, couplingOptions());
     bool is_init = false;
     mlip_is_init(&is_init);
     CHECK(is_init);
@@ -503,493 +577,429 @@ TEST_CASE("C bindings for other entry points") {
     mlip_print_config_info();
     std::cout.rdbuf(cout_buf);
     CHECK(captured.str().find("model_type") != std::string::npos);
-    mlip_set_atomic_numbers(size, atomic_numbers, false);
+}
 
-    std::string values_path =
-        file_directory + "test_values" + device_suffix + model_suffix + ".txt";
-    std::ifstream values_file(values_path);
-    REQUIRE(values_file.good());
-    std::vector<double> test_values;
-    double value;
-    while (values_file >> value) {
-        test_values.push_back(value);
+TEST_CASE("C bindings energy and forces from external neighbors", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ALL_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    initializeEntryPoint(entry, entry.model_type, couplingOptions());
+    std::vector<double> test_values = readTestValues(entry);
+    int neighborlist[2][1] = {{0}, {1}};
+    double shifts[1][3] = {{0.0, 0.0, 0.0}};
+    double forces[ENTRY_POINT_SIZE][3];
+    double pot_energy;
+    mlip_calc_energy_force_from_external_neighbors(
+        ENTRY_POINT_SIZE,
+        1,
+        entry.coords,
+        &neighborlist[0][0],
+        shifts,
+        entry.molecule_idxs,
+        false,
+        forces,
+        &pot_energy
+    );
+    FLOAT_EQ(pot_energy, test_values[0], use_double);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
+        }
     }
-    bool model_is_ensemble = network_index == -1;
-    bool model_has_charges = model_type == "animbis" or model_type == "animbisv";
-    int charges_offset = model_is_ensemble ? 14 : 7;
+}
 
-    SECTION("Energy + Force, external neighbors") {
-        int neighborlist[2][1] = {{0}, {1}};
-        double shifts[1][3] = {{0.0, 0.0, 0.0}};
-        mlip_calc_energy_force_from_external_neighbors(
-            size,
-            1,
-            coords,
-            &neighborlist[0][0],
-            shifts,
-            molecule_idxs_buf,
-            false,
-            forces,
-            &pot_energy
-        );
-        FLOAT_EQ(pot_energy, test_values[0], use_double);
-        for (int j = 0; j != size; ++j) {
+TEST_CASE("C bindings energy, forces and QBC", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ENSEMBLE_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    initializeEntryPoint(entry, entry.model_type, "");
+    std::vector<double> test_values = readTestValues(entry);
+    double forces[ENTRY_POINT_SIZE][3];
+    double pot_energy;
+    double qbc;
+    double qbc_deriv[ENTRY_POINT_SIZE][3];
+    double fixed_atomic_charges[ENTRY_POINT_SIZE] = {0.0, 0.0};
+    int charges_dims[1] = {ENTRY_POINT_SIZE};
+    mlip_store_float_tensor(
+        "fixed_atomic_charges", fixed_atomic_charges, charges_dims, 1
+    );
+    mlip_calc_energy_force_mlmm_qbc(
+        ENTRY_POINT_SIZE,
+        /* mm_atoms_num= */ 0,
+        entry.coords,
+        /* mm_coords= */ nullptr,
+        /* mm_atomic_charges= */ nullptr,
+        /* cell= */ nullptr,
+        /* use_pbc= */ false,
+        /* verbose= */ false,
+        forces,
+        /* mm_forces= */ nullptr,
+        &pot_energy
+    );
+    int qbc_grad_dims[2] = {ENTRY_POINT_SIZE, 3};
+    mlip_fetch_result("qbc", &qbc, nullptr, 0);
+    mlip_fetch_result("qbc_grad", &qbc_deriv[0][0], qbc_grad_dims, 2);
+    FLOAT_EQ(pot_energy, test_values[0], use_double);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
+        }
+    }
+    // QBC is the std of large energies, float32 loses digits to cancellation
+    if (use_double) {
+        FLOAT_EQ(qbc, test_values[7], true);
+        for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
             for (int c = 0; c != 3; ++c) {
-                FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
+                FLOAT_EQ(qbc_deriv[j][c], test_values[8 + 3 * j + c], true);
             }
         }
     }
+}
 
-    SECTION("Energy + Force + QBC") {
-        if (model_is_ensemble) {
-            mlip_initialize(
-                writeMlipConfig(
-                    model_type,
-                    network_index,
-                    use_double,
-                    use_cuda_device,
-                    use_cuaev,
-                    0,
-                    "",
-                    namelist
-                )
-                    .c_str(),
-                from_namelist.c_str(),
-                "none"
-            );
-            mlip_set_atomic_numbers(size, atomic_numbers, false);
-            double qbc;
-            double qbc_deriv[size][3];
-            double fixed_atomic_charges[size] = {0.0, 0.0};
-            int charges_dims[1] = {size};
-            mlip_store_float_tensor(
-                "fixed_atomic_charges", fixed_atomic_charges, charges_dims, 1
-            );
-            mlip_calc_energy_force_mlmm_qbc(
-                size,
-                /* mm_atoms_num= */ 0,
-                coords,
-                /* mm_coords= */ nullptr,
-                /* mm_atomic_charges= */ nullptr,
-                /* cell= */ nullptr,
-                /* use_pbc= */ false,
-                /* verbose= */ false,
-                forces,
-                /* mm_forces= */ nullptr,
-                &pot_energy
-            );
-            int qbc_grad_dims[2] = {size, 3};
-            mlip_fetch_result("qbc", &qbc, nullptr, 0);
-            mlip_fetch_result("qbc_grad", &qbc_deriv[0][0], qbc_grad_dims, 2);
-            FLOAT_EQ(pot_energy, test_values[0], use_double);
-            for (int j = 0; j != size; ++j) {
-                for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
-                }
-            }
-            // QBC is the std of large energies, float32 loses digits to cancellation
-            if (use_double) {
-                FLOAT_EQ(qbc, test_values[7], true);
-                for (int j = 0; j != size; ++j) {
-                    for (int c = 0; c != 3; ++c) {
-                        FLOAT_EQ(qbc_deriv[j][c], test_values[8 + 3 * j + c], true);
-                    }
-                }
-            }
+TEST_CASE("C bindings energy, forces and atomic charges", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(CHARGE_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    initializeEntryPoint(entry, entry.model_type, couplingOptions());
+    std::vector<double> test_values = readTestValues(entry);
+    int charges_offset = atomicChargesOffset(entry);
+    double forces[ENTRY_POINT_SIZE][3];
+    double pot_energy;
+    double atomic_charges[ENTRY_POINT_SIZE];
+    double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
+    mlip_calc_energy_force(
+        ENTRY_POINT_SIZE,
+        entry.coords,
+        cell,
+        false,
+        entry.molecule_idxs,
+        false,
+        forces,
+        &pot_energy
+    );
+    int charges_dims[1] = {ENTRY_POINT_SIZE};
+    mlip_fetch_result("atomic_charges", atomic_charges, charges_dims, 1);
+    FLOAT_EQ(pot_energy, test_values[0], use_double);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        FLOAT_EQ(atomic_charges[j], test_values[charges_offset + j], use_double);
+        for (int c = 0; c != 3; ++c) {
+            FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
         }
     }
+}
 
-    SECTION("Energy + Force + Atomic charges") {
-        if (model_has_charges) {
-            double atomic_charges[size];
-            double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
-            mlip_calc_energy_force(
-                size, coords, cell, false, molecule_idxs_buf, false, forces, &pot_energy
-            );
-            int charges_dims[1] = {size};
-            mlip_fetch_result("atomic_charges", atomic_charges, charges_dims, 1);
-            FLOAT_EQ(pot_energy, test_values[0], use_double);
-            for (int j = 0; j != size; ++j) {
-                FLOAT_EQ(
-                    atomic_charges[j], test_values[charges_offset + j], use_double
-                );
-                for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(forces[j][c], test_values[1 + 3 * j + c], use_double);
-                }
-            }
-        }
+TEST_CASE("C bindings energy and forces with coupling", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(CHARGE_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    initializeEntryPoint(entry, entry.model_type, couplingOptions());
+    std::vector<double> test_values = readTestValues(entry);
+    int charges_offset = atomicChargesOffset(entry);
+    double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+    CouplingOutput out = calc_coupling(entry.coords, mm_coords);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        FLOAT_EQ(out.ml_atomic_charges[j], test_values[charges_offset + j], use_double);
     }
 
-    SECTION("Energy + Force with coupling") {
-        if (model_has_charges) {
-            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            CouplingOutput out = calc_coupling(coords, mm_coords);
-            for (int j = 0; j != size; ++j) {
-                FLOAT_EQ(
-                    out.ml_atomic_charges[j],
-                    test_values[charges_offset + j],
-                    use_double
-                );
-            }
+    // The in vacuo energy is the reference energy of the model
+    double expect_embed = expectedEmbeddingEnergy(
+        entry.coords, mm_coords, out.ml_atomic_charges, COUPLING_ATOMIC_ALPHAS
+    );
+    FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
 
-            // The in vacuo energy is the reference energy of the model
-            double expect_embed = expectedEmbeddingEnergy(
-                coords, mm_coords, out.ml_atomic_charges, COUPLING_ATOMIC_ALPHAS
-            );
-            FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
+    std::stringstream captured;
+    std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
+    calc_coupling(entry.coords, mm_coords, true);
+    std::cout.rdbuf(cout_buf);
+    CHECK(captured.str().find("ML/MM: IN VACUO ENERGY") != std::string::npos);
+    CHECK(
+        captured.str().find("ML/MM: ML-MM COUPLING ENERGY (TOTAL)") != std::string::npos
+    );
 
-            std::stringstream captured;
-            std::streambuf* cout_buf = std::cout.rdbuf(captured.rdbuf());
-            calc_coupling(coords, mm_coords, true);
-            std::cout.rdbuf(cout_buf);
-            CHECK(captured.str().find("ML/MM: IN VACUO ENERGY") != std::string::npos);
-            CHECK(
-                captured.str().find("ML/MM: ML-MM COUPLING ENERGY (TOTAL)")
-                != std::string::npos
-            );
-
-            // With charge derivatives, forces are minus the gradient of the total
-            // energy (checked by central finite differences)
-            if (use_double) {
-                checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
-            }
-        }
+    // With charge derivatives, forces are minus the gradient of the total
+    // energy (checked by central finite differences)
+    if (use_double) {
+        checkCouplingForcesByFiniteDifferences(entry.coords, mm_coords, out);
     }
+}
 
-    SECTION("Energy + Force with coupling and volume-based polarizabilities") {
-        if (model_type == "animbisv") {
-            std::ostringstream volume_options;
-            volume_options << std::setprecision(17)
-                           << "  volume_kzs = " << COUPLING_VOLUME_KZS[0]
-                           << ", , , , , " << COUPLING_VOLUME_KZS[1] << ",\n"
-                           << "  use_mlip_atomic_volumes = T,\n"
-                           << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC
-                           << ",\n"
-                           << "  mlmm_coupling = 'simple-polarizable',"
-                           << " use_mlip_atomic_charges = T,\n";
-            mlip_initialize(
-                writeMlipConfig(
-                    model_type,
-                    network_index,
-                    use_double,
-                    use_cuda_device,
-                    use_cuaev,
-                    0,
-                    volume_options.str(),
-                    namelist
-                )
-                    .c_str(),
-                from_namelist.c_str(),
-                "none"
-            );
-            mlip_set_atomic_numbers(size, atomic_numbers, false);
-            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            CouplingOutput out = calc_coupling(coords, mm_coords);
-            double atomic_volumes[size];
-            int volumes_dims[1] = {size};
-            mlip_fetch_result("atomic_volumes", atomic_volumes, volumes_dims, 1);
-            double atomic_alphas[size];
-            for (int j = 0; j != size; ++j) {
-                CHECK(atomic_volumes[j] > 0.0);
-                atomic_alphas[j] = COUPLING_VOLUME_KZS[j] * atomic_volumes[j];
-            }
-            // The in vacuo energy is the reference energy of the model
-            double expect_embed = expectedEmbeddingEnergy(
-                coords, mm_coords, out.ml_atomic_charges, atomic_alphas
-            );
-            FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
-            // The volumes depend on the coords, so this also checks dvolume/dr
-            if (use_double) {
-                checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
-            }
-        }
+TEST_CASE(
+    "C bindings energy and forces with coupling and volume-based polarizabilities",
+    "[c_bindings]"
+) {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ANIMBISV_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    std::ostringstream volume_options;
+    volume_options << std::setprecision(17)
+                   << "  volume_kzs = " << COUPLING_VOLUME_KZS[0] << ", , , , , "
+                   << COUPLING_VOLUME_KZS[1] << ",\n"
+                   << "  use_mlip_atomic_volumes = T,\n"
+                   << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC << ",\n"
+                   << "  mlmm_coupling = 'simple-polarizable',"
+                   << " use_mlip_atomic_charges = T,\n";
+    initializeEntryPoint(entry, entry.model_type, volume_options.str());
+    std::vector<double> test_values = readTestValues(entry);
+    double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+    CouplingOutput out = calc_coupling(entry.coords, mm_coords);
+    double atomic_volumes[ENTRY_POINT_SIZE];
+    int volumes_dims[1] = {ENTRY_POINT_SIZE};
+    mlip_fetch_result("atomic_volumes", atomic_volumes, volumes_dims, 1);
+    double atomic_alphas[ENTRY_POINT_SIZE];
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        CHECK(atomic_volumes[j] > 0.0);
+        atomic_alphas[j] = COUPLING_VOLUME_KZS[j] * atomic_volumes[j];
     }
-
-    SECTION("Energy + Force with GEEP coupling") {
-        // The GEEP couplings are only supported with the &mlmm namelist
-        if (model_has_charges && from_namelist == "mlmm") {
-            for (
-                const std::string mlmm_coupling :
-                {"coulombic-geep", "simple-polarizable-geep"}
-            ) {
-                INFO(mlmm_coupling);
-                bool use_mlip_atomic_charges =
-                    mlmm_coupling == "simple-polarizable-geep";
-                std::ostringstream geep_options;
-                geep_options << std::setprecision(17)
-                             << "  geep_sigmas = " << COUPLING_GEEP_SIGMAS[0]
-                             << ", , , , , " << COUPLING_GEEP_SIGMAS[1] << ",\n"
-                             << "  geep_factor = " << COUPLING_GEEP_FACTOR << ",\n"
-                             << "  mlmm_coupling = '" << mlmm_coupling << "',\n";
-                if (use_mlip_atomic_charges) {
-                    geep_options
-                        << "  pol_H = " << COUPLING_ATOMIC_ALPHAS[0] << ",\n"
-                        << "  pol_C = " << COUPLING_ATOMIC_ALPHAS[1] << ",\n"
-                        << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC
-                        << ",\n"
-                        << "  use_mlip_atomic_charges = T,\n";
-                }
-                mlip_initialize(
-                    writeMlipConfig(
-                        model_type,
-                        network_index,
-                        use_double,
-                        use_cuda_device,
-                        use_cuaev,
-                        0,
-                        geep_options.str(),
-                        namelist
-                    )
-                        .c_str(),
-                    from_namelist.c_str(),
-                    "none"
-                );
-                mlip_set_atomic_numbers(size, atomic_numbers, false);
-                double fixed_atomic_charges[size] = {0.3, -0.3};
-                if (!use_mlip_atomic_charges) {
-                    int charges_dims[1] = {size};
-                    mlip_store_float_tensor(
-                        "fixed_atomic_charges", fixed_atomic_charges, charges_dims, 1
-                    );
-                }
-                double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-                CouplingOutput out = calc_coupling(coords, mm_coords);
-                double ml_geep_sigmas[size];
-                for (int j = 0; j != size; ++j) {
-                    ml_geep_sigmas[j] = COUPLING_GEEP_SIGMAS[j] * COUPLING_GEEP_FACTOR
-                        / constants::CODATA08_ANGSTROM_TO_BOHR;
-                }
-                double zero_alphas[size] = {0.0, 0.0};
-                const double* ml_atomic_charges = use_mlip_atomic_charges
-                    ? out.ml_atomic_charges
-                    : fixed_atomic_charges;
-                const double* ml_atomic_alphas =
-                    use_mlip_atomic_charges ? COUPLING_ATOMIC_ALPHAS : zero_alphas;
-                // The in vacuo energy is the reference energy of the model
-                double expect_embed = expectedEmbeddingEnergy(
-                    coords,
-                    mm_coords,
-                    ml_atomic_charges,
-                    ml_atomic_alphas,
-                    ml_geep_sigmas
-                );
-                FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
-                // The GEEP screening changes the energy wrt point MM charges
-                double expect_point_embed = expectedEmbeddingEnergy(
-                    coords, mm_coords, ml_atomic_charges, ml_atomic_alphas
-                );
-                CHECK(std::abs(expect_embed - expect_point_embed) > 1e-3);
-                if (use_double) {
-                    checkCouplingForcesByFiniteDifferences(coords, mm_coords, out);
-                }
-
-                // An MM atom on top of an ML atom gives a finite energy and forces, close
-                // to those of a slightly displaced MM atom
-                double overlap_mm_coords[2][3] = {
-                    {coords[0][0], coords[0][1], coords[0][2]}, {0.0, 0.0, 3.0}
-                };
-                CouplingOutput overlap_out = calc_coupling(coords, overlap_mm_coords);
-                overlap_mm_coords[0][0] += 1e-5;
-                CouplingOutput near_out = calc_coupling(coords, overlap_mm_coords);
-                CHECK(std::isfinite(overlap_out.pot_energy));
-                CHECK_THAT(
-                    overlap_out.pot_energy,
-                    WithinAbs(near_out.pot_energy, use_double ? 1e-4 : 1e-2)
-                );
-                for (int j = 0; j != size; ++j) {
-                    for (int c = 0; c != 3; ++c) {
-                        CHECK(std::isfinite(overlap_out.ml_forces[j][c]));
-                        CHECK(std::isfinite(overlap_out.mm_forces[j][c]));
-                    }
-                }
-            }
-        }
+    // The in vacuo energy is the reference energy of the model
+    double expect_embed = expectedEmbeddingEnergy(
+        entry.coords, mm_coords, out.ml_atomic_charges, atomic_alphas
+    );
+    FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, use_double);
+    // The volumes depend on the coords, so this also checks dvolume/dr
+    if (use_double) {
+        checkCouplingForcesByFiniteDifferences(entry.coords, mm_coords, out);
     }
+}
 
-    SECTION("Energy + Force with no coupling") {
-        double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-        double mm_atomic_charges[2] = {
-            COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
-        };
-        double ml_forces[size][3];
-        double mm_forces[2][3];
-        double pot_energy;
-        // Case-insensitive
-        mlip_initialize(
-            writeMlipConfig(
-                model_type,
-                network_index,
-                use_double,
-                use_cuda_device,
-                use_cuaev,
-                0,
-                "  mlmm_coupling = 'None',\n",
-                namelist
-            )
-                .c_str(),
-            from_namelist.c_str(),
-            "none"
+// The GEEP couplings are only supported with the &mlmm namelist
+static auto checkGeepCoupling(EntryPoint& entry, const std::string& mlmm_coupling)
+    -> void {
+    bool use_mlip_atomic_charges = mlmm_coupling == "simple-polarizable-geep";
+    std::ostringstream geep_options;
+    geep_options << std::setprecision(17)
+                 << "  geep_sigmas = " << COUPLING_GEEP_SIGMAS[0] << ", , , , , "
+                 << COUPLING_GEEP_SIGMAS[1] << ",\n"
+                 << "  geep_factor = " << COUPLING_GEEP_FACTOR << ",\n"
+                 << "  mlmm_coupling = '" << mlmm_coupling << "',\n";
+    if (use_mlip_atomic_charges) {
+        geep_options << "  pol_H = " << COUPLING_ATOMIC_ALPHAS[0] << ",\n"
+                     << "  pol_C = " << COUPLING_ATOMIC_ALPHAS[1] << ",\n"
+                     << "  inv_pol_dielectric = " << COUPLING_INV_POL_DIELECTRIC
+                     << ",\n"
+                     << "  use_mlip_atomic_charges = T,\n";
+    }
+    initializeEntryPoint(entry, entry.model_type, geep_options.str());
+    std::vector<double> test_values = readTestValues(entry);
+    double fixed_atomic_charges[ENTRY_POINT_SIZE] = {0.3, -0.3};
+    if (!use_mlip_atomic_charges) {
+        int charges_dims[1] = {ENTRY_POINT_SIZE};
+        mlip_store_float_tensor(
+            "fixed_atomic_charges", fixed_atomic_charges, charges_dims, 1
         );
-        mlip_set_atomic_numbers(size, atomic_numbers, false);
-        mlip_calc_energy_force_mlmm(
-            size,
-            2,
-            coords,
-            mm_coords,
-            mm_atomic_charges,
-            /* cell= */ nullptr,
-            /* use_pbc= */ false,
-            /* verbose= */ false,
-            ml_forces,
-            mm_forces,
-            &pot_energy
-        );
-        FLOAT_EQ(pot_energy, test_values[0], use_double);
-        for (int j = 0; j != size; ++j) {
-            for (int c = 0; c != 3; ++c) {
-                FLOAT_EQ(ml_forces[j][c], test_values[1 + 3 * j + c], use_double);
-                CHECK(mm_forces[j][c] == 0.0);
-            }
-        }
+    }
+    double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+    CouplingOutput out = calc_coupling(entry.coords, mm_coords);
+    double ml_geep_sigmas[ENTRY_POINT_SIZE];
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        ml_geep_sigmas[j] = COUPLING_GEEP_SIGMAS[j] * COUPLING_GEEP_FACTOR
+            / constants::CODATA08_ANGSTROM_TO_BOHR;
+    }
+    double zero_alphas[ENTRY_POINT_SIZE] = {0.0, 0.0};
+    const double* ml_atomic_charges =
+        use_mlip_atomic_charges ? out.ml_atomic_charges : fixed_atomic_charges;
+    const double* ml_atomic_alphas =
+        use_mlip_atomic_charges ? COUPLING_ATOMIC_ALPHAS : zero_alphas;
+    // The in vacuo energy is the reference energy of the model
+    double expect_embed = expectedEmbeddingEnergy(
+        entry.coords, mm_coords, ml_atomic_charges, ml_atomic_alphas, ml_geep_sigmas
+    );
+    FLOAT_EQ(out.pot_energy, test_values[0] + expect_embed, entry.use_double);
+    // The GEEP screening changes the energy wrt point MM charges
+    double expect_point_embed = expectedEmbeddingEnergy(
+        entry.coords, mm_coords, ml_atomic_charges, ml_atomic_alphas
+    );
+    CHECK(std::abs(expect_embed - expect_point_embed) > 1e-3);
+    if (entry.use_double) {
+        checkCouplingForcesByFiniteDifferences(entry.coords, mm_coords, out);
     }
 
-    SECTION("Energy + Force with mechanical embedding") {
-        // Only supported with the &mlmm namelist
-        std::string mlmm_coupling =
-            GENERATE(as<std::string>{}, "me", "me-no-electrostatics");
-        if (from_namelist == "mlmm") {
-            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            double mm_atomic_charges[2] = {
-                COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
-            };
-            double ml_forces[size][3];
-            double mm_forces[2][3];
-            double pot_energy;
-            // The MD engine calculates the coupling, so this is the in vacuo energy
-            mlip_initialize(
-                writeMlipConfig(
-                    model_type,
-                    network_index,
-                    use_double,
-                    use_cuda_device,
-                    use_cuaev,
-                    0,
-                    "  mlmm_coupling = '" + mlmm_coupling + "',\n",
-                    namelist
-                )
-                    .c_str(),
-                from_namelist.c_str(),
-                "none"
-            );
-            mlip_set_atomic_numbers(size, atomic_numbers, false);
-            mlip_calc_energy_force_mlmm(
-                size,
-                2,
-                coords,
-                mm_coords,
-                mm_atomic_charges,
-                /* cell= */ nullptr,
-                /* use_pbc= */ false,
-                /* verbose= */ false,
-                ml_forces,
-                mm_forces,
-                &pot_energy
-            );
-            FLOAT_EQ(pot_energy, test_values[0], use_double);
-            for (int j = 0; j != size; ++j) {
-                for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(ml_forces[j][c], test_values[1 + 3 * j + c], use_double);
-                }
-            }
-            for (int j = 0; j != 2; ++j) {
-                for (int c = 0; c != 3; ++c) {
-                    CHECK(mm_forces[j][c] == 0.0);
-                }
-            }
+    // An MM atom on top of an ML atom gives a finite energy and forces, close
+    // to those of a slightly displaced MM atom
+    double overlap_mm_coords[2][3] = {
+        {entry.coords[0][0], entry.coords[0][1], entry.coords[0][2]}, {0.0, 0.0, 3.0}
+    };
+    CouplingOutput overlap_out = calc_coupling(entry.coords, overlap_mm_coords);
+    overlap_mm_coords[0][0] += 1e-5;
+    CouplingOutput near_out = calc_coupling(entry.coords, overlap_mm_coords);
+    CHECK(std::isfinite(overlap_out.pot_energy));
+    CHECK_THAT(
+        overlap_out.pot_energy,
+        WithinAbs(near_out.pot_energy, entry.use_double ? 1e-4 : 1e-2)
+    );
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            CHECK(std::isfinite(overlap_out.ml_forces[j][c]));
+            CHECK(std::isfinite(overlap_out.mm_forces[j][c]));
         }
     }
+}
 
-    SECTION("Energy + Force with custom ML/MM model") {
-        // The custom ML/MM model wraps animbis
-        if (model_type == "animbis") {
-            double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
-            double mm_atomic_charges[2] = {
-                COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
-            };
-            double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
-            // Reference: animbis, mlmm_coupling='simple-polarizable',
-            // use_torchani_charges=.true., with the
-            // default (Amber) polarizabilities
-            mlip_initialize(
-                writeMlipConfig(
-                    model_type,
-                    network_index,
-                    use_double,
-                    use_cuda_device,
-                    use_cuaev,
-                    0,
-                    "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n",
-                    namelist
-                )
-                    .c_str(),
-                from_namelist.c_str(),
-                "none"
-            );
-            mlip_set_atomic_numbers(size, atomic_numbers, false);
-            CouplingOutput expect{};
-            mlip_calc_energy_force_mlmm(
-                size,
-                2,
-                coords,
-                mm_coords,
-                mm_atomic_charges,
-                /* cell= */ nullptr,
-                /* use_pbc= */ false,
-                /* verbose= */ false,
-                expect.ml_forces,
-                expect.mm_forces,
-                &expect.pot_energy
-            );
+TEST_CASE("C bindings energy and forces with coulombic GEEP coupling", "[c_bindings]") {
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(CHARGE_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint("mlmm", use_double, model, device);
+    INFO(entry.description());
+    checkGeepCoupling(entry, "coulombic-geep");
+}
 
-            mlip_initialize(
-                writeMlipConfig(
-                    "animbis-custom-mlmm",
-                    network_index,
-                    use_double,
-                    use_cuda_device,
-                    use_cuaev,
-                    0,
-                    "  mlmm_coupling = 'custom',\n",
-                    namelist
-                )
-                    .c_str(),
-                from_namelist.c_str(),
-                "none"
-            );
-            mlip_set_atomic_numbers(size, atomic_numbers, false);
-            double ml_forces[size][3];
-            double mm_forces[2][3];
-            double pot_energy;
-            mlip_calc_energy_force_mlmm(
-                size,
-                2,
-                coords,
-                mm_coords,
-                mm_atomic_charges,
-                cell,
-                /* use_pbc= */ false,
-                /* verbose= */ false,
-                ml_forces,
-                mm_forces,
-                &pot_energy
-            );
-            FLOAT_EQ(pot_energy, expect.pot_energy, use_double);
-            for (int j = 0; j != size; ++j) {
-                for (int c = 0; c != 3; ++c) {
-                    FLOAT_EQ(ml_forces[j][c], expect.ml_forces[j][c], use_double);
-                    FLOAT_EQ(mm_forces[j][c], expect.mm_forces[j][c], use_double);
-                }
-            }
+TEST_CASE(
+    "C bindings energy and forces with simple-polarizable GEEP coupling", "[c_bindings]"
+) {
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(CHARGE_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint("mlmm", use_double, model, device);
+    INFO(entry.description());
+    checkGeepCoupling(entry, "simple-polarizable-geep");
+}
+
+// The MM forces are zero and the energy is the in vacuo one, either because there is
+// no coupling, or because the MD engine calculates it (mechanical embedding)
+static auto checkInVacuoMlmm(EntryPoint& entry, const std::string& mlmm_coupling)
+    -> void {
+    initializeEntryPoint(
+        entry, entry.model_type, "  mlmm_coupling = '" + mlmm_coupling + "',\n"
+    );
+    std::vector<double> test_values = readTestValues(entry);
+    double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+    double mm_atomic_charges[2] = {
+        COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
+    };
+    double ml_forces[ENTRY_POINT_SIZE][3];
+    double mm_forces[2][3];
+    double pot_energy;
+    mlip_calc_energy_force_mlmm(
+        ENTRY_POINT_SIZE,
+        2,
+        entry.coords,
+        mm_coords,
+        mm_atomic_charges,
+        /* cell= */ nullptr,
+        /* use_pbc= */ false,
+        /* verbose= */ false,
+        ml_forces,
+        mm_forces,
+        &pot_energy
+    );
+    FLOAT_EQ(pot_energy, test_values[0], entry.use_double);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            FLOAT_EQ(ml_forces[j][c], test_values[1 + 3 * j + c], entry.use_double);
+        }
+    }
+    for (int j = 0; j != 2; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            CHECK(mm_forces[j][c] == 0.0);
+        }
+    }
+}
+
+TEST_CASE("C bindings energy and forces with no coupling", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ALL_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    // Case-insensitive
+    checkInVacuoMlmm(entry, "None");
+}
+
+// Mechanical embedding is only supported with the &mlmm namelist
+TEST_CASE("C bindings energy and forces with mechanical embedding", "[c_bindings]") {
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ALL_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint("mlmm", use_double, model, device);
+    INFO(entry.description());
+    checkInVacuoMlmm(entry, "me");
+}
+
+TEST_CASE(
+    "C bindings energy and forces with mechanical embedding without electrostatics",
+    "[c_bindings]"
+) {
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ALL_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint("mlmm", use_double, model, device);
+    INFO(entry.description());
+    checkInVacuoMlmm(entry, "me-no-electrostatics");
+}
+
+TEST_CASE("C bindings energy and forces with custom ML/MM model", "[c_bindings]") {
+    std::string from_namelist = GENERATE(as<std::string>{}, "qmmm-and-mlip", "mlmm");
+    int use_double = GENERATE(0, 1);
+    ModelSpec model = GENERATE(from_range(ANIMBIS_MODELS));
+    DeviceSpec device = GENERATE(from_range(DEVICES));
+    EntryPoint entry = makeEntryPoint(from_namelist, use_double, model, device);
+    INFO(entry.description());
+    double mm_coords[2][3] = {{5.0, 4.0, 2.0}, {0.0, 0.0, 3.0}};
+    double mm_atomic_charges[2] = {
+        COUPLING_MM_ATOMIC_CHARGES[0], COUPLING_MM_ATOMIC_CHARGES[1]
+    };
+    double cell[3][3] = {{10., 0., 0.}, {0., 10., 0.}, {0., 0., 10.}};
+    // Reference: animbis, mlmm_coupling='simple-polarizable',
+    // use_torchani_charges=.true., with the
+    // default (Amber) polarizabilities
+    initializeEntryPoint(
+        entry,
+        entry.model_type,
+        "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+    );
+    CouplingOutput expect{};
+    mlip_calc_energy_force_mlmm(
+        ENTRY_POINT_SIZE,
+        2,
+        entry.coords,
+        mm_coords,
+        mm_atomic_charges,
+        /* cell= */ nullptr,
+        /* use_pbc= */ false,
+        /* verbose= */ false,
+        expect.ml_forces,
+        expect.mm_forces,
+        &expect.pot_energy
+    );
+
+    initializeEntryPoint(entry, "animbis-custom-mlmm", "  mlmm_coupling = 'custom',\n");
+    double ml_forces[ENTRY_POINT_SIZE][3];
+    double mm_forces[2][3];
+    double pot_energy;
+    mlip_calc_energy_force_mlmm(
+        ENTRY_POINT_SIZE,
+        2,
+        entry.coords,
+        mm_coords,
+        mm_atomic_charges,
+        cell,
+        /* use_pbc= */ false,
+        /* verbose= */ false,
+        ml_forces,
+        mm_forces,
+        &pot_energy
+    );
+    FLOAT_EQ(pot_energy, expect.pot_energy, use_double);
+    for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
+        for (int c = 0; c != 3; ++c) {
+            FLOAT_EQ(ml_forces[j][c], expect.ml_forces[j][c], use_double);
+            FLOAT_EQ(mm_forces[j][c], expect.mm_forces[j][c], use_double);
         }
     }
 }
