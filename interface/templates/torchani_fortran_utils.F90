@@ -7,9 +7,10 @@
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - torchani_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of torchani_initialize
-!   change in the yaml, that call must be updated.
+! - torchani_initialize and torchani_set_atomic_numbers call internal_initialize
+!   and internal_set_atomic_numbers, the bind(c) interfaces generated from
+!   interface/interface.yaml. If their args change in the yaml, those calls must
+!   be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
@@ -48,6 +49,11 @@ subroutine torchani_initialize( &
         fbool_to_cbool(use_cuda_device), &
         fbool_to_cbool(use_cuaev) &
     )
+endsubroutine
+
+subroutine torchani_set_atomic_numbers(atomic_nums)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    call internal_set_atomic_numbers(size(atomic_nums), atomic_nums)
 endsubroutine
 
 ! Coordinates must be mapped to central cell in sander!!!

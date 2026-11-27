@@ -33,6 +33,16 @@ functions:
       - {name: use_cuda_device, dtype: bool}
       - {name: use_cuaev, dtype: bool}
 
+  - name: torchani_set_atomic_numbers
+    fortran_wrapper: manual
+    comment: |
+      Replace the atoms (atomic numbers) that the next calculations see, keeping
+      the loaded model; for alternating between several sets of atoms (e.g. the
+      two ligand copies of an alchemical calculation). Not with no_eval_atoms.
+    args:
+      - {name: num_atoms, dtype: int}
+      - {name: atomic_nums, dtype: int, shape: [num_atoms]}
+
   - name: torchani_calc_energy_force
     args:
       - {name: num_atoms, dtype: int}
@@ -102,6 +112,16 @@ functions:
       - {name: num_atoms, dtype: int}
       - {name: charge_weights, dtype: double, shape: [num_atoms]}
       - {name: forces, dtype: double, shape: [num_atoms, 3], intent: out}
+
+  - name: torchani_select_retained_graph
+    comment: |
+      Select the slot (0 to 7, default 0) of the graph that the next
+      torchani_energy_atomic_charges_retain keeps and the next
+      torchani_energy_atomic_charges_vjp uses, so that several graphs can be kept
+      at once (e.g. one per ligand copy of an alchemical calculation, each with its
+      own atoms, torchani_set_atomic_numbers)
+    args:
+      - {name: slot, dtype: int}
 
   - name: torchani_calc_energy_force_qbc
     args:

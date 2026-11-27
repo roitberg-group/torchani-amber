@@ -29,12 +29,17 @@ std::unique_ptr<mlip::MlipModel> model;
 torch::Tensor torchani_atomic_numbers;
 torch::Tensor torchani_do_eval_atoms_mask;
 torch::Tensor torchani_do_eval_idxs;
-// Graph kept between torchani_energy_atomic_charges_retain and
-// torchani_energy_atomic_charges_vjp
-torch::Tensor retained_coords;
-torch::Tensor retained_energy;
-torch::Tensor retained_atomic_charges;
-bool charges_graph_retained = false;
+// Graphs kept between torchani_energy_atomic_charges_retain and
+// torchani_energy_atomic_charges_vjp, one per slot (torchani_select_retained_graph)
+struct RetainedGraph {
+    torch::Tensor coords;
+    torch::Tensor energy;
+    torch::Tensor atomic_charges;
+    bool retained = false;
+};
+constexpr int NUM_RETAINED_GRAPHS = 8;
+RetainedGraph retained_graphs[NUM_RETAINED_GRAPHS];
+int retained_slot = 0;
 // This factor should come straight from torchani.units and be consistent with ASE
 double HARTREE_TO_KCALMOL = 627.5094738898777;
 // NOTE: Probably this should be used instead (or nothing)
@@ -403,6 +408,18 @@ void torchani_initialize(
     }
     global_config.setTorchaniIsInit(true);
     LOG(INFO) << "Loaded MLIP model. Finished TorchANI-Amber MLIP initialization";
+}
+
+void torchani_set_atomic_numbers(int num_atoms, int atomic_nums[]) {
+    exitIfNotInitialized(global_config, "torchani_set_atomic_numbers");
+    exitIfNoEvalAtoms(global_config, "torchani_set_atomic_numbers");
+    // Same conversion as in torchani_initialize; from_blob does not own the
+    // buffer, but the conversions below copy it
+    torchani_atomic_numbers = torch::from_blob(
+        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
+    );
+    torchani_atomic_numbers =
+        torchani_atomic_numbers.to(global_config.device()).to(torch::kLong).unsqueeze(0);
 }
 
 void torchani_calc_energy_force_from_external_neighbors(
@@ -808,10 +825,11 @@ void torchani_energy_atomic_charges_retain(
     // original tensor (and its graph) for the backward pass
     torch::Tensor charges_copy = atomic_charges;
     populateAtomicCharges(charges_copy, atomic_charges_buf, num_atoms);
-    retained_coords = coords;
-    retained_energy = energy;
-    retained_atomic_charges = atomic_charges;
-    charges_graph_retained = true;
+    RetainedGraph& g = retained_graphs[retained_slot];
+    g.coords = coords;
+    g.energy = energy;
+    g.atomic_charges = atomic_charges;
+    g.retained = true;
 }
 
 void torchani_energy_atomic_charges_vjp(
@@ -821,7 +839,8 @@ void torchani_energy_atomic_charges_vjp(
     double forces_buf[][3]
 ) {
     exitIfNotInitialized(global_config, "torchani_energy_atomic_charges_vjp");
-    if (not charges_graph_retained) {
+    RetainedGraph& g = retained_graphs[retained_slot];
+    if (not g.retained) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "torchani_energy_atomic_charges_vjp must follow a call to"
                   << " torchani_energy_atomic_charges_retain" << std::endl;
@@ -830,10 +849,9 @@ void torchani_energy_atomic_charges_vjp(
     torch::Tensor weights =
         tensor_utils::dblBufToTensor(global_config, charge_weights_buf, {1, num_atoms});
     std::vector<torch::Tensor> output_vec = {
-        retained_energy.sum() * HARTREE_TO_KCALMOL +
-        (retained_atomic_charges * weights).sum()
+        g.energy.sum() * HARTREE_TO_KCALMOL + (g.atomic_charges * weights).sum()
     };
-    std::vector<torch::Tensor> coord_vec = {retained_coords};
+    std::vector<torch::Tensor> coord_vec = {g.coords};
     torch::Tensor forces = -torch::autograd::grad(
                                output_vec,
                                coord_vec,
@@ -847,10 +865,17 @@ void torchani_energy_atomic_charges_vjp(
             forces_buf[atom][c] = forces_a[0][atom][c];
         }
     }
-    retained_coords = torch::Tensor();
-    retained_energy = torch::Tensor();
-    retained_atomic_charges = torch::Tensor();
-    charges_graph_retained = false;
+    g = RetainedGraph();
+}
+
+void torchani_select_retained_graph(int slot) {
+    if (slot < 0 or slot >= NUM_RETAINED_GRAPHS) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "torchani_select_retained_graph: slot must be 0 to "
+                  << NUM_RETAINED_GRAPHS - 1 << std::endl;
+        std::exit(2);
+    }
+    retained_slot = slot;
 }
 
 void torchani_calc_energy_force_qbc(

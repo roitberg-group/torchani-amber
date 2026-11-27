@@ -6,12 +6,14 @@ use, intrinsic :: iso_c_binding
 implicit none (type, external)
 public :: &
     torchani_initialize, &
+    torchani_set_atomic_numbers, &
     torchani_calc_energy_force, &
     torchani_calc_energy_force_from_external_neighbors, &
     torchani_energy_force_atomic_charges, &
     torchani_energy_force_atomic_charges_with_derivatives, &
     torchani_energy_atomic_charges_retain, &
     torchani_energy_atomic_charges_vjp, &
+    torchani_select_retained_graph, &
     torchani_calc_energy_force_qbc, &
     torchani_calc_data_for_monitored_mlmm, &
     torchani_calc_energy_force_with_coupling, &
@@ -42,6 +44,18 @@ subroutine internal_initialize( &
     logical(c_bool), value, intent(in) :: use_double_precision
     logical(c_bool), value, intent(in) :: use_cuda_device
     logical(c_bool), value, intent(in) :: use_cuaev
+endsubroutine
+
+! Replace the atoms (atomic numbers) that the next calculations see, keeping
+! the loaded model; for alternating between several sets of atoms (e.g. the
+! two ligand copies of an alchemical calculation). Not with no_eval_atoms.
+subroutine internal_set_atomic_numbers( &
+    num_atoms, &
+    atomic_nums &
+) bind(c, name="torchani_set_atomic_numbers")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), intent(in) :: atomic_nums(*)
 endsubroutine
 
 subroutine internal_calc_energy_force( &
@@ -166,6 +180,18 @@ subroutine torchani_energy_atomic_charges_vjp( &
     real(c_double), intent(in) :: charge_weights(*)
     ! Outputs
     real(c_double), intent(out) :: forces(*)
+endsubroutine
+
+! Select the slot (0 to 7, default 0) of the graph that the next
+! torchani_energy_atomic_charges_retain keeps and the next
+! torchani_energy_atomic_charges_vjp uses, so that several graphs can be kept
+! at once (e.g. one per ligand copy of an alchemical calculation, each with its
+! own atoms, torchani_set_atomic_numbers)
+subroutine torchani_select_retained_graph( &
+    slot &
+) bind(c, name="torchani_select_retained_graph")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: slot
 endsubroutine
 
 subroutine torchani_calc_energy_force_qbc( &
@@ -495,9 +521,10 @@ endsubroutine
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
-! - torchani_initialize calls internal_initialize, the bind(c) interface
-!   generated from interface/interface.yaml. If the args of torchani_initialize
-!   change in the yaml, that call must be updated.
+! - torchani_initialize and torchani_set_atomic_numbers call internal_initialize
+!   and internal_set_atomic_numbers, the bind(c) interfaces generated from
+!   interface/interface.yaml. If their args change in the yaml, those calls must
+!   be updated.
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - Routines here are made public in the "public" list of the template, so a
 !   new public routine must also be added there.
@@ -536,6 +563,11 @@ subroutine torchani_initialize( &
         fbool_to_cbool(use_cuda_device), &
         fbool_to_cbool(use_cuaev) &
     )
+endsubroutine
+
+subroutine torchani_set_atomic_numbers(atomic_nums)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    call internal_set_atomic_numbers(size(atomic_nums), atomic_nums)
 endsubroutine
 
 ! Coordinates must be mapped to central cell in sander!!!

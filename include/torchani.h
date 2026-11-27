@@ -14,6 +14,14 @@ void torchani_initialize(
     bool use_cuaev
 );
 
+// Replace the atoms (atomic numbers) that the next calculations see, keeping
+// the loaded model; for alternating between several sets of atoms (e.g. the
+// two ligand copies of an alchemical calculation). Not with no_eval_atoms.
+void torchani_set_atomic_numbers(
+    int num_atoms,
+    int atomic_nums[]  // Shape (num_atoms,)
+);
+
 void torchani_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -86,6 +94,15 @@ void torchani_energy_atomic_charges_vjp(
     double charge_weights[],  // Shape (num_atoms,)
     /* outputs */
     double forces[][3]  // Shape (num_atoms, 3)
+);
+
+// Select the slot (0 to 7, default 0) of the graph that the next
+// torchani_energy_atomic_charges_retain keeps and the next
+// torchani_energy_atomic_charges_vjp uses, so that several graphs can be kept
+// at once (e.g. one per ligand copy of an alchemical calculation, each with its
+// own atoms, torchani_set_atomic_numbers)
+void torchani_select_retained_graph(
+    int slot
 );
 
 void torchani_calc_energy_force_qbc(

@@ -79,7 +79,7 @@ def prepare_function(fn: dict) -> dict:
     fn["comment_lines"] = fn["comment"].splitlines()
     fn["generate_f_wrapper"] = needs_wrapper and fn["fortran_wrapper"] != "manual"
     fn["f_binding_name"] = fn["name"]
-    if needs_wrapper:
+    if needs_wrapper or fn["fortran_wrapper"] == "manual":
         fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("torchani_")
     return fn
 
