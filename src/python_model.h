@@ -25,6 +25,12 @@ namespace python_model {
  * dict with "energies" and extra outputs, the energies, or a tuple (energies, extra) or
  * (species, energies, extra), where extra is optional, and None, the atomic charges, or
  * a dict of tensors.
+ *
+ * If model.py imports torchani, the torchani package loads its own cuaev.so and
+ * cell_list.so. If those are different files from the ones libtorchani already
+ * loaded (e.g. libtorchani run from a build tree, with another copy installed), the
+ * ops are registered twice and the process aborts ("Only a single TORCH_LIBRARY can
+ * be used to register the namespace cuaev").
  * */
 // Hidden like pybind11's own types, since it holds a pybind11::object
 class __attribute__((visibility("hidden"))) PythonMlipModel : public mlip::MlipModel {
