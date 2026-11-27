@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include <torch/all.h>
-#include <torch/script.h>
 
 namespace {
 // Factor used by Amber
@@ -21,7 +20,7 @@ constexpr double CODATA08_ANGSTROM_TO_BOHR = 1.8897261328727875;
  * env_charges: shape (num-charges,)
  * env_charges_to_atoms_distances: shape (num-charges, num-atoms)
  */
-auto calc_efield(
+auto calcEfield(
     torch::Tensor coords,
     torch::Tensor env_charge_coords,
     torch::Tensor env_charges,
@@ -41,7 +40,7 @@ auto calc_efield(
 /**
  * Given efield and alphas, calculate the associated QM/MM energy
  */
-auto polarizable_embedding_energy_from_field(
+auto polarizableEmbeddingEnergyFromField(
     torch::Tensor atomic_alphas, torch::Tensor efield, double inv_pol_dielectric
 ) -> torch::Tensor {
     // Input atomic alphas are in Ang and Efield in AU
@@ -58,7 +57,7 @@ auto polarizable_embedding_energy_from_field(
  * API
  */
 namespace electro {
-auto polarizable_embedding_energy(
+auto polarizableEmbeddingEnergy(
     torch::Tensor coords,
     torch::Tensor atomic_alphas,
     torch::Tensor env_charge_coords,
@@ -66,16 +65,16 @@ auto polarizable_embedding_energy(
     torch::Tensor env_charges_to_atoms_distances,
     double inv_pol_dielectric
 ) -> torch::Tensor {
-    torch::Tensor efield = calc_efield(
+    torch::Tensor efield = calcEfield(
         coords, env_charge_coords, env_charges, env_charges_to_atoms_distances
     );
     // Output in AU (Hartree), no conversion needed, since inputs are fw to a
     // fn that outputs AU
-    return polarizable_embedding_energy_from_field(
+    return polarizableEmbeddingEnergyFromField(
         atomic_alphas, efield, inv_pol_dielectric
     );
 }
-auto coulombic_embedding_energy(
+auto coulombicEmbeddingEnergy(
     torch::Tensor atomic_charges,
     torch::Tensor env_charges,
     torch::Tensor env_charges_to_atoms_distances

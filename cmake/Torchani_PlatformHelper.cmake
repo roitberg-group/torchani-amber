@@ -1,0 +1,11 @@
+include_guard()
+include(Torchani_Msg)
+# Fail if trying to build in a non-linux or non-x86_64 system
+function(Torchani_PlatformHelper_ensure_linux_x86_64)
+    if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+        Torchani_Msg_error("PlatformHelper - This project must be built on Linux, but system is ${CMAKE_SYSTEM}")
+    endif()
+    if(NOT "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
+        Torchani_Msg_error("PlatformHelper - This project must be built on x86_64, but processor is ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+endfunction()

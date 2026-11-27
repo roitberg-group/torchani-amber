@@ -42,8 +42,8 @@ class CudaConfig:
 
 @dataclass
 class RunConfig:
-    cuda: tp.Optional[CudaConfig]
-    mlmm: tp.Optional[MlmmConfig]
+    cuda: CudaConfig | None
+    mlmm: MlmmConfig | None
     shake: bool
     vacuum: bool
     float64: bool
@@ -84,7 +84,7 @@ mlmm_configs = (
     MlmmConfig("me", True),
     MlmmConfig("mbispol", True),
 )
-configs: tp.List[RunConfig] = []
+configs: list[RunConfig] = []
 for tup in itertools.product(cuda_configs, mlmm_configs, bools, bools, bools, bools):
     config = RunConfig(*tup)
     if os.environ.get("TORCHANI_AMBER_LEGACY_TEST") == "1":
@@ -126,7 +126,7 @@ def name_func(fn, idx, param) -> str:
 
 class AmberIntegration(unittest.TestCase):
     def setUp(self) -> None:
-        self.d: tp.Optional[tempfile.TemporaryDirectory] = None
+        self.d: tempfile.TemporaryDirectory | None = None
 
     def cleanUp(self) -> None:
         if self.d is not None:
@@ -335,7 +335,9 @@ class AmberIntegration(unittest.TestCase):
     def parse_amber_output(text: str, suffix: str) -> NDArray[np.float32]:
         if suffix == ".xyz":
             lines = text.split("\n")
-            non_comment = [line for line in lines if "TORCHANI" not in line]
+            non_comment = [
+                line for line in lines if "ML/MM" not in line and "TORCHANI" not in line
+            ]
             text = " ".join(non_comment)
         if suffix == ".mdcrd":
             text = " ".join(text.split("\n")[1:])  # Get rid of file name

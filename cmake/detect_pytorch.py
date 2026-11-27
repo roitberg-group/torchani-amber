@@ -1,14 +1,15 @@
 import torch
 from pathlib import Path
 
-torch_maj, torch_min, torch_patch = torch.__version__.split(".")
+torch_version = torch.__version__.split("+")[0]
 cuda_version = torch.version.cuda
-assert cuda_version is not None
-cuda_maj, cuda_min = cuda_version.split(".")
-cudnn_raw = str(torch.backends.cudnn.version())
-cudnn_maj = int(cudnn_raw[:-4])
+if cuda_version is None:
+    cuda_maj_min = "none"
+else:
+    cuda_maj, cuda_min = cuda_version.split(".")
+    cuda_maj_min = f"{cuda_maj}.{cuda_min}"
 _path = Path(torch.__file__).resolve().parent
 print(
-    f"{torch_maj}.{torch_min};{cuda_maj}.{cuda_min};{cudnn_maj};{_path}",
+    f"{torch_version};{cuda_maj_min};{_path}",
     end="",
 )
