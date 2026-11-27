@@ -393,11 +393,16 @@ def make_molec(
     rng.manual_seed(seed) if seed is not None else rng.seed()
     if seed is not None:
         torch.manual_seed(seed)
-    coords = torch.rand(
-        (1, atoms, 3),
-        generator=rng,
-        device="cpu", dtype=dtype,
-    ) * cell_size + 1.0e-3
+    coords = (
+        torch.rand(
+            (1, atoms, 3),
+            generator=rng,
+            device="cpu",
+            dtype=dtype,
+        )
+        * cell_size
+        + 1.0e-3
+    )
     idxs = torch.randint(
         low=0,
         high=len(symbols),
