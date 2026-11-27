@@ -4,6 +4,7 @@ module torchani
 use, intrinsic :: iso_fortran_env
 use, intrinsic :: iso_c_binding
 implicit none (type, external)
+private
 public :: &
     mlip_initialize, &
     mlip_print_config_info, &

@@ -1425,6 +1425,14 @@ void mlip_calc_energy_atomic_charges_vjp(
                   << " mlip_calc_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
+    long retained_atoms_num = tensor_container.get("__retain_coords").size(1);
+    if (num_atoms != retained_atoms_num) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_calc_energy_atomic_charges_vjp was called with " << num_atoms
+                  << " atoms, but the retained graph has " << retained_atoms_num
+                  << " atoms" << std::endl;
+        std::exit(2);
+    }
     torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(
         global_config, ml_electrostatic_potential_buf, {1, num_atoms}
     );

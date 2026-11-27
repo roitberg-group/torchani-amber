@@ -39,7 +39,14 @@ function(_Torchani_MlipsHelper_fetch_repo_dir)
             if(NOT _PATH MATCHES "\\.pt$")
                 continue()
             endif()
-            string(JSON _SHA256 GET "${_LISTING}" ${_IDX} lfs oid)
+            # The SHA256 of a file is only listed if it is stored with Git LFS, which is how
+            # Hugging Face currently stores *.pt files. The fallback is insurance in case
+            # this changes in the future
+            string(JSON _SHA256 ERROR_VARIABLE _SHA256_ERROR GET "${_LISTING}" ${_IDX} lfs oid)
+            if(_SHA256_ERROR)
+                set(_SHA256 "")
+                Torchani_Msg_warn("MLIPs - ${_PATH} has no SHA256 in the repo listing, it will be downloaded without checking its integrity")
+            endif()
             file(RELATIVE_PATH _REL_PATH "/${_FN_REPO_DIR}" "/${_PATH}")
             get_filename_component(_REL_DIR "${_REL_PATH}" DIRECTORY)
             file(MAKE_DIRECTORY "${_FN_CACHE_DIR}/${_REL_DIR}")
