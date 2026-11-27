@@ -18,6 +18,9 @@
 #include <torch/script.h>
 
 #include "mlip.h"
+#include "model_output.h"
+
+using model_output::computeOutput;
 
 namespace {
 auto chargeArgIsInt(const torch::jit::Module& module) -> bool {
@@ -159,12 +162,15 @@ auto setupInputsCustomMlmm(
     return inputs;
 }
 torch::Tensor fetchEnergiesFromOutput(const torch::jit::IValue& output) {
+    // Signature of the ML/MM methods that return only the energies
+    if (output.isTensor()) {
+        return output.toTensor();
+    }
     // New signature for compute_from_neighbors
     if (!output.isTuple()) {
         return output.toGenericDict().at("energies").toTensor();
     }
 
-    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
     torch::Tensor first_tensor = output.toTuple()->elements()[0].toTensor();
     if (first_tensor.is_floating_point()) {
         return first_tensor;
@@ -177,6 +183,9 @@ torch::Tensor fetchEnergiesFromOutput(const torch::jit::IValue& output) {
 // Outputs of the model other than the species and the energies, e.g. "atomic_charges"
 auto fetchExtraOutputs(const torch::jit::IValue& output) -> mlip::MlipOutput {
     mlip::MlipOutput extra_outputs;
+    if (output.isTensor()) {
+        return extra_outputs;
+    }
     // New signature for compute_from_neighbors
     if (!output.isTuple()) {
         for (const auto& item : output.toGenericDict()) {
@@ -188,7 +197,6 @@ auto fetchExtraOutputs(const torch::jit::IValue& output) -> mlip::MlipOutput {
         return extra_outputs;
     }
     const auto& elements = output.toTuple()->elements();
-    // HACK to support legacy compute_from_neighbors signature (energies, scalars)
     std::size_t extra_idx = 2;
     if (elements[0].toTensor().is_floating_point()) {
         extra_idx = 1;
@@ -211,6 +219,9 @@ auto fetchExtraOutputs(const torch::jit::IValue& output) -> mlip::MlipOutput {
 void validateModelOutput(
     const torch::jit::IValue& output, size_t expect_len, bool external = false
 ) {
+    if (output.isGenericDict() or output.isTensor()) {
+        return;
+    }
     try {
         output.toTuple();
     } catch (const c10::Error& e) {
@@ -241,60 +252,6 @@ void validateModelOutput(
     }
 }
 
-// Energies, extra outputs of the model, and optionally forces, QBC and QBC grads wrt
-// the coords. If mm_coords is passed, the forces on the MM atoms are also calculated
-auto computeOutput(
-    torch::Tensor energy,
-    mlip::MlipOutput extra_outputs,
-    const torch::Tensor& coords,
-    const std::optional<torch::Tensor>& mm_coords,
-    bool calc_forces,
-    bool calc_qbc_and_qbc_grad
-) -> mlip::MlipOutput {
-    mlip::MlipOutput output = std::move(extra_outputs);
-    if (calc_qbc_and_qbc_grad) {
-        torch::Tensor num_atoms = torch::tensor(
-            coords.size(1),
-            torch::TensorOptions().dtype(coords.dtype()).device(coords.device())
-        );
-        output["qbc"] = torch::std(energy, 0) / num_atoms.sqrt();
-        energy = energy.mean(0);
-    }
-    output["energy"] = energy;
-
-    // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms)
-    if (output.count("atomic_charges") > 0 && output.at("atomic_charges").dim() == 3) {
-        output["atomic_charges"] = output.at("atomic_charges").squeeze(0);
-    }
-
-    if (calc_forces) {
-        bool retain_graph = calc_qbc_and_qbc_grad;
-        if (mm_coords.has_value()) {
-            std::vector<torch::Tensor> grads = torch::autograd::grad(
-                {energy.sum()},
-                {coords, *mm_coords},
-                /* grad_outputs= */ {},
-                retain_graph
-            );
-            output["forces"] = -grads[0];
-            output["mm_forces"] = -grads[1];
-        } else {
-            output["forces"] = -torch::autograd::grad(
-                {energy.sum()}, {coords}, /* grad_outputs= */ {}, retain_graph
-            )[0];
-        }
-    }
-    if (calc_qbc_and_qbc_grad) {
-        output["qbc_grad"] = torch::autograd::grad(
-            {output.at("qbc").sum()},
-            {coords},
-            /* grad_outputs= */ {},
-            // Without calc_forces, the caller may differentiate the energy afterwards
-            /* retain_graph= */ not calc_forces
-        )[0];
-    }
-    return output;
-}
 }  // namespace
 
 namespace torchscript {
@@ -307,7 +264,8 @@ void disableTorchscriptExecutorOptimizations() {
 TorchScriptMlipModel::TorchScriptMlipModel(
     const std::string& path, torch::Device device, torch::ScalarType dtype
 )
-    : m_module{torch::jit::load(path, device)},
+    : mlip::MlipModel{mlip::ModelFormat::TORCHSCRIPT},
+      m_module{torch::jit::load(path, device)},
       m_legacy_charge_type{chargeArgIsInt(m_module)} {
     castFloatTensors(dtype);
 }
@@ -482,9 +440,6 @@ auto TorchScriptMlipModel::computeMlmm(
     const torch::Tensor& ml_coords,
     const torch::Tensor& mm_coords,
     const torch::Tensor& mm_charges,
-    const torch::Tensor& pairs_12,
-    const torch::Tensor& pairs_13,
-    const torch::Tensor& pairs_14,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
     int spin_mult,
@@ -508,16 +463,13 @@ auto TorchScriptMlipModel::computeMlmm(
         cell,
         molecule_idxs
     );
-    return computeFromMlmmMethod(
+    return computeMlmmCoreImpl(
         "compute_mlmm",
         inputs,
         ml_coords,
         mm_coords,
         spin_mult,
         mm_cutoff,
-        pairs_12,
-        pairs_13,
-        pairs_14,
         atomic,
         ensemble_values,
         calc_forces,
@@ -532,9 +484,6 @@ auto TorchScriptMlipModel::computeMultipoleMlmm(
     const torch::Tensor& mm_charges,
     const torch::Tensor& mm_dipoles,
     const torch::Tensor& mm_quads,
-    const torch::Tensor& pairs_12,
-    const torch::Tensor& pairs_13,
-    const torch::Tensor& pairs_14,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
     int spin_mult,
@@ -558,16 +507,13 @@ auto TorchScriptMlipModel::computeMultipoleMlmm(
         cell,
         molecule_idxs
     );
-    return computeFromMlmmMethod(
+    return computeMlmmCoreImpl(
         "compute_multipole_mlmm",
         inputs,
         ml_coords,
         mm_coords,
         spin_mult,
         mm_cutoff,
-        pairs_12,
-        pairs_13,
-        pairs_14,
         atomic,
         ensemble_values,
         calc_forces,
@@ -575,16 +521,13 @@ auto TorchScriptMlipModel::computeMultipoleMlmm(
     );
 }
 
-auto TorchScriptMlipModel::computeFromMlmmMethod(
+auto TorchScriptMlipModel::computeMlmmCoreImpl(
     const std::string& method_name,
     std::vector<torch::jit::IValue> inputs,
     const torch::Tensor& ml_coords,
     const torch::Tensor& mm_coords,
     int spin_mult,
     double mm_cutoff,
-    const torch::Tensor& pairs_12,
-    const torch::Tensor& pairs_13,
-    const torch::Tensor& pairs_14,
     bool atomic,
     bool ensemble_values,
     bool calc_forces,
@@ -611,9 +554,6 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
         {"mm_cutoff",
             torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
             mm_cutoff == 0.0},
-        {"pairs_12", pairs_12, pairs_12.numel() == 0},
-        {"pairs_13", pairs_13, pairs_13.numel() == 0},
-        {"pairs_14", pairs_14, pairs_14.numel() == 0},
     };
     const c10::FunctionSchema& schema = method.function().getSchema();
     // Sorted by position, so that each insertion leaves the next position valid
@@ -634,20 +574,13 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
         inputs.insert(inputs.begin() + idx, value);
     }
     torch::jit::IValue raw_output = method(inputs);
-    // The method returns either the energies, or a tuple (energies, atomic_charges)
-    torch::Tensor energy;
-    mlip::MlipOutput extra_outputs;
-    if (raw_output.isTensor()) {
-        energy = raw_output.toTensor();
-    } else {
-        const auto& elements = raw_output.toTuple()->elements();
-        energy = elements.at(0).toTensor();
-        if (not elements.at(1).isNone()) {
-            extra_outputs["atomic_charges"] = elements.at(1).toTensor();
-        }
-    }
     return computeOutput(
-        energy, extra_outputs, ml_coords, mm_coords, calc_forces, calc_qbc_and_qbc_grad
+        fetchEnergiesFromOutput(raw_output),
+        fetchExtraOutputs(raw_output),
+        ml_coords,
+        mm_coords,
+        calc_forces,
+        calc_qbc_and_qbc_grad
     );
 }
 

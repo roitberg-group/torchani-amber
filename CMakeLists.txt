@@ -87,6 +87,7 @@ option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the act
 option(TORCHANI_FORCE_SYSTEM_CUDATK "Hardcode CUDA Toolkit to /usr/local/cuda-<version>" OFF)
 option(TORCHANI_ALLOW_UNTESTED_COMPILERS "Allow compiling with an untested compiler" OFF)
 option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require its version, and its CUDA version to match the ones in this CMake config" ON)
+option(TORCHANI_SUPPORT_PYTHON_MODELS "Support Python models (a dir with a model.py), run by an embedded Python interpreter. Requires TORCHANI_LINK_TO_PYTORCH_LIBS" OFF)
 
 # NOTE: Amber doesn't ship NCCL and the CUDA Toolkit doesn't include it, but there is a
 # -DNCCL flag, which if used makes Amber attempt to find NCCL according to NCCL_HOME
@@ -98,6 +99,10 @@ option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     Torchani_Msg_error("'TORCHANI_LINK_TO_PYTORCH_LIBS' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
+endif()
+# Python models need libtorch_python, and the libtorch that "import torch" loads
+if(TORCHANI_SUPPORT_PYTHON_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
+    Torchani_Msg_error("'TORCHANI_SUPPORT_PYTHON_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
 endif()
 if(NOT TORCHANI_EXTERNAL_LIBTORCH_ROOT STREQUAL "")
     if(TORCHANI_LINK_TO_PYTORCH_LIBS)
@@ -264,6 +269,12 @@ if(INSIDE_AMBER)
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
+if(TORCHANI_SUPPORT_PYTHON_MODELS)
+    Torchani_Msg_info("Python models are supported, libtorchani will embed a Python interpreter")
+    find_package(Python REQUIRED COMPONENTS Interpreter Development.Embed)
+    find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
+endif()
+
 # Must match torchani.paths.extensions_build_tag in the TorchANI Python package
 if(TORCHANI_BUILD_CUDA)
     string(REGEX MATCH "^[0-9]+" CUDA_VERSION_MAJOR "${CMAKE_CUDA_COMPILER_VERSION}")
@@ -349,6 +360,9 @@ set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cu
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
+if(NOT TORCHANI_SUPPORT_PYTHON_MODELS)
+    list(REMOVE_ITEM TORCHANI_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/python_model.cpp")
+endif()
 add_library(torchani SHARED ${TORCHANI_SOURCES})
 target_compile_options(
     torchani
@@ -372,6 +386,7 @@ target_compile_definitions(
         $<$<CONFIG:Debug>:DEBUG>
         TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
         $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+        $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
 )
 # libtorchani references none of the symbols of cuaev and cell_list, but loading them is
 # what registers their Torch ops. libtorchani dlopens them at init from its own dir
@@ -379,6 +394,9 @@ if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} ${CMAKE_DL_LIBS})
+if(TORCHANI_SUPPORT_PYTHON_MODELS)
+    target_link_libraries(torchani PRIVATE ${TORCH_PYTHON_LIBRARY} Python::Python)
+endif()
 add_dependencies(torchani torchani_cuaev torchani_cell_list)
 set_target_properties(
     torchani
@@ -475,6 +493,7 @@ if(NOT INSIDE_AMBER)
             "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/test_fortran_utils.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/test_config.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_model_formats.cpp"
         )
         target_include_directories(
             torchani_tests
@@ -488,6 +507,7 @@ if(NOT INSIDE_AMBER)
             PRIVATE
                 TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}"
                 $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+                $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
         )
         catch_discover_tests(torchani_tests)
 

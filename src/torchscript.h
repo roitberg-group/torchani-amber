@@ -23,16 +23,13 @@ class TorchScriptMlipModel : public mlip::MlipModel {
     bool m_legacy_charge_type;
 
     auto castFloatTensors(torch::ScalarType dtype) -> void;
-    auto computeFromMlmmMethod(
+    auto computeMlmmCoreImpl(
         const std::string& method_name,
         std::vector<torch::jit::IValue> inputs,
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         int spin_mult,
         double mm_cutoff,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         bool atomic,
         bool ensemble_values,
         bool calc_forces,
@@ -80,9 +77,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -100,9 +94,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& mm_charges,
         const torch::Tensor& mm_dipoles,
         const torch::Tensor& mm_quads,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,

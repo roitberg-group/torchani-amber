@@ -605,16 +605,11 @@ void calcEnergyForceCustomMlmm(
     if (use_pbc) {
         maybe_cell = cell;
     }
-    torch::Tensor empty_pairs =
-        torch::empty({2, 0}, ml_coords.options().dtype(torch::kLong));
     mlip::MlipOutput output = model->computeMlmm(
         atomic_numbers,
         ml_coords,
         mm_coords,
         mm_charges,
-        /*pairs_12=*/empty_pairs,
-        /*pairs_13=*/empty_pairs,
-        /*pairs_14=*/empty_pairs,
         maybe_cell,
         global_config.getInt("ml_charge"),
         global_config.getInt("ml_spin_mult"),
@@ -966,9 +961,17 @@ void mlip_initialize(
     // (5) Load model
     // The model is loaded from a pytorch file, which can be either a TorchScript
     // compiled file (*.pt) or an AOTInductor-compiled graph (*.pt2 file)
+    mlip::ModelOptions model_options;
+    model_options.skip_py_preamble = global_config.getBool("skip_py_preamble");
+    model_options.do_torch_compile = global_config.getBool("do_torch_compile");
+    model_options.torch_compile_mode = global_config.getString("torch_compile_mode");
     try {
         model = mlip::MlipModel::from_model_path(
-            model_path.string(), global_config.device(), global_config.dtype()
+            model_path.string(),
+            global_config.device(),
+            global_config.dtype(),
+            model_options,
+            mlip::modelFormatFromString(global_config.getString("model_format"))
         );
     } catch (const std::exception& e) {
         std::cerr
@@ -981,6 +984,7 @@ void mlip_initialize(
             << std::endl;
         throw;
     }
+    LOG(INFO) << "MLIP Model format: " << mlip::modelFormatToString(model->format());
 
     // (6) Set the correct model configuration
     int model_index = global_config.getInt("model_index");
