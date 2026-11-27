@@ -22,7 +22,9 @@ class ToyModel(torch.nn.Module):
         self.depth = torch.nn.Parameter(torch.tensor(0.01, dtype=torch.double))
         self.self_energy = {1: hydrogen_self_energy, 8: oxygen_self_energy}
 
-    def forward(self, species_coordinates: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, species_coordinates: tuple[Tensor, Tensor]
+    ) -> tuple[Tensor, Tensor]:
         species, coords = species_coordinates
         energies = coords.new_zeros(species.shape[0])
         for z in species.unique().tolist():
