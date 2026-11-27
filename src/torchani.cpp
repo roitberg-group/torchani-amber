@@ -406,7 +406,7 @@ struct OutputFiles {
     std::string mm_forces;  // Empty if there is no MM region
     std::string atomic_charges;
     std::string atomic_volumes;
-    std::string atomic_alphas;
+    std::string kz_atomic_alphas;
     std::string coords_comment;
 };
 
@@ -416,7 +416,7 @@ const OutputFiles OUTPUT_FILES{
     "",
     "atomic_charges.mlip.dat",
     "atomic_volumes.mlip.dat",
-    "atomic_alphas.mlip.dat",
+    "kz_atomic_alphas.mlip.dat",
     "MLIP: .xyz trajectory file",
 };
 
@@ -426,7 +426,7 @@ const OutputFiles MLMM_OUTPUT_FILES{
     "forces_mlmm_mm_region.mlip.dat",
     "atomic_charges_ml_region.mlip.dat",
     "atomic_volumes_ml_region.mlip.dat",
-    "atomic_alphas_ml_region.mlip.dat",
+    "kz_atomic_alphas_ml_region.mlip.dat",
     "ML/MM: .xyz trajectory file of the ML region",
 };
 
@@ -447,7 +447,7 @@ void createOutputFiles(const OutputFiles& files) {
         or global_config.getBool("write_forces")
         or global_config.getBool("write_atomic_charges")
         or global_config.getBool("write_atomic_volumes")
-        or global_config.getBool("write_atomic_alphas");
+        or global_config.getBool("write_kz_atomic_alphas");
     if (not writes_outputs) {
         return;
     }
@@ -471,8 +471,8 @@ void createOutputFiles(const OutputFiles& files) {
         if (global_config.getBool("write_atomic_volumes")) {
             io::createEmptyFile(outputPath(files.atomic_volumes));
         }
-        if (global_config.getBool("write_atomic_alphas")) {
-            io::createEmptyFile(outputPath(files.atomic_alphas));
+        if (global_config.getBool("write_kz_atomic_alphas")) {
+            io::createEmptyFile(outputPath(files.kz_atomic_alphas));
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
@@ -537,8 +537,17 @@ void writeOutputs(
         if (global_config.getBool("write_atomic_volumes")) {
             appendAtomicScalarsFrame(output, "atomic_volumes", files.atomic_volumes);
         }
-        if (global_config.getBool("write_atomic_alphas")) {
-            appendAtomicScalarsFrame(output, "atomic_alphas", files.atomic_alphas);
+        if (global_config.getBool("write_kz_atomic_alphas")) {
+            if (output.count("atomic_volumes") == 0) {
+                throw std::runtime_error(
+                    "write_kz_atomic_alphas = T, but the model doesn't predict"
+                    " atomic_volumes"
+                );
+            }
+            io::appendDatFrame(
+                outputPath(files.kz_atomic_alphas),
+                mlVolumeKzs() * output.at("atomic_volumes").view({-1})
+            );
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
