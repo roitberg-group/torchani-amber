@@ -153,40 +153,7 @@ class AmberIntegration(unittest.TestCase):
         (test_dir / "mdin").write_text(string)
         self._run_engine("pmemd", test_dir)
 
-        # Generate expected values
-        expect = this_dir / "expect"
-        expect.mkdir(exist_ok=True)
-        for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".xyz"] or f.name == "mdcrd":
-                expect_file = (expect / config.name).with_suffix(f".{f.name}")
-                if not config.shake and config.use_amber_neighborlist:
-                    # Lots of slack for amber neighborlist, since it uses slightly ops
-                    # for mapping to the central cell.
-                    rtol = 0.0005 if not config.cuda else 0.0
-                    atol = 1.5e-3
-                elif config.cuda:
-                    # Extra slack for cuda
-                    rtol = 0.0
-                    atol = 1.0002e-3
-                else:
-                    rtol = 1e-7
-                    atol = 1e-5
-                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    # Never overwrite with amber's neighborlist
-                    if not config.use_amber_neighborlist:
-                        shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
-                if expect_file.exists():
-                    expect_text = expect_file.read_text()
-                    expect_arr = self.parse_amber_output(expect_text, f.name)
-                    this_text = f.read_text()
-                    this_arr = self.parse_amber_output(this_text, f.name)
-                    assert_allclose(
-                        this_arr,
-                        expect_arr,
-                        rtol=rtol,
-                        atol=atol,
-                        err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
-                    )
+        self._check_outputs(config, test_dir)
 
     @parameterized.expand(
         [c for c in configs if (c.fullml and c.use_amber_neighborlist)],
@@ -236,40 +203,48 @@ class AmberIntegration(unittest.TestCase):
         (test_dir / "mdin").write_text(string)
         self._run_engine("sander", test_dir)
 
+        self._check_outputs(config, test_dir)
+
+    def _check_outputs(self, config: RunConfig, test_dir: Path) -> None:
         # Generate expected values
         expect = this_dir / "expect"
         expect.mkdir(exist_ok=True)
-        for f in sorted(test_dir.iterdir()):
-            if f.suffix in [".dat", ".xyz"] or f.name == "mdcrd":
-                expect_file = (expect / config.name).with_suffix(f".{f.name}")
-                if not config.shake and config.use_amber_neighborlist:
-                    # Lots of slack for amber neighborlist, since it uses slightly
-                    # ops for mapping to the central cell.
-                    rtol = 0.0005 if not config.cuda else 0.0
-                    atol = 1.5e-3
-                elif config.cuda:
-                    # Extra slack for cuda
-                    rtol = 0.0
-                    atol = 1.0002e-3
-                else:
-                    rtol = 1e-7
-                    atol = 1e-5
-                if os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1":
-                    if not config.use_amber_neighborlist:
-                        shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
-                if expect_file.exists():
-                    expect_text = expect_file.read_text()
-                    expect_arr = self.parse_amber_output(expect_text, f.name)
-                    this_text = f.read_text()
-                    this_arr = self.parse_amber_output(this_text, f.name)
-                    assert_allclose(
-                        this_arr,
-                        expect_arr,
-                        # Extra slack for cuda
-                        rtol=rtol,
-                        atol=atol,
-                        err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
-                    )
+        overwrite_expected = os.environ.get("TORCHANI_AMBER_OVERWRITE_EXPECTED") == "1"
+        # Never overwrite with amber's neighborlist
+        if overwrite_expected and not config.use_amber_neighborlist:
+            for f in sorted(test_dir.iterdir()):
+                if f.suffix in [".dat", ".xyz"] or f.name == "mdcrd":
+                    shutil.copy(f, (expect / config.name).with_suffix(f".{f.name}"))
+
+        expect_files = sorted(expect.glob(f"{config.name}.*"))
+        if not expect_files and not overwrite_expected:
+            self.fail(f"No expected outputs for {config.name} in {expect}")
+        if not config.shake and config.use_amber_neighborlist:
+            # Lots of slack for amber neighborlist, since it uses slightly ops
+            # for mapping to the central cell.
+            rtol = 0.0005 if not config.cuda else 0.0
+            atol = 1.5e-3
+        elif config.cuda:
+            # Extra slack for cuda
+            rtol = 0.0
+            atol = 1.0002e-3
+        else:
+            rtol = 1e-7
+            atol = 1e-5
+        for expect_file in expect_files:
+            f = test_dir / expect_file.name.removeprefix(f"{config.name}.")
+            self.assertTrue(
+                f.is_file(), f"{f.name} was not written, but {expect_file.name} exists"
+            )
+            expect_arr = self.parse_amber_output(expect_file.read_text(), f.name)
+            this_arr = self.parse_amber_output(f.read_text(), f.name)
+            assert_allclose(
+                this_arr,
+                expect_arr,
+                rtol=rtol,
+                atol=atol,
+                err_msg=f"\nDiscrepancy was found on {expect_file.name}\n",
+            )
 
     @staticmethod
     def parse_amber_output(text: str, fname: str) -> NDArray[np.float32]:

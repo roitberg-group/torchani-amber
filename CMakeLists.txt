@@ -285,7 +285,11 @@ endif()
 
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
 set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
-set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
+
+# NOTE: Technically, from the Linux File System Hierarchy, the convention should be
+# lib/<arch-id>/Torchani/<tag>, but it is lib/Torchani/<tag> for now, for simplicity.
+# TorchANI follows the same convention.
+set(TORCHANI_LIBRARY_INSTALL_DIR "lib/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
 set(TORCHANI_MLIPS_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mlips/jit" CACHE STRING "Install dir for the downloaded JIT-compiled MLIPs")
 if(IS_ABSOLUTE "${TORCHANI_LIBRARY_INSTALL_DIR}" OR IS_ABSOLUTE "${TORCHANI_MLIPS_INSTALL_DIR}")
     Torchani_Msg_error("'TORCHANI_LIBRARY_INSTALL_DIR' and 'TORCHANI_MLIPS_INSTALL_DIR' must be relative to CMAKE_INSTALL_PREFIX")
