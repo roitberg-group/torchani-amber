@@ -619,6 +619,22 @@ void torchani_initialize(
 #endif
 }
 
+void torchani_set_atomic_numbers(int num_atoms, int atomic_nums[]) {
+    if (config.use_no_eval_atoms()) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "torchani_set_atomic_numbers cannot be used with no_eval_atoms"
+                  << std::endl;
+        throw std::runtime_error("torchani_set_atomic_numbers with no_eval_atoms");
+    }
+    // Same conversion as in torchani_initialize; from_blob does not own the
+    // buffer, but the conversions below copy it
+    torchani_atomic_numbers = torch::from_blob(
+        atomic_nums, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
+    );
+    torchani_atomic_numbers =
+        torchani_atomic_numbers.to(config.device()).to(torch::kLong).unsqueeze(0);
+}
+
 void torchani_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,

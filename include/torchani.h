@@ -13,6 +13,14 @@ void torchani_initialize(
     bool use_cuaev
 );
 
+// Replace the atoms (atomic numbers) that the next calculations see, keeping
+// the loaded model; for alternating between several sets of atoms (e.g. the
+// two ligand copies of an alchemical calculation). Not with no_eval_atoms.
+void torchani_set_atomic_numbers(
+    int num_atoms,
+    int atomic_nums[]  // Shape (num_atoms,)
+);
+
 void torchani_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)

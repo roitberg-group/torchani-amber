@@ -15,6 +15,7 @@ public :: &
     torchani_data_for_monitored_mlmm, &  ! bw compat
     ! Actuall interface
     torchani_initialize, &
+    torchani_set_atomic_numbers, &
     torchani_calc_energy_force, &
     torchani_calc_energy_force_qbc, &
     torchani_calc_energy_force_from_external_neighbors, &
@@ -51,6 +52,15 @@ subroutine internal_initialize( &
     logical(c_bool), value, intent(in) :: use_double_precision
     logical(c_bool), value, intent(in) :: use_cuda_device
     logical(c_bool), value, intent(in) :: use_cuaev
+endsubroutine
+
+subroutine internal_set_atomic_numbers( &
+    num_atoms, &
+    atomic_nums &
+) bind(c, name="torchani_set_atomic_numbers")
+    use, intrinsic :: iso_c_binding
+    integer(c_int), value, intent(in) :: num_atoms
+    integer(c_int), intent(in) :: atomic_nums(*)
 endsubroutine
 
 subroutine internal_energy_force( &
@@ -509,6 +519,11 @@ subroutine torchani_initialize( &
         fbool_to_cbool(use_cuda_device), &
         fbool_to_cbool(use_cuaev) &
     )
+endsubroutine
+
+subroutine torchani_set_atomic_numbers(atomic_nums)
+    integer(c_int), contiguous, intent(in) :: atomic_nums(:)
+    call internal_set_atomic_numbers(size(atomic_nums), atomic_nums)
 endsubroutine
 
 subroutine torchani_calc_energy_force( &
