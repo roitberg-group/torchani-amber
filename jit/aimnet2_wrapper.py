@@ -462,6 +462,7 @@ def generate_aimnet2_wrapper():
         # Prepare for AIMNET2ASE tests, lazy ASE import to avoid
         # pulling ase in during CI
         import ase
+
         atoms = ase.Atoms(
             positions=m.coords.cpu().numpy().squeeze(0),
             numbers=m.atomic_nums.cpu().numpy().squeeze(0),
