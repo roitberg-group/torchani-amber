@@ -27,19 +27,16 @@ struct ConfigOption {
     fortran_utils::NamelistType type;
 
     ConfigOption(
-        fortran_utils::NamelistValue option_value, fortran_utils::NamelistType option_type
-    ):
-        values{std::move(option_value)},
-        type{option_type}
-    {}
+        fortran_utils::NamelistValue option_value,
+        fortran_utils::NamelistType option_type
+    )
+        : values{std::move(option_value)}, type{option_type} {}
 
     ConfigOption(
         std::vector<fortran_utils::NamelistValue> option_values,
         fortran_utils::NamelistType option_type
-    ):
-        values{std::move(option_values)},
-        type{option_type}
-    {}
+    )
+        : values{std::move(option_values)}, type{option_type} {}
 };
 
 // Thin wrapper over a map of (lowercase) namelist keys to options. The getters throw
@@ -48,9 +45,8 @@ class ConfigDict {
     std::map<std::string, ConfigOption> m_options;
 
     public:
-    explicit ConfigDict(std::map<std::string, ConfigOption> options):
-        m_options{std::move(options)}
-    {}
+    explicit ConfigDict(std::map<std::string, ConfigOption> options)
+        : m_options{std::move(options)} {}
 
     auto options() const -> const std::map<std::string, ConfigOption>& {
         return m_options;
@@ -77,8 +73,9 @@ class ConfigDict {
     }
 
     // Copy of the config, with the values of an existing option replaced
-    auto withValues(const std::string& key, std::vector<fortran_utils::NamelistValue> values)
-        const -> ConfigDict;
+    auto withValues(
+        const std::string& key, std::vector<fortran_utils::NamelistValue> values
+    ) const -> ConfigDict;
 
     auto getInt(const std::string& key) const -> int;
 
@@ -127,9 +124,9 @@ class unsupported_device_error : public std::runtime_error {
  * Holds global TorchANI-Interface device and precision
  * */
 class GlobalConfig {
-    torch::TensorOptions m_opts{
-        torch::TensorOptions().device(torch::Device{torch::kCPU, -1}).dtype(torch::kFloat)
-    };
+    torch::TensorOptions m_opts{torch::TensorOptions()
+            .device(torch::Device{torch::kCPU, -1})
+            .dtype(torch::kFloat)};
     bool m_use_no_eval_atoms = false;
     bool m_has_atomic_numbers = false;
     bool m_mlip_interface_is_init = false;
@@ -143,8 +140,7 @@ class GlobalConfig {
 
     // Mirrors ani_nml_validate in sander, assuming qmmm_int = 1
     static auto validateConfig(
-        const ConfigDict& mlip_config,
-        const std::optional<ConfigDict>& mlmm_config
+        const ConfigDict& mlip_config, const std::optional<ConfigDict>& mlmm_config
     ) -> void;
 
     static auto usesInternalOptions(const ConfigDict& mlmm_config) -> bool;
@@ -298,9 +294,7 @@ class GlobalConfig {
     auto enabledPbc() const -> torch::Tensor {
         return torch::tensor(
             {true, true, true},
-            torch::TensorOptions()
-                .dtype(torch::kBool)
-                .device(m_opts.device())
+            torch::TensorOptions().dtype(torch::kBool).device(m_opts.device())
         );
     }
 };

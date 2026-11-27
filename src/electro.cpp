@@ -34,7 +34,7 @@ auto geepEfieldKernel(torch::Tensor ml_geep_sigmas, torch::Tensor mm_to_ml_dista
     torch::Tensor scaled_distances = distances / (std::sqrt(2.0) * sigmas);
     torch::Tensor screening = torch::erf(scaled_distances)
         - std::sqrt(2.0 / std::numbers::pi) * distances / sigmas
-        * torch::exp(-scaled_distances.pow(2));
+            * torch::exp(-scaled_distances.pow(2));
     return screening / distances.pow(3);
 }
 
@@ -60,16 +60,16 @@ auto calcEfield(
     torch::Tensor mm_to_ml_distances,
     std::optional<torch::Tensor> ml_geep_sigmas
 ) -> torch::Tensor {
-    auto delta_coords = torch::reshape(mm_coords, {-1, 1, 3}) -
-        torch::reshape(ml_coords, {1, -1, 3});
+    auto delta_coords =
+        torch::reshape(mm_coords, {-1, 1, 3}) - torch::reshape(ml_coords, {1, -1, 3});
     torch::Tensor kernel;
     if (ml_geep_sigmas) {
         kernel = geepEfieldKernel(*ml_geep_sigmas, mm_to_ml_distances);
     } else {
         kernel = 1.0 / mm_to_ml_distances.pow(3);
     }
-    auto efield = torch::reshape(mm_atomic_charges, {-1, 1, 1}) * delta_coords *
-        kernel.unsqueeze(-1);
+    auto efield = torch::reshape(mm_atomic_charges, {-1, 1, 1}) * delta_coords
+        * kernel.unsqueeze(-1);
     // Inputs are Ang for *coords, and e for mm_atomic_charges
     // Electric fields with angstrom units are unintuitive, to avoid that
     // Output in AU (Hartree / e), so perform the conversion:
@@ -84,8 +84,8 @@ auto polarizableEmbeddingEnergyFromField(
     torch::Tensor atomic_alphas, torch::Tensor efield, double inv_pol_dielectric
 ) -> torch::Tensor {
     // Input atomic alphas and Efield are in AU
-    return -inv_pol_dielectric *
-        torch::sum(atomic_alphas * torch::sum(efield.pow(2), 1));
+    return -inv_pol_dielectric
+        * torch::sum(atomic_alphas * torch::sum(efield.pow(2), 1));
 }
 }  // namespace
 
@@ -123,8 +123,8 @@ auto coulombicEmbeddingEnergy(
     } else {
         kernel = 1.0 / mm_to_ml_distances;
     }
-    torch::Tensor pair_energies = torch::reshape(mm_atomic_charges, {-1, 1}) *
-        torch::reshape(ml_atomic_charges, {1, -1}) * kernel;
+    torch::Tensor pair_energies = torch::reshape(mm_atomic_charges, {-1, 1})
+        * torch::reshape(ml_atomic_charges, {1, -1}) * kernel;
     // Output in AU (Hartree), so perform the conversion
     // Epot_AU = E_pot_Angstrom / A2B
     return torch::sum(pair_energies) / constants::CODATA08_ANGSTROM_TO_BOHR;

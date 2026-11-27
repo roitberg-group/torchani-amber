@@ -1,0 +1,57 @@
+---
+# As close as possible to the black Python formatter
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++20
+ColumnLimit: 88
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: 0
+UseTab: Never
+InsertNewlineAtEOF: true
+MaxEmptyLinesToKeep: 2
+
+# Everything on one line if it fits, else all the arguments on one indented line, else
+# one argument per line. The closing bracket goes on its own line
+AlignAfterOpenBracket: false
+BreakAfterOpenBracketFunction: true
+BreakBeforeCloseBracketFunction: true
+BreakAfterOpenBracketBracedList: true
+BreakBeforeCloseBracketBracedList: true
+BreakAfterOpenBracketIf: true
+BreakBeforeCloseBracketIf: true
+BreakAfterOpenBracketLoop: true
+BreakBeforeCloseBracketLoop: true
+BreakAfterOpenBracketSwitch: true
+BreakBeforeCloseBracketSwitch: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+PackArguments:
+  BinPack: OnePerLine
+PackParameters:
+  BinPack: OnePerLine
+BinPackLongBracedList: false
+Cpp11BracedListStyle: FunctionCall
+
+# Continuation lines are indented, never aligned, and break before operators
+AlignOperands: DontAlign
+AlignTrailingComments:
+  Kind: Never
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeTernaryOperators: true
+
+# Blocks are never put on a single line
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Strings are not split, comments are not reflowed, includes are not sorted
+BreakStringLiterals: false
+ReflowComments: IndentOnly
+SortIncludes:
+  Enabled: false
+IncludeBlocks: Preserve
+SpacesBeforeTrailingComments: 2
+...

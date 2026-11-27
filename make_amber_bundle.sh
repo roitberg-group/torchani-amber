@@ -27,6 +27,7 @@ skipped_names=(
     -o -name .github
     -o -name .gitignore
     -o -name .gitmodules
+    -o -name .clang-format
     -o -name .pre-commit-config.yaml
     -o -name .vscode
     -o -name .cache

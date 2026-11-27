@@ -41,18 +41,26 @@ void appendXyzFrame(
     const torch::Tensor& coords,
     const std::string& comment
 ) {
-    torch::Tensor atomic_numbers_cpu = atomic_numbers.to(torch::kCPU, torch::kLong).contiguous();
-    torch::Tensor coords_cpu = coords.detach().to(torch::kCPU, torch::kDouble).contiguous();
+    torch::Tensor atomic_numbers_cpu =
+        atomic_numbers.to(torch::kCPU, torch::kLong).contiguous();
+    torch::Tensor coords_cpu =
+        coords.detach().to(torch::kCPU, torch::kDouble).contiguous();
     auto atomic_numbers_a = atomic_numbers_cpu.accessor<std::int64_t, 1>();
     auto coords_a = coords_cpu.accessor<double, 2>();
     std::ofstream file = openForAppend(path);
     char count[16];
-    std::snprintf(count, sizeof(count), "%8lld", static_cast<long long>(coords_cpu.size(0)));
+    std::snprintf(
+        count, sizeof(count), "%8lld", static_cast<long long>(coords_cpu.size(0))
+    );
     file << count << "\n" << comment << "\n";
     for (std::int64_t atom = 0; atom != coords_cpu.size(0); ++atom) {
         char atomic_number[16];
-        std::snprintf(atomic_number, sizeof(atomic_number), "%3lld",
-                      static_cast<long long>(atomic_numbers_a[atom]));
+        std::snprintf(
+            atomic_number,
+            sizeof(atomic_number),
+            "%3lld",
+            static_cast<long long>(atomic_numbers_a[atom])
+        );
         file << atomic_number;
         for (int c = 0; c != 3; ++c) {
             file << formatF15p7(coords_a[atom][c]);
@@ -62,7 +70,8 @@ void appendXyzFrame(
 }
 
 void appendDatFrame(const std::string& path, const torch::Tensor& values) {
-    torch::Tensor values_cpu = values.detach().to(torch::kCPU, torch::kDouble).contiguous();
+    torch::Tensor values_cpu =
+        values.detach().to(torch::kCPU, torch::kDouble).contiguous();
     if (values_cpu.dim() == 1) {
         values_cpu = values_cpu.unsqueeze(1);
     }
