@@ -21,7 +21,8 @@
 
 namespace {
 auto chargeArgIsInt(const torch::jit::Module& module) -> bool {
-    const c10::FunctionSchema& schema = module.get_method("forward").function().getSchema();
+    const c10::FunctionSchema& schema =
+        module.get_method("forward").function().getSchema();
     std::optional<int> charge_idx = schema.argumentIndexWithName("charge");
     if (not charge_idx.has_value()) {
         throw std::runtime_error("Model's 'forward' has no 'charge' argument");
@@ -34,7 +35,9 @@ auto chargeInput(int net_charge, const torch::Tensor& coords, bool legacy_charge
     if (legacy_charge_type) {
         return net_charge;
     }
-    return torch::full({coords.size(0)}, net_charge, coords.options().dtype(torch::kLong));
+    return torch::full(
+        {coords.size(0)}, net_charge, coords.options().dtype(torch::kLong)
+    );
 }
 
 // Models whose method has no 'spin_mult' argument only support spin_mult = 1
@@ -44,12 +47,15 @@ auto insertSpinMultInput(
     int spin_mult,
     const torch::Tensor& coords
 ) -> void {
-    std::optional<int> idx = method.function().getSchema().argumentIndexWithName("spin_mult");
+    std::optional<int> idx =
+        method.function().getSchema().argumentIndexWithName("spin_mult");
     if (idx.has_value()) {
         // The schema's first argument is 'self', which is not part of the inputs
         inputs.insert(
             inputs.begin() + *idx - 1,
-            torch::full({coords.size(0)}, spin_mult, coords.options().dtype(torch::kLong))
+            torch::full(
+                {coords.size(0)}, spin_mult, coords.options().dtype(torch::kLong)
+            )
         );
     } else if (spin_mult != 1) {
         throw std::runtime_error(
@@ -144,7 +150,9 @@ auto setupInputsCustomMlmm(
     }
     inputs.push_back(/* cell= */ cell);
     inputs.push_back(/* pbc= */ pbc);
-    inputs.push_back(/* charge= */ chargeInput(net_charge, ml_coords, legacy_charge_type));
+    inputs.push_back(
+        /* charge= */ chargeInput(net_charge, ml_coords, legacy_charge_type)
+    );
     inputs.push_back(/* atomic= */ false);
     inputs.push_back(/* ensemble_values= */ ensemble_values);
     inputs.push_back(/* molecule_idxs= */ molecule_idxs);
@@ -223,7 +231,8 @@ void validateModelOutput(
                 std::cerr << "a tuple (species, energies, ...)";
             }
         } else if (expect_len == 3) {
-            std::cerr << "a tuple (species, energies, atomic_charges, ...) or (species, energies, scalars)";
+            std::cerr
+                << "a tuple (species, energies, atomic_charges, ...) or (species, energies, scalars)";
         } else {
             std::cerr << "a tuple of len at least " << expect_len;
         }
@@ -389,7 +398,9 @@ auto TorchScriptMlipModel::computeSinglePoint(
         throw std::runtime_error("computeSinglePoint doesn't support atomic=true");
     }
     if (ensemble_values) {
-        throw std::runtime_error("computeSinglePoint doesn't support ensemble_values=true");
+        throw std::runtime_error(
+            "computeSinglePoint doesn't support ensemble_values=true"
+        );
     }
     std::vector<torch::jit::IValue> inputs = setupInputs(
         atomic_numbers,
@@ -434,7 +445,9 @@ auto TorchScriptMlipModel::computeFromExternalNeighbors(
         );
     }
     if (atomic) {
-        throw std::runtime_error("computeFromExternalNeighbors doesn't support atomic=true");
+        throw std::runtime_error(
+            "computeFromExternalNeighbors doesn't support atomic=true"
+        );
     }
     if (ensemble_values) {
         throw std::runtime_error(
@@ -578,7 +591,9 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not m_module.find_method(method_name).has_value()) {
-        throw std::runtime_error("Model doesn't export a method '" + method_name + "(...)'");
+        throw std::runtime_error(
+            "Model doesn't export a method '" + method_name + "(...)'"
+        );
     }
     if (atomic) {
         throw std::runtime_error(method_name + " doesn't support atomic=true");
@@ -591,11 +606,11 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
     // (name, value, value is the default)
     std::vector<std::tuple<std::string, torch::Tensor, bool>> extra_inputs = {
         {"spin_mult",
-         torch::full({ml_coords.size(0)}, spin_mult, long_options),
-         spin_mult == 1},
+            torch::full({ml_coords.size(0)}, spin_mult, long_options),
+            spin_mult == 1},
         {"mm_cutoff",
-         torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
-         mm_cutoff == 0.0},
+            torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
+            mm_cutoff == 0.0},
         {"pairs_12", pairs_12, pairs_12.numel() == 0},
         {"pairs_13", pairs_13, pairs_13.numel() == 0},
         {"pairs_14", pairs_14, pairs_14.numel() == 0},
@@ -632,12 +647,7 @@ auto TorchScriptMlipModel::computeFromMlmmMethod(
         }
     }
     return computeOutput(
-        energy,
-        extra_outputs,
-        ml_coords,
-        mm_coords,
-        calc_forces,
-        calc_qbc_and_qbc_grad
+        energy, extra_outputs, ml_coords, mm_coords, calc_forces, calc_qbc_and_qbc_grad
     );
 }
 

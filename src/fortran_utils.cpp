@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
-#include <iostream>
 #include <optional>
 #include <regex>
 #include <stdexcept>
@@ -12,6 +11,8 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#include "utils.h"
 
 namespace fortran_utils {
 
@@ -24,13 +25,11 @@ long lineNumber(const std::string& text, std::size_t pos) {
 
 template <typename Error>
 [[noreturn]] void throwParseError(
-    const std::string& text,
-    std::size_t pos,
-    const std::string& message
+    const std::string& text, std::size_t pos, const std::string& message
 ) {
     throw Error(
         "Namelist parse error at line " + std::to_string(lineNumber(text, pos)) + ": "
-            + message
+        + message
     );
 }
 
@@ -81,7 +80,8 @@ bool keyStartsAt(const std::string& text, std::size_t pos) {
     }
     readName(text, pos);
     skipBlanksAndComments(text, pos);
-    return pos < text.size() && (text[pos] == '=' || text[pos] == '(' || text[pos] == '%');
+    return pos < text.size()
+        && (text[pos] == '=' || text[pos] == '(' || text[pos] == '%');
 }
 
 // Doubled delimiters are escaped delimiters. Strings may span lines (newlines are dropped)
@@ -102,7 +102,9 @@ std::string readQuoted(const std::string& text, std::size_t& pos) {
             str += c;
         }
     }
-    throwParseError<namelist_unterminated_string_error>(text, start, "unterminated string");
+    throwParseError<namelist_unterminated_string_error>(
+        text, start, "unterminated string"
+    );
 }
 
 std::string readUnquoted(const std::string& text, std::size_t& pos) {
@@ -233,9 +235,7 @@ NamelistValue convertNumber(
         return std::stod(real);
     } catch (const std::out_of_range&) {
         throwParseError<namelist_out_of_range_error>(
-            text,
-            token_start,
-            "value " + token + " for key " + key + " is out of range"
+            text, token_start, "value " + token + " for key " + key + " is out of range"
         );
     }
 }
@@ -288,7 +288,8 @@ NamelistValue convertUnquotedWithType(
     if (type_is_int && isInt(token)) {
         return convertNumber(text, token_start, token, key, NamelistType::INT);
     }
-    bool type_is_float = type == NamelistType::FLOAT || type == NamelistType::FLOAT_OR_STR;
+    bool type_is_float =
+        type == NamelistType::FLOAT || type == NamelistType::FLOAT_OR_STR;
     if (type_is_float && isReal(token)) {
         return convertNumber(text, token_start, token, key, NamelistType::FLOAT);
     }
@@ -325,8 +326,8 @@ std::vector<NamelistValue> parseValues(
     bool comma_is_null = true;
     while (true) {
         skipBlanksAndComments(text, pos);
-        if (pos >= text.size() || text[pos] == '/' || text[pos] == '&' || text[pos] == '$'
-            || keyStartsAt(text, pos)) {
+        if (pos >= text.size() || text[pos] == '/' || text[pos] == '&'
+            || text[pos] == '$' || keyStartsAt(text, pos)) {
             break;
         }
         if (text[pos] == ',') {
@@ -339,9 +340,7 @@ std::vector<NamelistValue> parseValues(
         }
         if (text[pos] == '(') {
             throwParseError<namelist_unsupported_feature_error>(
-                text,
-                pos,
-                "complex values are not supported"
+                text, pos, "complex values are not supported"
             );
         }
         std::size_t token_start = pos;
@@ -371,16 +370,20 @@ std::vector<NamelistValue> parseValues(
             throwParseError<namelist_type_error>(
                 text,
                 pos,
-                "string value for key " + key + " is not of type " + typeName(*element_type)
+                "string value for key " + key + " is not of type "
+                    + typeName(*element_type)
             );
         } else if (is_quoted) {
             value = readQuoted(text, pos);
         } else if (!token.empty() && element_type) {
-            value = convertUnquotedWithType(text, token_start, token, key, *element_type);
+            value =
+                convertUnquotedWithType(text, token_start, token, key, *element_type);
         } else if (!token.empty()) {
             value = convertUnquoted(text, token_start, token, key);
         } else if (!is_repeat) {
-            throwParseError<namelist_syntax_error>(text, token_start, "expected a value");
+            throwParseError<namelist_syntax_error>(
+                text, token_start, "expected a value"
+            );
         }
         values.insert(values.end(), num_repeats, value);
         comma_is_null = false;
@@ -408,9 +411,7 @@ NamelistGroup parseGroup(
         skipBlanksAndComments(text, pos);
         if (pos >= text.size()) {
             throwParseError<namelist_unterminated_group_error>(
-                text,
-                pos,
-                "end of text inside group &" + group.name
+                text, pos, "end of text inside group &" + group.name
             );
         }
         if (text[pos] == '/') {
@@ -421,7 +422,9 @@ NamelistGroup parseGroup(
             std::size_t end_start = pos;
             ++pos;
             if (toLower(readName(text, pos)) != "end") {
-                throwParseError<namelist_syntax_error>(text, end_start, "expected '&end' or '/'");
+                throwParseError<namelist_syntax_error>(
+                    text, end_start, "expected '&end' or '/'"
+                );
             }
             pos = nextLineStart(text, pos);
             return group;
@@ -438,16 +441,12 @@ NamelistGroup parseGroup(
         skipBlanksAndComments(text, pos);
         if (pos < text.size() && (text[pos] == '(' || text[pos] == '%')) {
             throwParseError<namelist_unsupported_feature_error>(
-                text,
-                pos,
-                "indexed keys and derived types are not supported"
+                text, pos, "indexed keys and derived types are not supported"
             );
         }
         if (pos >= text.size() || text[pos] != '=') {
             throwParseError<namelist_syntax_error>(
-                text,
-                pos,
-                "expected '=' after key " + written_key
+                text, pos, "expected '=' after key " + written_key
             );
         }
         ++pos;
@@ -463,11 +462,11 @@ NamelistGroup parseGroup(
             );
         }
         if (alias_it != aliases.end()) {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << "Namelist key " << written_key << " in group &" << group.name
-                      << " (line " << lineNumber(text, key_start) << ") is deprecated."
-                      << " It is an alias of " << key << ", use " << key << " instead"
-                      << std::endl;
+            utils::printWarning(
+                "Namelist key " + written_key + " in group &" + group.name + " (line "
+                + std::to_string(lineNumber(text, key_start)) + ") is deprecated."
+                + " It is an alias of " + key + ", use " + key + " instead"
+            );
         }
         std::optional<NamelistType> type;
         if (!schema.empty()) {
@@ -481,7 +480,8 @@ NamelistGroup parseGroup(
                 throwParseError<namelist_unknown_key_error>(
                     text,
                     key_start,
-                    "key " + written_key + " is not in the schema of group &" + group.name
+                    "key " + written_key + " is not in the schema of group &"
+                        + group.name
                 );
             }
             type = type_it->second;
@@ -516,7 +516,9 @@ NamelistGroup parseGroup(
 
 // If a group starts at the line that begins at pos, return its lowercased name, and set
 // name_end to just after the name. Otherwise return an empty string
-std::string groupNameAt(const std::string& text, std::size_t pos, std::size_t& name_end) {
+std::string groupNameAt(
+    const std::string& text, std::size_t pos, std::size_t& name_end
+) {
     std::size_t token_start = text.find_first_not_of(" \t", pos);
     if (token_start == std::string::npos
         || (text[token_start] != '&' && text[token_start] != '$')) {
@@ -565,7 +567,9 @@ std::vector<NamelistGroup> parseNamelists(
         bool group_is_selected = selected_name.empty() || name == selected_name;
         if (!name.empty() && group_is_selected) {
             pos = name_end;
-            groups.push_back(parseGroup(text, pos, name, lower_schema, lower_aliases, ignore_unknown_keys));
+            groups.push_back(parseGroup(
+                text, pos, name, lower_schema, lower_aliases, ignore_unknown_keys
+            ));
             continue;
         }
         pos = nextLineStart(text, pos);

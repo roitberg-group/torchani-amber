@@ -56,7 +56,8 @@ class CompiledMlipModel : public mlip::MlipModel {
 
     auto modelName(const std::string& prefix) const -> std::string;
     auto makeLoader(const std::string& prefix) const -> std::unique_ptr<Loader>;
-    auto perMoleculeTensor(int value, std::int64_t num_molecules) const -> torch::Tensor;
+    auto perMoleculeTensor(int value, std::int64_t num_molecules) const
+        -> torch::Tensor;
     auto runMlmmLoader(
         std::unique_ptr<Loader>& loader,
         const std::string& prefix,

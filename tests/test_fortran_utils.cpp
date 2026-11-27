@@ -11,6 +11,7 @@
 
 #include "fortran_utils.h"
 
+using fortran_utils::listNamelistGroupNames;
 using fortran_utils::namelist_alias_conflict_error;
 using fortran_utils::namelist_out_of_range_error;
 using fortran_utils::namelist_parse_error;
@@ -26,7 +27,6 @@ using fortran_utils::NamelistGroup;
 using fortran_utils::NamelistSchema;
 using fortran_utils::NamelistType;
 using fortran_utils::NamelistValue;
-using fortran_utils::listNamelistGroupNames;
 using fortran_utils::parseNamelists;
 using Values = std::vector<NamelistValue>;
 
@@ -35,8 +35,7 @@ static const std::filesystem::path namelists_dir =
     std::filesystem::path(__FILE__).parent_path() / "namelists";
 
 static std::map<std::string, Values> parseSingleGroup(
-    const std::string& text,
-    const NamelistSchema& schema = {}
+    const std::string& text, const NamelistSchema& schema = {}
 ) {
     std::vector<NamelistGroup> groups = parseNamelists(text, "", schema);
     REQUIRE(groups.size() == 1);
@@ -60,7 +59,9 @@ TEST_CASE("Namelist null values", "[namelist]") {
 
 TEST_CASE("Namelist repeats and arrays", "[namelist]") {
     CHECK(parseSingleGroup("&g a=3*2 /").at("a") == Values{2L, 2L, 2L});
-    CHECK(parseSingleGroup("&g a=2* , 5 /").at("a") == Values{null_value, null_value, 5L});
+    CHECK(
+        parseSingleGroup("&g a=2* , 5 /").at("a") == Values{null_value, null_value, 5L}
+    );
     CHECK(
         parseSingleGroup("&g a=2*'x' /").at("a")
         == Values{std::string{"x"}, std::string{"x"}}
@@ -98,7 +99,10 @@ TEST_CASE("Namelist group delimiters and comments", "[namelist]") {
     CHECK(parseSingleGroup("$g a=1 $end").at("a") == Values{1L});
     CHECK(parseSingleGroup("&g a=1/").at("a") == Values{1L});
     CHECK(parseSingleGroup("&G A=1 /").at("a") == Values{1L});
-    CHECK(parseSingleGroup("&g\r\n a=1,\r\n b='x'\r\n/\r\n").at("b") == Values{std::string{"x"}});
+    CHECK(
+        parseSingleGroup("&g\r\n a=1,\r\n b='x'\r\n/\r\n").at("b")
+        == Values{std::string{"x"}}
+    );
 
     auto values = parseSingleGroup("&g\n a=1 ! comment / here\n b=2\n/");
     CHECK(values.at("a") == Values{1L});
@@ -131,7 +135,9 @@ TEST_CASE("Namelist selected by name", "[namelist]") {
     CHECK(parseNamelists(text, "").size() == 3);
 
     std::string text_with_bad_group = "&bad a(1)=1, c=(1,2)\n&g a=1 /\n";
-    CHECK_THROWS_AS(parseNamelists(text_with_bad_group), namelist_unsupported_feature_error);
+    CHECK_THROWS_AS(
+        parseNamelists(text_with_bad_group), namelist_unsupported_feature_error
+    );
     REQUIRE(parseNamelists(text_with_bad_group, "g").size() == 1);
 }
 
@@ -155,11 +161,12 @@ TEST_CASE("Namelist errors", "[namelist]") {
     CHECK_THROWS_AS(parseNamelists("&g 1 /"), namelist_syntax_error);
     CHECK_THROWS_AS(parseNamelists("&g a 1 /"), namelist_syntax_error);
     CHECK_THROWS_AS(parseNamelists("&g a = = 1 /"), namelist_syntax_error);
-    CHECK_THROWS_AS(parseNamelists("&g a=99999999999999999999 /"), namelist_out_of_range_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g a=99999999999999999999 /"), namelist_out_of_range_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g a=1e400 /"), namelist_out_of_range_error);
     CHECK_THROWS_AS(
-        parseNamelists("&g a=99999999999999999999*1 /"),
-        namelist_out_of_range_error
+        parseNamelists("&g a=99999999999999999999*1 /"), namelist_out_of_range_error
     );
     CHECK_THROWS_AS(parseNamelists("&g a=abc /"), namelist_parse_error);
 }
@@ -177,7 +184,8 @@ TEST_CASE("Namelist Amber inputs", "[namelist]") {
         }
         CHECK(file_has_cntrl);
 
-        std::vector<NamelistGroup> cntrl_groups = parseNamelists(readFile(entry.path()), "cntrl");
+        std::vector<NamelistGroup> cntrl_groups =
+            parseNamelists(readFile(entry.path()), "cntrl");
         CHECK_FALSE(cntrl_groups.empty());
         for (const NamelistGroup& group : cntrl_groups) {
             CHECK(group.name == "cntrl");
@@ -189,8 +197,9 @@ TEST_CASE("Namelist Amber inputs", "[namelist]") {
 
 TEST_CASE("Namelist Amber input values", "[namelist]") {
     SECTION("Text and '&end' after the namelists") {
-        std::vector<NamelistGroup> groups =
-            parseNamelists(readFile(namelists_dir / "examples__GBION__GBION_1BNA__min.in"));
+        std::vector<NamelistGroup> groups = parseNamelists(
+            readFile(namelists_dir / "examples__GBION__GBION_1BNA__min.in")
+        );
         REQUIRE(groups.size() == 2);
         CHECK(groups[0].name == "cntrl");
         CHECK(groups[0].values.size() == 19);
@@ -201,8 +210,9 @@ TEST_CASE("Namelist Amber input values", "[namelist]") {
         CHECK(groups[1].values.at("type") == Values{std::string{"END"}});
     }
     SECTION("'&end' followed by '/'") {
-        std::vector<NamelistGroup> groups =
-            parseNamelists(readFile(namelists_dir / "dat__SIRAH__tutorial__1__SANDER__eq_GB.in"));
+        std::vector<NamelistGroup> groups = parseNamelists(
+            readFile(namelists_dir / "dat__SIRAH__tutorial__1__SANDER__eq_GB.in")
+        );
         REQUIRE(groups.size() == 5);
         CHECK(groups[0].name == "cntrl");
         CHECK(groups[0].values.at("dt") == Values{0.02});
@@ -228,7 +238,9 @@ TEST_CASE("Namelist schema scalars", "[namelist]") {
     CHECK(parseSingleGroup("&g f=1.5d0 /", schema).at("f") == Values{1.5});
     CHECK(parseSingleGroup("&g b=.FALSE. /", schema).at("b") == Values{false});
     CHECK(parseSingleGroup("&g i= /", schema).at("i") == Values{null_value});
-    CHECK(parseSingleGroup("&g I=2 /", {{"I", NamelistType::INT}}).at("i") == Values{2L});
+    CHECK(
+        parseSingleGroup("&g I=2 /", {{"I", NamelistType::INT}}).at("i") == Values{2L}
+    );
 
     CHECK_THROWS_AS(parseNamelists("&g i=1.00 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g i=t /", "", schema), namelist_type_error);
@@ -236,27 +248,33 @@ TEST_CASE("Namelist schema scalars", "[namelist]") {
     CHECK_THROWS_AS(parseNamelists("&g f=t /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g b=1 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g b='t' /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g s=x /", "", schema), namelist_unquoted_string_error);
-    CHECK_THROWS_AS(parseNamelists("&g s=1 /", "", schema), namelist_unquoted_string_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g s=x /", "", schema), namelist_unquoted_string_error
+    );
+    CHECK_THROWS_AS(
+        parseNamelists("&g s=1 /", "", schema), namelist_unquoted_string_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g i=1,2 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g i=2*1 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g x=1 /", "", schema), namelist_unknown_key_error);
     CHECK_THROWS_AS(parseNamelists("&g i=1e400 /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g f=1e400 /", "", schema), namelist_out_of_range_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g f=1e400 /", "", schema), namelist_out_of_range_error
+    );
 }
 
 TEST_CASE("Namelist schema with ignored unknown keys", "[namelist]") {
     NamelistSchema schema{{"i", NamelistType::INT}, {"f", NamelistType::FLOAT}};
-    std::vector<NamelistGroup> groups =
-        parseNamelists("&g x = 'a', 3*2, i = 1, y = .t., f = 2 /", "", schema, {}, true);
+    std::vector<NamelistGroup> groups = parseNamelists(
+        "&g x = 'a', 3*2, i = 1, y = .t., f = 2 /", "", schema, {}, true
+    );
     REQUIRE(groups.size() == 1);
     CHECK(groups[0].values.size() == 2);
     CHECK(groups[0].values.at("i") == Values{1L});
     CHECK(groups[0].values.at("f") == Values{2.0});
 
     CHECK_THROWS_AS(
-        parseNamelists("&g i = 1.5, x = 1 /", "", schema, {}, true),
-        namelist_type_error
+        parseNamelists("&g i = 1.5, x = 1 /", "", schema, {}, true), namelist_type_error
     );
     CHECK_THROWS_AS(
         parseNamelists("&g x = abc /", "", schema, {}, true),
@@ -286,28 +304,44 @@ TEST_CASE("Namelist schema vectors", "[namelist]") {
     CHECK(values.at("vb") == Values{true, false});
     CHECK(values.at("v3f") == Values{1.0, 0.0, 0.0});
     CHECK(values.at("v3i") == Values{1L, null_value, 3L});
-    CHECK(values.at("v3s") == Values{std::string{"x"}, std::string{"y"}, std::string{"z"}});
+    CHECK(
+        values.at("v3s") == Values{std::string{"x"}, std::string{"y"}, std::string{"z"}}
+    );
     CHECK(values.at("v3b") == Values{false, false, true});
 
     CHECK(parseSingleGroup("&g vi=1 /", schema).at("vi") == Values{1L});
     CHECK(parseSingleGroup("&g v3i=3*7 /", schema).at("v3i") == Values{7L, 7L, 7L});
 
     CHECK_THROWS_AS(parseNamelists("&g vi=1,2.0 /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g vs='a',b /", "", schema), namelist_unquoted_string_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g vs='a',b /", "", schema), namelist_unquoted_string_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g v3f=1,2 /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g v3f=1,2,3,4 /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g v3f=1,2,3,4 /", "", schema), namelist_type_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g v3i=1,2,t /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g vb=t,1 /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g v3s='x','y' /", "", schema), namelist_type_error);
-    CHECK_THROWS_AS(parseNamelists("&g v3s='x','y',z /", "", schema), namelist_unquoted_string_error);
-    CHECK_THROWS_AS(parseNamelists("&g v3b=t,f,'t' /", "", schema), namelist_type_error);
+    CHECK_THROWS_AS(
+        parseNamelists("&g v3s='x','y' /", "", schema), namelist_type_error
+    );
+    CHECK_THROWS_AS(
+        parseNamelists("&g v3s='x','y',z /", "", schema), namelist_unquoted_string_error
+    );
+    CHECK_THROWS_AS(
+        parseNamelists("&g v3b=t,f,'t' /", "", schema), namelist_type_error
+    );
 }
 
 TEST_CASE("Namelist schema int or str", "[namelist]") {
     NamelistSchema schema{{"k", NamelistType::INT_OR_STR}};
     CHECK(parseSingleGroup("&g k = 2 /", schema).at("k") == Values{2L});
-    CHECK(parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}});
-    CHECK_THROWS_AS(parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error);
+    CHECK(
+        parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}}
+    );
+    CHECK_THROWS_AS(
+        parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g k = 1.5 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g k = t /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g k = 1, 2 /", "", schema), namelist_type_error);
@@ -320,10 +354,19 @@ TEST_CASE("Namelist schema float or str", "[namelist]") {
     };
     CHECK(parseSingleGroup("&g k = 2 /", schema).at("k") == Values{2.0});
     CHECK(parseSingleGroup("&g k = 1.5 /", schema).at("k") == Values{1.5});
-    CHECK(parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}});
-    CHECK(parseSingleGroup("&g vk = 1, , 2.5 /", schema).at("vk") == Values{1.0, null_value, 2.5});
-    CHECK(parseSingleGroup("&g vk = 'a' /", schema).at("vk") == Values{std::string{"a"}});
-    CHECK_THROWS_AS(parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error);
+    CHECK(
+        parseSingleGroup("&g k = 'Abc' /", schema).at("k") == Values{std::string{"Abc"}}
+    );
+    CHECK(
+        parseSingleGroup("&g vk = 1, , 2.5 /", schema).at("vk")
+        == Values{1.0, null_value, 2.5}
+    );
+    CHECK(
+        parseSingleGroup("&g vk = 'a' /", schema).at("vk") == Values{std::string{"a"}}
+    );
+    CHECK_THROWS_AS(
+        parseNamelists("&g k = abc /", "", schema), namelist_unquoted_string_error
+    );
     CHECK_THROWS_AS(parseNamelists("&g k = t /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g k = 1, 2 /", "", schema), namelist_type_error);
     CHECK_THROWS_AS(parseNamelists("&g vk = 1, t /", "", schema), namelist_type_error);
@@ -331,7 +374,8 @@ TEST_CASE("Namelist schema float or str", "[namelist]") {
 
 TEST_CASE("Namelist aliases", "[namelist]") {
     NamelistAliases aliases{{"old", "new"}, {"Old2", "NEW"}};
-    std::vector<NamelistGroup> groups = parseNamelists("&g old=1 x=2 /", "", {}, aliases);
+    std::vector<NamelistGroup> groups =
+        parseNamelists("&g old=1 x=2 /", "", {}, aliases);
     REQUIRE(groups.size() == 1);
     CHECK(groups[0].values.at("new") == Values{1L});
     CHECK(groups[0].values.at("x") == Values{2L});
@@ -369,13 +413,16 @@ TEST_CASE("Namelist aliases print a deprecation warning", "[namelist]") {
     std::cerr.rdbuf(cerr_buf);
     std::string warning = captured.str();
     CHECK(warning.find("WARNING (libtorchani)") != std::string::npos);
-    CHECK(warning.find("key old in group &g (line 5) is deprecated") != std::string::npos);
+    CHECK(
+        warning.find("key old in group &g (line 5) is deprecated") != std::string::npos
+    );
     CHECK(warning.find("use new instead") != std::string::npos);
     CHECK(warning.find("WARNING", 1) == std::string::npos);
 }
 
 TEST_CASE("Namelist group names", "[namelist]") {
-    std::string text = "title &x\n &G a=(1,2) &end\n /\n$h b=2 / junk\n&g a=2 /\n&end\n";
+    std::string text =
+        "title &x\n &G a=(1,2) &end\n /\n$h b=2 / junk\n&g a=2 /\n&end\n";
     CHECK(listNamelistGroupNames(text) == std::vector<std::string>{"g", "h", "g"});
     CHECK(listNamelistGroupNames("no groups\n").empty());
     CHECK(listNamelistGroupNames("").empty());

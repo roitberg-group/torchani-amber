@@ -20,6 +20,7 @@
 
 #include "constants.h"
 #include "fortran_utils.h"
+#include "utils.h"
 
 namespace config {
 
@@ -58,7 +59,9 @@ ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
     return updated_config;
 }
 
-bool isDefault(const ConfigDict& config, const ConfigDict& defaults, const std::string& key) {
+bool isDefault(
+    const ConfigDict& config, const ConfigDict& defaults, const std::string& key
+) {
     return config.values(key) == defaults.values(key);
 }
 
@@ -95,10 +98,6 @@ std::string configLine(const ConfigDict& config, const std::string& key) {
     return line.str();
 }
 
-void printWarning(const std::string& msg) {
-    std::cerr << "WARNING (libtorchani)\n" << msg << std::endl;
-}
-
 bool isOneOf(const std::string& value, const std::vector<std::string>& options) {
     return std::find(options.begin(), options.end(), value) != options.end();
 }
@@ -110,17 +109,45 @@ const std::map<std::string, std::vector<double>> BUILTIN_VOLUME_KZS{
     {
         "builtin-mbis-charges",
         {
-            0.0, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.7190062581351027, 0.9894465754783003,
-            0.5712807132434742, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.0,
+            0.0,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            0.7190062581351027,
+            0.9894465754783003,
+            0.5712807132434742,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            0.0,
             0.47491014980647467,
         },
     },
     {
         "builtin-fixed-resp-charges",
         {
-            0.7659661617582175, NO_KZ, NO_KZ, NO_KZ, NO_KZ, 0.36055843774225754,
-            0.32324322791847215, 0.26476340834055967, NO_KZ, NO_KZ, NO_KZ, NO_KZ, NO_KZ,
-            NO_KZ, NO_KZ, 0.030818228617190933, 1.1044386233759735,
+            0.7659661617582175,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            0.36055843774225754,
+            0.32324322791847215,
+            0.26476340834055967,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            NO_KZ,
+            0.030818228617190933,
+            1.1044386233759735,
         },
     },
 };
@@ -141,7 +168,8 @@ std::vector<double> resolvedVolumeKzs(const ConfigDict& mlmm) {
         volume_kzs = {defaultVolumeKzsName(mlmm)};
     }
     std::vector<double> kzs(constants::NUM_ELEMENTS, NO_KZ);
-    if (volume_kzs.size() == 1 && std::holds_alternative<std::string>(volume_kzs.front())) {
+    if (volume_kzs.size() == 1
+        && std::holds_alternative<std::string>(volume_kzs.front())) {
         const std::string& name = std::get<std::string>(volume_kzs.front());
         auto builtin_it = BUILTIN_VOLUME_KZS.find(name);
         if (builtin_it == BUILTIN_VOLUME_KZS.end()) {
@@ -174,12 +202,60 @@ std::vector<double> resolvedVolumeKzs(const ConfigDict& mlmm) {
 // GEEP widths (Angstrom) used by pmemd, for H to Xe, indexed by atomic number starting
 // at H. Elements past Xe have no width
 const std::vector<double> PMEMD_GEEP_SIGMAS_ANG{
-    1.00, 1.20, 1.60, 1.50, 1.50, 1.50, 1.40, 1.30, 1.25, 1.30,  // H to Ne
-    1.80, 1.70, 1.70, 1.65, 1.60, 1.60, 1.55, 1.50, 2.00, 1.90,  // Na to Ca
-    1.85, 1.80, 1.80, 1.75, 1.75, 1.75, 1.70, 1.70, 1.70, 1.70,  // Sc to Zn
-    1.75, 1.70, 1.70, 1.70, 1.70, 1.70, 2.10, 2.00, 1.95, 1.90,  // Ga to Zr
-    1.90, 1.90, 1.85, 1.85, 1.85, 1.85, 1.85, 1.85, 1.90, 1.90,  // Nb to Sn
-    1.90, 1.90, 1.85, 1.80,  // Sb to Xe
+    1.00,
+    1.20,
+    1.60,
+    1.50,
+    1.50,
+    1.50,
+    1.40,
+    1.30,
+    1.25,
+    1.30,  // H to Ne
+    1.80,
+    1.70,
+    1.70,
+    1.65,
+    1.60,
+    1.60,
+    1.55,
+    1.50,
+    2.00,
+    1.90,  // Na to Ca
+    1.85,
+    1.80,
+    1.80,
+    1.75,
+    1.75,
+    1.75,
+    1.70,
+    1.70,
+    1.70,
+    1.70,  // Sc to Zn
+    1.75,
+    1.70,
+    1.70,
+    1.70,
+    1.70,
+    1.70,
+    2.10,
+    2.00,
+    1.95,
+    1.90,  // Ga to Zr
+    1.90,
+    1.90,
+    1.85,
+    1.85,
+    1.85,
+    1.85,
+    1.85,
+    1.85,
+    1.90,
+    1.90,  // Nb to Sn
+    1.90,
+    1.90,
+    1.85,
+    1.80,  // Sb to Xe
 };
 
 // geep_sigmas may be "builtin" (the pmemd widths), "builtin-carbon" (the pmemd width of
@@ -211,7 +287,8 @@ std::vector<double> resolvedGeepSigmas(const ConfigDict& mlmm) {
     std::vector<double> sigmas(
         constants::NUM_ELEMENTS, std::numeric_limits<double>::quiet_NaN()
     );
-    if (geep_sigmas.size() == 1 && std::holds_alternative<std::string>(geep_sigmas.front())) {
+    if (geep_sigmas.size() == 1
+        && std::holds_alternative<std::string>(geep_sigmas.front())) {
         std::vector<double> builtin_sigmas =
             builtinGeepSigmas(std::get<std::string>(geep_sigmas.front()));
         std::copy(builtin_sigmas.begin(), builtin_sigmas.end(), sigmas.begin());
@@ -270,9 +347,9 @@ std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
             "Valid integer mlmm_coupling values are 0, 1, 2 and 3 (deprecated)"
         );
     }
-    printWarning(
-        "mlmm_coupling = " + std::to_string(idx) + " is deprecated, use mlmm_coupling = '"
-        + names[idx] + "' instead"
+    utils::printWarning(
+        "mlmm_coupling = " + std::to_string(idx)
+        + " is deprecated, use mlmm_coupling = '" + names[idx] + "' instead"
     );
     return names[idx];
 }
@@ -285,7 +362,8 @@ auto isPolarizableCoupling(const std::string& mlmm_coupling) -> bool {
 }
 
 auto isGeepCoupling(const std::string& mlmm_coupling) -> bool {
-    return mlmm_coupling == "coulombic-geep" || mlmm_coupling == "simple-polarizable-geep";
+    return mlmm_coupling == "coulombic-geep"
+        || mlmm_coupling == "simple-polarizable-geep";
 }
 
 auto defaultMlipConfig() -> ConfigDict {
@@ -297,6 +375,7 @@ auto defaultMlipConfig() -> ConfigDict {
         {"ml_spin_mult", {1L, NamelistType::INT}},
         {"model_index", {-1L, NamelistType::INT}},
         {"cuda_device_index", {0L, NamelistType::INT}},
+        {"torch_num_threads", {1L, NamelistType::INT}},
         {"use_cuda_device", {BUILT_WITH_CUDA, NamelistType::BOOL}},
         {"use_double_precision", {true, NamelistType::BOOL}},
         {"use_external_neighborlist", {false, NamelistType::BOOL}},
@@ -319,9 +398,13 @@ auto defaultMlmmConfig() -> ConfigDict {
         {"mlmm_coupling", {std::string{"coulombic"}, NamelistType::INT_OR_STR}},
         {"use_mlip_atomic_charges", {false, NamelistType::BOOL}},
         {"use_mlip_atomic_volumes", {false, NamelistType::BOOL}},
-        {"volume_kzs", {std::vector<fortran_utils::NamelistValue>{}, NamelistType::VEC_FLOAT_OR_STR}},
+        {"volume_kzs",
+            {std::vector<fortran_utils::NamelistValue>{},
+                NamelistType::VEC_FLOAT_OR_STR}},
         // 'builtin' if empty
-        {"geep_sigmas", {std::vector<fortran_utils::NamelistValue>{}, NamelistType::VEC_FLOAT_OR_STR}},
+        {"geep_sigmas",
+            {std::vector<fortran_utils::NamelistValue>{},
+                NamelistType::VEC_FLOAT_OR_STR}},
         {"geep_factor", {1.0, NamelistType::FLOAT}},
         // No longer supported, validation throws if it is False
         {"use_charges_derivatives", {true, NamelistType::BOOL}},
@@ -334,8 +417,9 @@ auto defaultMlmmConfig() -> ConfigDict {
         {"mm_cutoff", {15.0, NamelistType::FLOAT}},
         {"ml_mask", {std::string{""}, NamelistType::STR}},
         {"ml_shake", {true, NamelistType::BOOL}},
-        // Set from mlmm_coupling if empty, it only supports one value for each coupling
-        {"mm_cutoff_kind", {std::string{""}, NamelistType::STR}},
+        // 'none' with mechanical embedding, 'hard-cutoff' otherwise if empty. 'ewald' makes
+        // sander also calculate the Ewald potential and field on the ML atoms
+        {"electrostatics_kind", {std::string{""}, NamelistType::STR}},
         // Experimental Hybrid ML-QM potential energy, using a switching function
         {"use_hybrid_mlqm", {false, NamelistType::BOOL}},
         {"hybrid_mlqm_method", {std::string{"none"}, NamelistType::STR}},
@@ -352,8 +436,24 @@ auto defaultMlmmConfig() -> ConfigDict {
     // Rest taken from Schwerdtfeger, P., and Nagle, J. K. (2019). Molecular Physics,
     // 117(9-12), 1200-1225.
     const std::array<double, 18> known_polarizabilities{
-        3.08, 1.38375, 164.1125, 37.74, 20.5, 11.3, 7.4, 5.3, 3.74,
-        2.6611, 162.7, 71.2, 57.8, 37.3, 25.0, 19.4, 14.6, 11.083,
+        3.08,
+        1.38375,
+        164.1125,
+        37.74,
+        20.5,
+        11.3,
+        7.4,
+        5.3,
+        3.74,
+        2.6611,
+        162.7,
+        71.2,
+        57.8,
+        37.3,
+        25.0,
+        19.4,
+        14.6,
+        11.083,
     };
     for (std::size_t i = 0; i < constants::NUM_ELEMENTS; ++i) {
         double polarizability = std::numeric_limits<double>::quiet_NaN();
@@ -388,7 +488,8 @@ auto ConfigDict::withValues(
 
 auto ConfigDict::getInt(const std::string& key) const -> int {
     long value = std::get<long>(this->value(key));
-    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+    if (value < std::numeric_limits<int>::min()
+        || value > std::numeric_limits<int>::max()) {
         throw std::out_of_range(
             "Value " + std::to_string(value) + " of key " + key + " is out of range"
         );
@@ -400,10 +501,8 @@ GlobalConfig::GlobalConfig(
     ConfigDict mlip_config,
     std::optional<ConfigDict> mlmm_config,
     std::optional<ConfigDict> amber_qmmm_config
-):
-    m_mlip_config{std::move(mlip_config)},
-    m_mlmm_config{std::move(mlmm_config)}
-{
+)
+    : m_mlip_config{std::move(mlip_config)}, m_mlmm_config{std::move(mlmm_config)} {
     if (amber_qmmm_config) {
         m_amber_qmmm_int = amber_qmmm_config->getInt("qmmm_int");
     }
@@ -416,10 +515,14 @@ GlobalConfig::GlobalConfig(
         );
     }
 #endif
-    torch::DeviceType device_type = getBool("use_cuda_device") ? torch::kCUDA : torch::kCPU;
+    torch::DeviceType device_type =
+        getBool("use_cuda_device") ? torch::kCUDA : torch::kCPU;
     auto device_idx = static_cast<torch::DeviceIndex>(getInt("cuda_device_index"));
-    torch::ScalarType dtype = getBool("use_double_precision") ? torch::kFloat64 : torch::kFloat32;
-    m_opts = torch::TensorOptions().device(torch::Device{device_type, device_idx}).dtype(dtype);
+    torch::ScalarType dtype =
+        getBool("use_double_precision") ? torch::kFloat64 : torch::kFloat32;
+    m_opts = torch::TensorOptions()
+                 .device(torch::Device{device_type, device_idx})
+                 .dtype(dtype);
 }
 
 auto GlobalConfig::fromNamelistFile(
@@ -468,8 +571,10 @@ auto GlobalConfig::fromNamelistFile(
             );
         }
     } else {
-        bool file_has_mlip = std::count(group_names.begin(), group_names.end(), "mlip") > 0;
-        bool file_has_ani = std::count(group_names.begin(), group_names.end(), "ani") > 0;
+        bool file_has_mlip =
+            std::count(group_names.begin(), group_names.end(), "mlip") > 0;
+        bool file_has_ani =
+            std::count(group_names.begin(), group_names.end(), "ani") > 0;
         if (file_has_mlip && file_has_ani) {
             throw std::runtime_error(
                 "Both &mlip and &ani namelists found in " + abs_fpath
@@ -480,13 +585,14 @@ auto GlobalConfig::fromNamelistFile(
             throw std::runtime_error("No &mlip namelist found in " + abs_fpath);
         }
         if (file_has_ani) {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << "The &ani namelist in " << abs_fpath << " is deprecated,"
-                      << " use &mlip instead" << std::endl;
+            utils::printWarning(
+                "The &ani namelist in " + abs_fpath
+                + " is deprecated, use &mlip instead"
+            );
         }
         group_name = file_has_mlip ? "mlip" : "ani";
         if (source == "qmmm-and-mlip") {
-            printWarning(
+            utils::printWarning(
                 "Reading the ML/MM options from the &" + group_name + " and &qmmm"
                 " namelists is deprecated, use the &mlmm namelist instead"
             );
@@ -541,13 +647,13 @@ auto GlobalConfig::fromNamelistFile(
             "mlmm_coupling", normalizedMlmmCoupling(mlmm_config->value("mlmm_coupling"))
         );
         if (group.values.count("use_torch_coupling") > 0) {
-            printWarning(
+            utils::printWarning(
                 "use_torch_coupling is deprecated and has no effect, the ML/MM coupling is"
                 " always calculated by the MLIP Interface"
             );
         }
         if (group.values.count("write_charges_grad") > 0) {
-            printWarning(
+            utils::printWarning(
                 "write_charges_grad is deprecated and has no effect, the gradients of the"
                 " charges are no longer written"
             );
@@ -575,20 +681,41 @@ auto GlobalConfig::fromNamelistFile(
                 " &mlmm namelist"
             );
         }
-        std::string mm_cutoff_kind = mlmm_config->getString("mm_cutoff_kind");
+        std::string electrostatics_kind = mlmm_config->getString("electrostatics_kind");
         std::transform(
-            mm_cutoff_kind.begin(), mm_cutoff_kind.end(), mm_cutoff_kind.begin(), ::tolower
+            electrostatics_kind.begin(),
+            electrostatics_kind.end(),
+            electrostatics_kind.begin(),
+            ::tolower
         );
-        std::string supported_mm_cutoff_kind =
-            isMechanicalEmbedding(mlmm_coupling) ? "none" : "hard";
-        if (!mm_cutoff_kind.empty() && mm_cutoff_kind != supported_mm_cutoff_kind) {
+        std::vector<std::string> supported_electrostatics_kinds = {"none"};
+        if (!isMechanicalEmbedding(mlmm_coupling)) {
+            supported_electrostatics_kinds = {"hard-cutoff"};
+            if (source == "mlmm") {
+                supported_electrostatics_kinds.push_back("ewald");
+            }
+        }
+        if (electrostatics_kind.empty()) {
+            electrostatics_kind = supported_electrostatics_kinds.front();
+        }
+        if (std::find(
+                supported_electrostatics_kinds.begin(),
+                supported_electrostatics_kinds.end(),
+                electrostatics_kind
+            )
+            == supported_electrostatics_kinds.end()) {
+            std::string supported_str;
+            for (const std::string& kind : supported_electrostatics_kinds) {
+                supported_str += (supported_str.empty() ? "'" : ", '") + kind + "'";
+            }
             throw config_validation_error(
-                "mm_cutoff_kind = '" + mm_cutoff_kind + "' is not supported with"
-                " mlmm_coupling = '" + mlmm_coupling + "', the only supported value is '"
-                + supported_mm_cutoff_kind + "'"
+                "electrostatics_kind = '" + electrostatics_kind + "' is not supported with"
+                " mlmm_coupling = '" + mlmm_coupling + "' and the &" + source
+                + " namelist, supported values are: " + supported_str
             );
         }
-        mlmm_config = mlmm_config->withValue("mm_cutoff_kind", supported_mm_cutoff_kind);
+        mlmm_config =
+            mlmm_config->withValue("electrostatics_kind", electrostatics_kind);
     }
     validateConfig(mlip_config, mlmm_config);
 
@@ -632,7 +759,8 @@ auto GlobalConfig::fromNamelistFile(
             }
             int qmmm_value = amber_qmmm_config->getInt(qmmm_key);
             if (not mlip_has_key) {
-                mlip_config = mlip_config.withValue(mlip_key, static_cast<long>(qmmm_value));
+                mlip_config =
+                    mlip_config.withValue(mlip_key, static_cast<long>(qmmm_value));
             } else if (mlip_config.getInt(mlip_key) != qmmm_value) {
                 throw config_validation_error(
                     mlip_key + " = " + std::to_string(mlip_config.getInt(mlip_key))
@@ -647,8 +775,7 @@ auto GlobalConfig::fromNamelistFile(
 }
 
 auto GlobalConfig::validateConfig(
-    const ConfigDict& mlip_config,
-    const std::optional<ConfigDict>& mlmm_config
+    const ConfigDict& mlip_config, const std::optional<ConfigDict>& mlmm_config
 ) -> void {
     if (mlip_config.getString("model_type").find("::") != std::string::npos) {
         throw config_validation_error(
@@ -658,6 +785,9 @@ auto GlobalConfig::validateConfig(
     }
     if (mlip_config.getInt("write_interval") < 1) {
         throw config_validation_error("write_interval must be at least 1");
+    }
+    if (mlip_config.getInt("torch_num_threads") < 1) {
+        throw config_validation_error("torch_num_threads must be at least 1");
     }
     if (!mlmm_config) {
         return;
@@ -670,10 +800,11 @@ auto GlobalConfig::validateConfig(
     bool use_qm_coupling = mlmm.getBool("use_qm_coupling");
     const std::string& hybrid_mlqm_method = mlmm.getString("hybrid_mlqm_method");
     const std::string& qm_coupling_method = mlmm.getString("qm_coupling_method");
-    bool inv_pol_dielectric_is_default = isDefault(mlmm, defaults, "inv_pol_dielectric");
+    bool inv_pol_dielectric_is_default =
+        isDefault(mlmm, defaults, "inv_pol_dielectric");
 
-    bool coupling_is_coulombic = mlmm_coupling == "coulombic"
-        || mlmm_coupling == "coulombic-geep";
+    bool coupling_is_coulombic =
+        mlmm_coupling == "coulombic" || mlmm_coupling == "coulombic-geep";
     bool coupling_is_polarizable = isPolarizableCoupling(mlmm_coupling);
     bool coupling_is_geep = isGeepCoupling(mlmm_coupling);
 
@@ -701,14 +832,14 @@ auto GlobalConfig::validateConfig(
         }
         if (use_qm_coupling) {
             throw config_validation_error(
-                "use_qm_coupling is not supported with mlmm_coupling = '" + mlmm_coupling
-                + "'"
+                "use_qm_coupling is not supported with mlmm_coupling = '"
+                + mlmm_coupling + "'"
             );
         }
         if (use_hybrid_mlqm) {
             throw config_validation_error(
-                "use_hybrid_mlqm is not supported with mlmm_coupling = '" + mlmm_coupling
-                + "'"
+                "use_hybrid_mlqm is not supported with mlmm_coupling = '"
+                + mlmm_coupling + "'"
             );
         }
     }
@@ -805,7 +936,8 @@ auto GlobalConfig::validateConfig(
             );
         }
     }
-    if (use_qm_coupling && !isOneOf(qm_coupling_method, {"amber-dftb", "orca", "gau", "lio"})) {
+    if (use_qm_coupling
+        && !isOneOf(qm_coupling_method, {"amber-dftb", "orca", "gau", "lio"})) {
         throw config_validation_error(
             "Valid qm_coupling_method values are 'amber-dftb', 'orca', 'gau' and 'lio'"
         );
@@ -827,32 +959,32 @@ auto GlobalConfig::validateConfig(
     }
 
     if (usesInternalOptions(mlmm)) {
-        printWarning(
+        utils::printWarning(
             "You are using experimental or deprecated options, which will break in future"
             " releases. Results may be wrong, use at your own risk"
         );
     }
     if (!inv_pol_dielectric_is_default) {
-        printWarning(
+        utils::printWarning(
             "The recommended value of inv_pol_dielectric is 0.5, but "
             + std::to_string(mlmm.getDouble("inv_pol_dielectric")) + " was specified"
         );
     }
     if (use_qm_coupling && use_mlip_atomic_charges) {
-        printWarning(
+        utils::printWarning(
             "use_mlip_atomic_charges has no effect with use_qm_coupling = T, the QM/MM"
             " coupling is calculated by the helper QM program"
         );
     }
     if (!use_qm_coupling) {
         if (coupling_is_coulombic && use_mlip_atomic_charges) {
-            printWarning(
+            utils::printWarning(
                 "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
                 + "' is only tested with fixed topology charges"
             );
         }
         if (coupling_is_polarizable && !use_mlip_atomic_charges) {
-            printWarning(
+            utils::printWarning(
                 "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
                 + "' is only tested with use_mlip_atomic_charges = T"
             );
@@ -890,13 +1022,13 @@ auto GlobalConfig::validateAmberQmmmNamelist(
     }
 
     if (qmmm_int == 0) {
-        printWarning(
+        utils::printWarning(
             "You are using an untested protocol: qmmm_int = 0 turns off the QM/MM"
             " electrostatic coupling. You probably want qmmm_int = 1"
         );
     }
     if (qmmm_int == 5) {
-        printWarning(
+        utils::printWarning(
             "You are using an untested protocol: with qmmm_int = 5 the QM/MM electrostatic"
             " coupling is calculated by sander, with the mechanical embedding approximation"
             " and fixed QM-region charges read from the topology file. You probably want"
@@ -926,7 +1058,8 @@ auto GlobalConfig::configDictWithOption(const std::string& key) const
     throw std::out_of_range("Unknown config option " + key);
 }
 
-auto GlobalConfig::getPolarizability(const std::string& element_symbol) const -> double {
+auto GlobalConfig::getPolarizability(const std::string& element_symbol) const
+    -> double {
     std::string key = "pol_" + element_symbol;
     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
     double polarizability = getDouble(key);
@@ -948,8 +1081,8 @@ auto GlobalConfig::getVolumeKz(long atomic_num) const -> double {
     if (std::isnan(kzs[idx])) {
         throw std::runtime_error(
             "volume_kzs has no value for element "
-            + std::string(constants::ELEMENT_SYMBOLS[idx])
-            + " (atomic number " + std::to_string(atomic_num) + ")"
+            + std::string(constants::ELEMENT_SYMBOLS[idx]) + " (atomic number "
+            + std::to_string(atomic_num) + ")"
         );
     }
     return kzs[idx];
@@ -964,8 +1097,8 @@ auto GlobalConfig::getGeepSigma(long atomic_num) const -> double {
     if (std::isnan(sigmas[idx])) {
         throw std::runtime_error(
             "geep_sigmas has no value for element "
-            + std::string(constants::ELEMENT_SYMBOLS[idx])
-            + " (atomic number " + std::to_string(atomic_num) + ")"
+            + std::string(constants::ELEMENT_SYMBOLS[idx]) + " (atomic number "
+            + std::to_string(atomic_num) + ")"
         );
     }
     return sigmas[idx] * mlmm().getDouble("geep_factor");
@@ -993,20 +1126,23 @@ auto GlobalConfig::print(const std::string& text) const -> void {
 auto GlobalConfig::printInfo() const -> void {
     std::ostringstream out;
     out << "ML/MM:------------------ML/MM config----------------\n";
-    for (const char* key : {
-             "model_type",
-             "model_index",
-             "use_cuda_device",
-             "use_double_precision",
-             "use_cuaev",
-             "cuda_device_index",
-             "write_coords",
-             "write_forces",
-             "write_atomic_charges",
-             "write_atomic_volumes",
-             "write_atomic_alphas",
-             "write_interval",
-         }) {
+    for (
+        const char* key : {
+            "model_type",
+            "model_index",
+            "use_cuda_device",
+            "use_double_precision",
+            "use_cuaev",
+            "cuda_device_index",
+            "torch_num_threads",
+            "write_coords",
+            "write_forces",
+            "write_atomic_charges",
+            "write_atomic_volumes",
+            "write_atomic_alphas",
+            "write_interval",
+        }
+    ) {
         out << configLine(mlip(), key);
     }
     if (!getString("output_dir").empty()) {
@@ -1047,15 +1183,17 @@ auto GlobalConfig::printInfo() const -> void {
     }
     if (usesInternalOptions(mlmm())) {
         out << "ML/MM:------WARNING! INTERNAL OPTIONS, DO NOT USE------\n";
-        for (const char* key : {
-                 "hybrid_mlqm_method",
-                 "use_hybrid_mlqm",
-                 "hybrid_mlqm_switch_low",
-                 "hybrid_mlqm_switch_high",
-                 "inv_pol_dielectric",
-                 "use_qm_coupling",
-                 "qm_coupling_method",
-             }) {
+        for (
+            const char* key : {
+                "hybrid_mlqm_method",
+                "use_hybrid_mlqm",
+                "hybrid_mlqm_switch_low",
+                "hybrid_mlqm_switch_high",
+                "inv_pol_dielectric",
+                "use_qm_coupling",
+                "qm_coupling_method",
+            }
+        ) {
             out << configLine(mlmm(), key);
         }
     }
@@ -1064,7 +1202,8 @@ auto GlobalConfig::printInfo() const -> void {
     if (use_qm_coupling) {
         out << "ML/MM: This is an EXPERIMENTAL feature, don't use in production code!\n"
             << "     QM coupling functionality of MLIP Interface is ON\n"
-            << "     The selected method for QM coupling is: " << qm_coupling_method << "\n";
+            << "     The selected method for QM coupling is: " << qm_coupling_method
+            << "\n";
     }
     if (getBool("use_hybrid_mlqm")) {
         out << "ML/MM: This is an EXPERIMENTAL feature, don't use in production code!\n"
@@ -1100,7 +1239,8 @@ auto GlobalConfig::printInfo() const -> void {
     out << "ML/MM: QM/MM electrostatic coupling will be calculated by MLIP Interface\n";
     if (use_qm_coupling) {
         out << "ML/MM: This is an EXPERIMENTAL feature, don't use in production code!\n"
-            << "     Will delegate QM/MM electrostatic coupling to " << qm_coupling_method << "\n"
+            << "     Will delegate QM/MM electrostatic coupling to "
+            << qm_coupling_method << "\n"
             << "     The electrostatic coupling approximation will be used\n"
             << "     The QM energies and forces will be also corrected\n";
         print(out.str());

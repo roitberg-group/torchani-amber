@@ -160,10 +160,6 @@ installed with `pip install torch --index-url https://download.pytorch.org/whl/c
 and the `nvidia::cuda-toolkit` dependency in `environment.yaml` is not needed. The
 resulting build can't use CUDA devices or the cuAEV CUDA kernels.
 
-When running on CPU, set `export OMP_NUM_THREADS=1` before calling Sander or Pmemd. By
-default LibTorch (and OpenBLAS, if Amber links against it) spawn one thread per core,
-and the resulting oversubscription can make dynamics more than 10x slower.
-
 ## Usage
 
 Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
@@ -211,6 +207,9 @@ There are also some advanced options:
    The index of the CUDA enabled GPU. If `use_cuda_device` is `.true.` then it can be
    set to a (0-indexed) device integer. By default it is set to `0`. It only makes sense
    to change this flag if you can access more than one CUDA enabled GPU in your machine.
+- `torch_num_threads` (*int*)
+   Number of threads PyTorch uses for intra-op parallelism on CPU
+   (`torch::set_num_threads`). Default is `1`.
 
 Output related options:
 - `write_coords` (*bool*)

@@ -3,7 +3,9 @@
 usage() { echo "Usage: [OPTION]...
     Configure, Generate buildsystem, build, run tests, and install TorchANI MLIP Interface.
 
-    All options are boolean flags.
+    All options are boolean flags, except -j.
+    -j N Build and run tests with N parallel jobs (default: serial, or CMAKE_BUILD_PARALLEL_LEVEL
+         and CTEST_PARALLEL_LEVEL)
     -B Don't build or install, only configure and generate
     -I Don't install, only configure, generate and build
     -T Don't run tests after build / installation
@@ -26,8 +28,12 @@ cmake_install=1
 torch_cuda_archs="${TORCH_CUDA_ARCH_LIST:-}"
 cmake_build_type="Release"
 prefix="$HOME/.local/"
-while getopts "TIBPNcgh" o; do
+parallel_jobs=""
+while getopts "TIBPNcghj:" o; do
     case "${o}" in
+        j)
+            parallel_jobs="$OPTARG"
+            ;;
         P)
             use_pytorch_libs=OFF
             use_libtorch=ON
@@ -101,7 +107,7 @@ if [ "$cmake_build" -eq 0 ]; then
     exit 0
 fi
 
-if ! cmake --build "$bld_dir"; then
+if ! cmake --build "$bld_dir" ${parallel_jobs:+-j "$parallel_jobs"}; then
     echo "Build failed!!"
     exit 1
 fi
@@ -111,7 +117,7 @@ if [ "$run_tests" -eq 1 ]; then
     if [ "$build_cuda" = "OFF" ]; then
         export TORCHANI_SKIP_CUDA_TESTS=1
     fi
-    if ! "$bld_dir/torchani_tests"; then
+    if ! ctest --test-dir "$bld_dir" --output-on-failure ${parallel_jobs:+-j "$parallel_jobs"}; then
         echo "Tests failed!! Skipping install step"
         exit 1
     fi

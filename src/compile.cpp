@@ -85,7 +85,9 @@ auto CompiledMlipModel::perMoleculeTensor(int value, std::int64_t num_molecules)
 }
 
 auto CompiledMlipModel::useOnlyEnsembleMember(std::int64_t /* member_idx */) -> void {
-    throw std::runtime_error("Compiled models don't support selecting ensemble members");
+    throw std::runtime_error(
+        "Compiled models don't support selecting ensemble members"
+    );
 }
 
 auto CompiledMlipModel::setExtraFeatures(torch::Tensor /* extra_features */) -> void {
@@ -144,11 +146,11 @@ auto CompiledMlipModel::computeSinglePoint(
         );
         raw_output = m_pbc_single_point_loader->run(
             {atomic_numbers,
-             coords,
-             *cell,
-             pbc,
-             perMoleculeTensor(net_charge, coords.size(0)),
-             perMoleculeTensor(spin_mult, coords.size(0))}
+                coords,
+                *cell,
+                pbc,
+                perMoleculeTensor(net_charge, coords.size(0)),
+                perMoleculeTensor(spin_mult, coords.size(0))}
         );
     } else {
         if (not m_single_point_loader) {
@@ -156,9 +158,9 @@ auto CompiledMlipModel::computeSinglePoint(
         }
         raw_output = m_single_point_loader->run(
             {atomic_numbers,
-             coords,
-             perMoleculeTensor(net_charge, coords.size(0)),
-             perMoleculeTensor(spin_mult, coords.size(0))}
+                coords,
+                perMoleculeTensor(net_charge, coords.size(0)),
+                perMoleculeTensor(spin_mult, coords.size(0))}
         );
     }
     mlip::MlipOutput output;
@@ -210,11 +212,11 @@ auto CompiledMlipModel::computeFromExternalNeighbors(
     }
     std::vector<torch::Tensor> raw_output = m_external_neighbors_loader->run(
         {atomic_numbers,
-         coords,
-         neighborlist,
-         shifts,
-         perMoleculeTensor(net_charge, coords.size(0)),
-         perMoleculeTensor(spin_mult, coords.size(0))}
+            coords,
+            neighborlist,
+            shifts,
+            perMoleculeTensor(net_charge, coords.size(0)),
+            perMoleculeTensor(spin_mult, coords.size(0))}
     );
     mlip::MlipOutput output;
     output["energy"] = raw_output.at(0);
@@ -333,7 +335,9 @@ auto CompiledMlipModel::runMlmmLoader(
     bool calc_qbc_and_qbc_grad
 ) -> mlip::MlipOutput {
     if (not package_has_model) {
-        throw std::runtime_error("Package doesn't have a model '" + modelName(prefix) + "'");
+        throw std::runtime_error(
+            "Package doesn't have a model '" + modelName(prefix) + "'"
+        );
     }
     if (atomic) {
         throw std::runtime_error("Compiled models don't support atomic=true");
@@ -342,7 +346,9 @@ auto CompiledMlipModel::runMlmmLoader(
         throw std::runtime_error("Compiled models don't support ensemble_values=true");
     }
     if (cell.has_value()) {
-        throw std::runtime_error("Compiled models don't support PBC in ML/MM computations");
+        throw std::runtime_error(
+            "Compiled models don't support PBC in ML/MM computations"
+        );
     }
     if (molecule_idxs.has_value()) {
         throw std::runtime_error("Compiled models don't support molecule_idxs");

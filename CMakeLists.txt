@@ -264,9 +264,17 @@ if(INSIDE_AMBER)
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
+# Must match torchani.paths.extensions_build_tag in the TorchANI Python package
+if(TORCHANI_BUILD_CUDA)
+    string(REGEX MATCH "^[0-9]+" CUDA_VERSION_MAJOR "${CMAKE_CUDA_COMPILER_VERSION}")
+    set(TORCHANI_EXTENSIONS_BUILD_TAG "${Torch_VERSION_MAJOR}.${Torch_VERSION_MINOR}-cu${CUDA_VERSION_MAJOR}")
+else()
+    set(TORCHANI_EXTENSIONS_BUILD_TAG "${Torch_VERSION_MAJOR}.${Torch_VERSION_MINOR}-cpu")
+endif()
+
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
 set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
-set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
+set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
 set(TORCHANI_MLIPS_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mlips/jit" CACHE STRING "Install dir for the downloaded JIT-compiled MLIPs")
 if(IS_ABSOLUTE "${TORCHANI_LIBRARY_INSTALL_DIR}" OR IS_ABSOLUTE "${TORCHANI_MLIPS_INSTALL_DIR}")
     Torchani_Msg_error("'TORCHANI_LIBRARY_INSTALL_DIR' and 'TORCHANI_MLIPS_INSTALL_DIR' must be relative to CMAKE_INSTALL_PREFIX")
@@ -276,6 +284,8 @@ endif()
 set(TORCHANI_LIBRARY_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_LIBRARY_INSTALL_DIR}")
 set(TORCHANI_MLIPS_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_MLIPS_INSTALL_DIR}")
 file(RELATIVE_PATH TORCHANI_MLIPS_RELATIVE_DIR "/${TORCHANI_LIBRARY_INSTALL_DIR}" "/${TORCHANI_MLIPS_INSTALL_DIR}")
+# The TorchANI Python package only loads the extensions if this file matches its tag
+file(WRITE "${TORCHANI_LIBRARY_BUILD_DIR}/_extensions_build_tag.txt" "${TORCHANI_EXTENSIONS_BUILD_TAG}")
 
 # Build both libcuaev, libcell_list, and libtorchani
 set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
@@ -332,8 +342,8 @@ target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
 
 # The extensions are named as the TorchANI Python package expects them (cuaev.so,
 # cell_list.so). After installation, the TorchANI Python package finds them in
-# <prefix>/lib/Torchani, so they don't need to be built a second time by pip or
-# "ani build-extensions"
+# <prefix>/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so they don't need to be built
+# a second time by pip or "ani build-extensions"
 set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
 set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
@@ -486,6 +496,7 @@ if(NOT INSIDE_AMBER)
             torchani_namelist_dump
             "${CMAKE_CURRENT_LIST_DIR}/tests/namelist_dump.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/src/fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/utils.cpp"
         )
         target_include_directories(torchani_namelist_dump PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
         target_compile_features(torchani_namelist_dump PRIVATE cxx_std_20)

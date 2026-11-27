@@ -68,7 +68,10 @@ int main(int argc, char* argv[]) {
     buffer << file.rdbuf();
 
     std::string json = "[";
-    for (const fortran_utils::NamelistGroup& group : fortran_utils::parseNamelists(buffer.str())) {
+    for (
+        const fortran_utils::NamelistGroup& group :
+        fortran_utils::parseNamelists(buffer.str())
+    ) {
         json += "{\"name\": " + toJson(group.name) + ", \"values\": {";
         for (const auto& [key, values] : group.values) {
             json += toJson(key) + ": [";
