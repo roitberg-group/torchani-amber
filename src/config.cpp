@@ -369,6 +369,10 @@ auto isGeepCoupling(const std::string& mlmm_coupling) -> bool {
 auto defaultMlipConfig() -> ConfigDict {
     return ConfigDict{{
         {"model_type", {std::string{"ani2x"}, NamelistType::STR}},
+        {"model_format", {std::string{"auto"}, NamelistType::STR}},
+        {"skip_py_preamble", {false, NamelistType::BOOL}},
+        {"do_torch_compile", {false, NamelistType::BOOL}},
+        {"torch_compile_mode", {std::string{"default"}, NamelistType::STR}},
         {"no_eval_mask", {std::string{""}, NamelistType::STR}},
         {"extra_features_file_path", {std::string{""}, NamelistType::STR}},
         {"ml_charge", {0L, NamelistType::INT}},
@@ -786,6 +790,42 @@ auto GlobalConfig::validateConfig(
     if (mlip_config.getInt("write_interval") < 1) {
         throw config_validation_error("write_interval must be at least 1");
     }
+    const std::string& model_type = mlip_config.getString("model_type");
+    const std::string& model_format = mlip_config.getString("model_format");
+    if (!isOneOf(model_format, {"auto", "torchscript", "pt2-aoti", "python"})) {
+        throw config_validation_error(
+            "model_format must be 'auto', 'torchscript', 'pt2-aoti' or 'python', but it"
+            " is '"
+            + model_format + "'"
+        );
+    }
+    bool model_is_builtin = std::find(
+                                constants::builtin_models.begin(),
+                                constants::builtin_models.end(),
+                                model_type
+                            )
+        != constants::builtin_models.end();
+    if (model_is_builtin && model_format != "auto") {
+        throw config_validation_error(
+            "model_format can't be set for the built-in model '" + model_type + "'"
+        );
+    }
+    const std::string& torch_compile_mode = mlip_config.getString("torch_compile_mode");
+    if (!isOneOf(
+            torch_compile_mode,
+            {"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
+        )) {
+        throw config_validation_error(
+            "torch_compile_mode must be 'default', 'reduce-overhead', 'max-autotune' or"
+            " 'max-autotune-no-cudagraphs', but it is '"
+            + torch_compile_mode + "'"
+        );
+    }
+    if (!mlip_config.getBool("do_torch_compile") && torch_compile_mode != "default") {
+        throw config_validation_error(
+            "torch_compile_mode requires do_torch_compile = T"
+        );
+    }
     if (mlip_config.getInt("torch_num_threads") < 1) {
         throw config_validation_error("torch_num_threads must be at least 1");
     }
@@ -1129,6 +1169,10 @@ auto GlobalConfig::printInfo() const -> void {
     for (
         const char* key : {
             "model_type",
+            "model_format",
+            "skip_py_preamble",
+            "do_torch_compile",
+            "torch_compile_mode",
             "model_index",
             "use_cuda_device",
             "use_double_precision",

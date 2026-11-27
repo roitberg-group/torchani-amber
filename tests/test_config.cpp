@@ -60,6 +60,10 @@ TEST_CASE("GlobalConfig from namelist file defaults", "[config]") {
     CHECK(config.getInt("ml_spin_mult") == 1);
     CHECK(config.getInt("torch_num_threads") == 1);
     CHECK(config.getString("no_eval_mask").empty());
+    CHECK(config.getString("model_format") == "auto");
+    CHECK_FALSE(config.getBool("skip_py_preamble"));
+    CHECK_FALSE(config.getBool("do_torch_compile"));
+    CHECK(config.getString("torch_compile_mode") == "default");
     std::filesystem::remove(path);
 }
 
@@ -165,6 +169,45 @@ TEST_CASE("GlobalConfig from namelist file errors", "[config]") {
     );
     writeTmpFile("torchani_test_config_errors.in", "&mlip /\n&ani /\n");
     CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()), std::runtime_error);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("GlobalConfig model format and Python model options", "[config]") {
+    const std::string fname = "torchani_test_config_model_format.in";
+    std::filesystem::path path = writeTmpFile(
+        fname,
+        "&mlip model_type = '/path/to/model', model_format = 'python',\n"
+        "  skip_py_preamble = T, do_torch_compile = T,\n"
+        "  torch_compile_mode = 'max-autotune-no-cudagraphs' /\n"
+    );
+    GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
+    CHECK(config.getString("model_format") == "python");
+    CHECK(config.getBool("skip_py_preamble"));
+    CHECK(config.getBool("do_torch_compile"));
+    CHECK(config.getString("torch_compile_mode") == "max-autotune-no-cudagraphs");
+
+    writeTmpFile(
+        fname, "&mlip model_type = '/path/to/model', model_format = 'pt2' /\n"
+    );
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
+    );
+    writeTmpFile(fname, "&mlip model_type = 'ani2x', model_format = 'torchscript' /\n");
+    CHECK_THROWS_WITH(
+        GlobalConfig::fromNamelistFile(path.string()),
+        Catch::Matchers::ContainsSubstring("built-in model")
+    );
+    writeTmpFile(
+        fname, "&mlip do_torch_compile = T, torch_compile_mode = 'fastest' /\n"
+    );
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
+    );
+    writeTmpFile(fname, "&mlip torch_compile_mode = 'reduce-overhead' /\n");
+    CHECK_THROWS_WITH(
+        GlobalConfig::fromNamelistFile(path.string()),
+        Catch::Matchers::ContainsSubstring("requires do_torch_compile")
+    );
     std::filesystem::remove(path);
 }
 

@@ -118,7 +118,9 @@ More detailed installation instructions:
     By default the extensions are built for the GPUs detected in the current node. If
     you don't have access to a GPU currently (e.g. you are compiling in a node without
     a GPU and you want to afterwards run in a node with a GPU) use `./run-cmake -a` to
-    build for many GPU architectures (it will take significantly longer)
+    build for the GPU architectures in the `TORCH_CUDA_ARCH_LIST` env var (the conda
+    env sets it to many architectures on activation, which takes significantly longer
+    to build)
 5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
    to both `pmemd` and `sander`. You can refer to [the amber
    website](https://ambermd.org/) for info on how to obtain and install Amber. You can
@@ -210,6 +212,10 @@ There are also some advanced options:
 - `torch_num_threads` (*int*)
    Number of threads PyTorch uses for intra-op parallelism on CPU
    (`torch::set_num_threads`). Default is `1`.
+- `model_format` (*string*)
+   How a custom `model_type` path is loaded: `"auto"` (detected from the path),
+   `"torchscript"`, `"pt2-aoti"` or `"python"`. Default is `"auto"`. Can't be set for
+   built-in models. See section *Support for custom models*.
 
 Output related options:
 - `write_coords` (*bool*)
@@ -416,6 +422,52 @@ The easiest way to generate a compliant AOTI package is to use
 `torchani.compile.compile_model(...)` on your model, passing the supported
 configurations as arguments. Consult the `torchani` documentation for more info.
 
+*EXPERIMENTAL*: Python models, which don't need to be TorchScript- or
+AOTI-compilable, are run by a Python interpreter embedded in libtorchani. This requires
+building with `-DTORCHANI_SUPPORT_PYTHON_MODELS=ON` (default `OFF`), which in turn
+requires `TORCHANI_LINK_TO_PYTORCH_LIBS=ON`, since libtorchani then links to
+`libpython` and to the PyTorch wheel's `libtorch_python`. Amber must run with the same
+Python environment (e.g. the conda env) that was used to build. A Python model is a
+directory, passed as `model_type`:
+
+```
+my-model/
+    model.py  # Defines make_model
+    ...       # Anything else the model needs (weights, other modules)
+```
+
+`model.py` must define
+
+```python
+def make_model(device: str, dtype: torch.dtype) -> torch.nn.Module:
+    ...
+```
+
+The returned module must have the same methods as the TorchScript models described
+below (they don't need `@torch.jit.export`). `charge` is always a tensor, and all
+arguments except the leading positional ones (`species_coords`, or `species, coords,
+neighbor_idxs, shifts`, or the ML/MM coords and charges) are passed by name. Loading a
+model runs its `model.py`, so only load trusted models. Other `.py` files and packages
+in the model directory are importable by `model.py`, and their names must not clash
+with installed Python packages or with the files of other loaded Python models.
+These `&mlip` options only apply to Python models, and are ignored with a warning for
+other formats:
+
+- `skip_py_preamble` (*bool*)
+   By default `.to(device=device, dtype=dtype)` and `.eval()` are called on the model
+   returned by `make_model`. Set to `.true.` to skip both. Default is `.false.`
+- `do_torch_compile` (*bool*)
+   Compile the `forward`, `compute_from_external_neighbors`, `compute_mlmm` and
+   `compute_multipole_mlmm` methods of the model (those it has) with `torch.compile`.
+   Default is `.false.`
+- `torch_compile_mode` (*string*)
+   The `mode` passed to `torch.compile`: `"default"`, `"reduce-overhead"`,
+   `"max-autotune"` or `"max-autotune-no-cudagraphs"`. Requires `do_torch_compile`.
+   Default is `"default"`. On CUDA, `"reduce-overhead"` and `"max-autotune"` use CUDA
+   graphs, which record a new graph for each new input shape (e.g. each new number of
+   MM atoms within the cutoff in ML/MM), and `"max-autotune"` can take minutes to
+   compile.
+
 *ADVANCED*: The exact requirements are as follows. If the model outputs atomic energies,
 `forward` must have the following signature:
 
@@ -426,25 +478,23 @@ def forward(
     cell: Tensor | None = None,
     pbc: Tensor | None = None,
     charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
+    spin_mult: Tensor | None = None,  # Spin multiplicity per molec, shape: (1,) for single molec
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
-) -> tuple[Tensor, Tensor, Tensor]:
-    # Where the output is a tuple:
-    #     - species (shape: [1, atoms])
-    #     - energies (shape: [1,])
-    #     - atomic_charges (shape: [1, atoms])
+) -> dict[str, Tensor]:
+    # Where the output is a dict with:
+    #     - "energies" (shape: [1,])
+    #     - Optionally, extra outputs of the model, e.g.
+    #       "atomic_charges" (shape: [1, atoms]) or "atomic_volumes" (shape: [1, atoms])
     # For more information about the signature consult the `TorchANI 2` docs
     # and source code.
     ...
-    return species, energies, atomic_charges
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
-If the model doesn't support atomic charges, the signature is the same, but with
-`tuple[Tensor, Tensor]` instead, omitting `atomic_charges`.
-
-`charge` is an `int64` tensor with one entry per molecule (the first dim of the
-coords).
+`charge` and `spin_mult` are `int64` tensors with one entry per molecule (the first dim
+of the coords).
 
 If you want to use the internal Amber neighborlists, your should additionally
 support the following method:
@@ -458,15 +508,14 @@ def compute_from_external_neighbors(
     neighbor_idxs: Tensor,  # External neighbors
     shifts: Tensor,  # External shifts that have to be applied to wrap PBC
     charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
+    spin_mult: Tensor | None = None,  # Spin multiplicity per molec, shape: (1,) for single molec
     atomic: bool = False,
     ensemble_values: bool = False,
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
-) -> tuple[Tensor, Tensor | None]:
-    # Where the output is a tuple:
-    #     - energies (shape: [1,])
-    #     - atomic_charges (shape: [1, atoms]) (or None)
+) -> dict[str, Tensor]:
+    # Where the output is a dict, the same as for 'forward'
     ...
-    return energies, atomic_charges
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
 *EXPERIMENTAL*: If you want to use the 'switching' feature, the model should correctly
@@ -529,16 +578,14 @@ def compute_mlmm(
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,
-) -> Tensor:
-    # Where the output is:
-    #     - energies, in-vacuo + ML/MM coupling (shape: [1,])
+) -> dict[str, Tensor]:
+    # Where the output is a dict with:
+    #     - "energies", in-vacuo + ML/MM coupling (shape: [1,])
+    #     - Optionally, "atomic_charges" (shape: [1, atoms])
     ...
-    return energies
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
-If the model supports atomic charges, the signature is the same, but the output is
-the tuple `(energies, atomic_charges)` instead, with `atomic_charges` of shape
-`(1, atoms)` for a single molecule.
 `spin_mult`: `int64` tensor with the spin multiplicity of each molecule (default 1).
 `mm_cutoff`: float tensor with the MM cutoff of each molecule (default 0).
 

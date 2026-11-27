@@ -51,7 +51,8 @@ namespace compile {
 CompiledMlipModel::CompiledMlipModel(
     const std::string& path, torch::Device device, torch::ScalarType dtype
 )
-    : m_path{path},
+    : mlip::MlipModel{mlip::ModelFormat::PT2_AOTI},
+      m_path{path},
       m_device{device},
       m_dtype{dtype},
       m_supports_external_neighbors{
@@ -235,9 +236,6 @@ auto CompiledMlipModel::computeMlmm(
     const torch::Tensor& ml_coords,
     const torch::Tensor& mm_coords,
     const torch::Tensor& mm_charges,
-    const torch::Tensor& pairs_12,
-    const torch::Tensor& pairs_13,
-    const torch::Tensor& pairs_14,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
     int spin_mult,
@@ -256,9 +254,6 @@ auto CompiledMlipModel::computeMlmm(
         perMoleculeTensor(net_charge, ml_coords.size(0)),
         perMoleculeTensor(spin_mult, ml_coords.size(0)),
         torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
-        pairs_12,
-        pairs_13,
-        pairs_14
     };
     return runMlmmLoader(
         m_custom_mlmm_loader,
@@ -281,9 +276,6 @@ auto CompiledMlipModel::computeMultipoleMlmm(
     const torch::Tensor& mm_charges,
     const torch::Tensor& mm_dipoles,
     const torch::Tensor& mm_quads,
-    const torch::Tensor& pairs_12,
-    const torch::Tensor& pairs_13,
-    const torch::Tensor& pairs_14,
     const std::optional<torch::Tensor>& cell,
     int net_charge,
     int spin_mult,
@@ -304,9 +296,6 @@ auto CompiledMlipModel::computeMultipoleMlmm(
         perMoleculeTensor(net_charge, ml_coords.size(0)),
         perMoleculeTensor(spin_mult, ml_coords.size(0)),
         torch::full({ml_coords.size(0)}, mm_cutoff, ml_coords.options()),
-        pairs_12,
-        pairs_13,
-        pairs_14
     };
     return runMlmmLoader(
         m_multipole_mlmm_loader,

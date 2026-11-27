@@ -16,10 +16,26 @@ using MlipOutput = std::unordered_map<std::string, torch::Tensor>;
 
 enum class ModelFormat { TORCHSCRIPT, PT2_AOTI, PYTHON, AUTO };
 
+// Accepts "torchscript", "pt2-aoti", "python" and "auto"
+auto modelFormatFromString(const std::string& format) -> ModelFormat;
+auto modelFormatToString(ModelFormat format) -> std::string;
+
+// Only used by Python models, other formats ignore them with a warning
+struct ModelOptions {
+    bool skip_py_preamble = false;
+    bool do_torch_compile = false;
+    std::string torch_compile_mode = "default";
+};
+
 /**
  * Interface for a machine learning interatomic potential
  * */
 class MlipModel {
+    const ModelFormat m_format;
+
+    protected:
+    explicit MlipModel(ModelFormat format);
+
     public:
     static auto from_jit_model_path(
         const std::string& path, torch::Device device, torch::ScalarType dtype
@@ -28,14 +44,21 @@ class MlipModel {
         const std::string& path, torch::Device device, torch::ScalarType dtype
     ) -> std::unique_ptr<MlipModel>;
     static auto from_python_model_path(
-        const std::string& path, torch::Device device, torch::ScalarType dtype
+        const std::string& path,
+        torch::Device device,
+        torch::ScalarType dtype,
+        const ModelOptions& options = {}
     ) -> std::unique_ptr<MlipModel>;
     static auto from_model_path(
         const std::string& path,
         torch::Device device,
         torch::ScalarType dtype,
+        const ModelOptions& options = {},
         ModelFormat format = ModelFormat::AUTO
     ) -> std::unique_ptr<MlipModel>;
+
+    // The format the model was loaded as, never AUTO
+    auto format() const -> ModelFormat;
 
     virtual ~MlipModel() = default;
 
@@ -75,9 +98,6 @@ class MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell = std::nullopt,
         int net_charge = 0,
         int spin_mult = 1,
@@ -95,9 +115,6 @@ class MlipModel {
         const torch::Tensor& mm_charges,
         const torch::Tensor& mm_dipoles,
         const torch::Tensor& mm_quads,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell = std::nullopt,
         int net_charge = 0,
         int spin_mult = 1,

@@ -153,9 +153,6 @@ class _PolModelMLMM(torch.nn.Module):
     and "switching", and must be > switch_on for "switching". With these, MM atoms
     beyond the cutoff contribute zero. With "hard" all MM atoms that are passed in
     contribute, and mm_cutoff has no effect.
-
-    If scale_pairs is True, the (ml_idx, mm_idx) pairs passed as pairs_12 and pairs_13
-    to compute_mlmm don't interact, and the pairs_14 interactions are scaled by 0.5.
     """
 
     _znum_to_sae: Tensor
@@ -165,7 +162,6 @@ class _PolModelMLMM(torch.nn.Module):
         cutoff_kind: CutoffKind | str = CutoffKind.HARD,
         dsf_alpha: float | None = None,
         switch_on: float | None = None,
-        scale_pairs: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -185,7 +181,6 @@ class _PolModelMLMM(torch.nn.Module):
         self._cutoff_kind = cutoff_kind.value
         self._dsf_alpha = 0.0 if dsf_alpha is None else dsf_alpha
         self._switch_on = 0.0 if switch_on is None else switch_on
-        self._scale_pairs = scale_pairs
 
         self.model = PolModel(**kwargs)
         # Indexed by atomic number. Elements with no SAE are NaN, so that they can't
@@ -228,9 +223,6 @@ class _PolModelMLMM(torch.nn.Module):
         charge: Tensor | None = None,
         spin_mult: Tensor | None = None,
         mm_cutoff: Tensor | None = None,
-        pairs_12: Tensor | None = None,
-        pairs_13: Tensor | None = None,
-        pairs_14: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
         molecule_idxs: Tensor | None = None,
@@ -247,9 +239,7 @@ class _PolModelMLMM(torch.nn.Module):
         # Shapes: delta (C, N, M, 3), distances (C, N, M)
         delta = coords.unsqueeze(2) - mm_coords.unsqueeze(1)
         distances = torch.linalg.norm(delta, dim=-1)
-        pair_charges = self._pair_charges(
-            mm_charges, species.shape[1], pairs_12, pairs_13, pairs_14
-        )
+        pair_charges = mm_charges.unsqueeze(1)
         potential, efield = self._potential_and_efield(
             species, delta, distances, pair_charges, cutoff
         )
@@ -257,27 +247,6 @@ class _PolModelMLMM(torch.nn.Module):
             species, coords, efield, potential, charge, spin_mult
         )
         return energies
-
-    # Output shape: (C, N, M) if the pairs are scaled, otherwise (C, 1, M)
-    def _pair_charges(
-        self,
-        mm_charges: Tensor,
-        ml_atoms_num: int,
-        pairs_12: Tensor | None,
-        pairs_13: Tensor | None,
-        pairs_14: Tensor | None,
-    ) -> Tensor:
-        pair_charges = mm_charges.unsqueeze(1)
-        if not self._scale_pairs:
-            return pair_charges
-        pair_scale = mm_charges.new_ones((ml_atoms_num, mm_charges.shape[1]))
-        if pairs_14 is not None:
-            pair_scale[pairs_14[0], pairs_14[1]] = 0.5
-        if pairs_12 is not None:
-            pair_scale[pairs_12[0], pairs_12[1]] = 0.0
-        if pairs_13 is not None:
-            pair_scale[pairs_13[0], pairs_13[1]] = 0.0
-        return pair_charges * pair_scale
 
     # Output shapes: potential (C, N) in V, efield (C, N, 3) in V/Angstrom
     def _potential_and_efield(

@@ -27,17 +27,16 @@ namespace compile {
  *     (species, coords, neighbor_idxs, shifts, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
  * "custom_mlmm/<device>/<dtype>":
- *     (species, ml_coords, mm_coords, mm_charges, net_charge, spin_mult, mm_cutoff,
- *     pairs_12, pairs_13, pairs_14) -> (energies, forces, mm_forces, atomic_charges)
+ *     (species, ml_coords, mm_coords, mm_charges, net_charge, spin_mult, mm_cutoff)
+ *     -> (energies, forces, mm_forces, atomic_charges)
  * "multipole_mlmm/<device>/<dtype>":
  *     (species, ml_coords, mm_coords, mm_charges, mm_dipoles, mm_quads, net_charge,
- *     spin_mult, mm_cutoff, pairs_12, pairs_13, pairs_14)
+ *     spin_mult, mm_cutoff)
  *     -> (energies, forces, mm_forces, atomic_charges)
  *
  * where <device> is "cpu" or "cuda" and <dtype> is "f32" or "f64", net_charge
  * and spin_mult are int64 tensors of shape (molecules,), mm_cutoff is a float tensor
- * of shape (molecules,), and pairs_12, pairs_13, pairs_14 are int64 tensors of shape
- * (2, pairs). Models are loaded on first use.
+ * of shape (molecules,). Models are loaded on first use.
  * */
 class CompiledMlipModel : public mlip::MlipModel {
     using Loader = torch::inductor::AOTIModelPackageLoader;
@@ -112,9 +111,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -132,9 +128,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& mm_charges,
         const torch::Tensor& mm_dipoles,
         const torch::Tensor& mm_quads,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
