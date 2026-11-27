@@ -54,6 +54,7 @@ TEST_CASE("GlobalConfig from namelist file defaults", "[config]") {
     CHECK_FALSE(config.getBool("use_external_neighborlist"));
     CHECK(config.getInt("ml_charge") == 0);
     CHECK(config.getInt("ml_spin_mult") == 1);
+    CHECK(config.getInt("torch_num_threads") == 1);
     CHECK(config.getString("no_eval_mask").empty());
     std::filesystem::remove(path);
 }
@@ -80,12 +81,13 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         "  model_type = 'animbis', use_cuda_device = F, use_double_precision = F,\n"
         "  net_charge = -1, no_eval_mask = ':WAT', use_amber_neighborlist = T,\n"
         "  use_all_amber_nonbond = T, use_cuaev = F, model_index = 3, cuda_device_index = 1,\n"
-        "  ml_spin_mult = 2, extra_features_file_path = 'features.txt',\n"
+        "  ml_spin_mult = 2, extra_features_file_path = 'features.txt', torch_num_threads = 4,\n"
         "/\n"
         "&mlip model_type = 'ignored' /\n"
     );
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
     CHECK(config.getInt("cuda_device_index") == 1);
+    CHECK(config.getInt("torch_num_threads") == 4);
     CHECK(config.dtype() == torch::kFloat32);
     // Only mlip_set_no_eval_atoms_mask enables the no-eval atoms
     CHECK_FALSE(config.useNoEvalAtoms());
@@ -139,6 +141,11 @@ TEST_CASE("GlobalConfig from namelist file errors", "[config]") {
     writeTmpFile(
         "torchani_test_config_errors.in", "&mlip model_type = 'nutmeg-small::features.txt' /\n"
     );
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()),
+        config::config_validation_error
+    );
+    writeTmpFile("torchani_test_config_errors.in", "&mlip torch_num_threads = 0 /\n");
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string()),
         config::config_validation_error

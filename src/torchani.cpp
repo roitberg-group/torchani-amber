@@ -34,6 +34,7 @@
 #include "io.h"
 #include "mlip.h"
 #include "timing.h"
+#include "utils.h"
 
 // Globals:
 namespace {
@@ -896,6 +897,7 @@ void mlip_initialize(
                   << e.what() << std::endl;
         std::exit(2);
     }
+    torch::set_num_threads(global_config.getInt("torch_num_threads"));
 
     // (2) Disable TF32 and FP16 for accuracy
     disableTorchReducedFloatPrecisionOptimizations();
@@ -906,11 +908,11 @@ void mlip_initialize(
         try {
             loadTorchaniExtension(lib_name);
         } catch (const std::runtime_error& e) {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << e.what() << "\n"
-                      << "Models that support this extension will fail to load,\n"
-                      << "even if the extension is not called during execution"
-                      << std::endl;
+            utils::printWarning(
+                std::string{e.what()} + "\n"
+                + "Models that support this extension will fail to load,\n"
+                + "even if the extension is not called during execution"
+            );
         }
     }
 
@@ -973,13 +975,12 @@ void mlip_initialize(
     try {
         model->setStrategy(strat);
     } catch (const std::runtime_error& e) {
-        std::cerr << "WARNING (libtorchani)\n"
-                  << e.what() << "\n"
-                  << "The passed strategy was " << strat
-                  << ". The cuAEV extension will be disabled.\n"
-                  << " If you are not using a traditional ANI model with AEVs,"
-                  << " you can safely disregard this warning."
-                  << std::endl;
+        utils::printWarning(
+            std::string{e.what()} + "\n" + "The passed strategy was " + strat
+            + ". The cuAEV extension will be disabled.\n"
+            + " If you are not using a traditional ANI model with AEVs,"
+            + " you can safely disregard this warning."
+        );
     }
     createOutputFiles(global_config.hasMlmmConfig() ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
     last_written_md_step.reset();

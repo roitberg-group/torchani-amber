@@ -496,6 +496,7 @@ if(NOT INSIDE_AMBER)
             torchani_namelist_dump
             "${CMAKE_CURRENT_LIST_DIR}/tests/namelist_dump.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/src/fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/utils.cpp"
         )
         target_include_directories(torchani_namelist_dump PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
         target_compile_features(torchani_namelist_dump PRIVATE cxx_std_20)

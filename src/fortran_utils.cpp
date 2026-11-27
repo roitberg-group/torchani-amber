@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
-#include <iostream>
 #include <optional>
 #include <regex>
 #include <stdexcept>
@@ -12,6 +11,8 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#include "utils.h"
 
 namespace fortran_utils {
 
@@ -463,11 +464,11 @@ NamelistGroup parseGroup(
             );
         }
         if (alias_it != aliases.end()) {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << "Namelist key " << written_key << " in group &" << group.name
-                      << " (line " << lineNumber(text, key_start) << ") is deprecated."
-                      << " It is an alias of " << key << ", use " << key << " instead"
-                      << std::endl;
+            utils::printWarning(
+                "Namelist key " + written_key + " in group &" + group.name + " (line "
+                + std::to_string(lineNumber(text, key_start)) + ") is deprecated."
+                + " It is an alias of " + key + ", use " + key + " instead"
+            );
         }
         std::optional<NamelistType> type;
         if (!schema.empty()) {

@@ -20,6 +20,7 @@
 
 #include "constants.h"
 #include "fortran_utils.h"
+#include "utils.h"
 
 namespace config {
 
@@ -93,10 +94,6 @@ std::string configLine(const ConfigDict& config, const std::string& key) {
     }
     line << "\n";
     return line.str();
-}
-
-void printWarning(const std::string& msg) {
-    std::cerr << "WARNING (libtorchani)\n" << msg << std::endl;
 }
 
 bool isOneOf(const std::string& value, const std::vector<std::string>& options) {
@@ -270,7 +267,7 @@ std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
             "Valid integer mlmm_coupling values are 0, 1, 2 and 3 (deprecated)"
         );
     }
-    printWarning(
+    utils::printWarning(
         "mlmm_coupling = " + std::to_string(idx) + " is deprecated, use mlmm_coupling = '"
         + names[idx] + "' instead"
     );
@@ -297,6 +294,7 @@ auto defaultMlipConfig() -> ConfigDict {
         {"ml_spin_mult", {1L, NamelistType::INT}},
         {"model_index", {-1L, NamelistType::INT}},
         {"cuda_device_index", {0L, NamelistType::INT}},
+        {"torch_num_threads", {1L, NamelistType::INT}},
         {"use_cuda_device", {BUILT_WITH_CUDA, NamelistType::BOOL}},
         {"use_double_precision", {true, NamelistType::BOOL}},
         {"use_external_neighborlist", {false, NamelistType::BOOL}},
@@ -481,13 +479,13 @@ auto GlobalConfig::fromNamelistFile(
             throw std::runtime_error("No &mlip namelist found in " + abs_fpath);
         }
         if (file_has_ani) {
-            std::cerr << "WARNING (libtorchani)\n"
-                      << "The &ani namelist in " << abs_fpath << " is deprecated,"
-                      << " use &mlip instead" << std::endl;
+            utils::printWarning(
+                "The &ani namelist in " + abs_fpath + " is deprecated, use &mlip instead"
+            );
         }
         group_name = file_has_mlip ? "mlip" : "ani";
         if (source == "qmmm-and-mlip") {
-            printWarning(
+            utils::printWarning(
                 "Reading the ML/MM options from the &" + group_name + " and &qmmm"
                 " namelists is deprecated, use the &mlmm namelist instead"
             );
@@ -542,13 +540,13 @@ auto GlobalConfig::fromNamelistFile(
             "mlmm_coupling", normalizedMlmmCoupling(mlmm_config->value("mlmm_coupling"))
         );
         if (group.values.count("use_torch_coupling") > 0) {
-            printWarning(
+            utils::printWarning(
                 "use_torch_coupling is deprecated and has no effect, the ML/MM coupling is"
                 " always calculated by the MLIP Interface"
             );
         }
         if (group.values.count("write_charges_grad") > 0) {
-            printWarning(
+            utils::printWarning(
                 "write_charges_grad is deprecated and has no effect, the gradients of the"
                 " charges are no longer written"
             );
@@ -679,6 +677,9 @@ auto GlobalConfig::validateConfig(
     }
     if (mlip_config.getInt("write_interval") < 1) {
         throw config_validation_error("write_interval must be at least 1");
+    }
+    if (mlip_config.getInt("torch_num_threads") < 1) {
+        throw config_validation_error("torch_num_threads must be at least 1");
     }
     if (!mlmm_config) {
         return;
@@ -848,32 +849,32 @@ auto GlobalConfig::validateConfig(
     }
 
     if (usesInternalOptions(mlmm)) {
-        printWarning(
+        utils::printWarning(
             "You are using experimental or deprecated options, which will break in future"
             " releases. Results may be wrong, use at your own risk"
         );
     }
     if (!inv_pol_dielectric_is_default) {
-        printWarning(
+        utils::printWarning(
             "The recommended value of inv_pol_dielectric is 0.5, but "
             + std::to_string(mlmm.getDouble("inv_pol_dielectric")) + " was specified"
         );
     }
     if (use_qm_coupling && use_mlip_atomic_charges) {
-        printWarning(
+        utils::printWarning(
             "use_mlip_atomic_charges has no effect with use_qm_coupling = T, the QM/MM"
             " coupling is calculated by the helper QM program"
         );
     }
     if (!use_qm_coupling) {
         if (coupling_is_coulombic && use_mlip_atomic_charges) {
-            printWarning(
+            utils::printWarning(
                 "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
                 + "' is only tested with fixed topology charges"
             );
         }
         if (coupling_is_polarizable && !use_mlip_atomic_charges) {
-            printWarning(
+            utils::printWarning(
                 "You are using an untested protocol: mlmm_coupling = '" + mlmm_coupling
                 + "' is only tested with use_mlip_atomic_charges = T"
             );
@@ -911,13 +912,13 @@ auto GlobalConfig::validateAmberQmmmNamelist(
     }
 
     if (qmmm_int == 0) {
-        printWarning(
+        utils::printWarning(
             "You are using an untested protocol: qmmm_int = 0 turns off the QM/MM"
             " electrostatic coupling. You probably want qmmm_int = 1"
         );
     }
     if (qmmm_int == 5) {
-        printWarning(
+        utils::printWarning(
             "You are using an untested protocol: with qmmm_int = 5 the QM/MM electrostatic"
             " coupling is calculated by sander, with the mechanical embedding approximation"
             " and fixed QM-region charges read from the topology file. You probably want"
@@ -1021,6 +1022,7 @@ auto GlobalConfig::printInfo() const -> void {
              "use_double_precision",
              "use_cuaev",
              "cuda_device_index",
+             "torch_num_threads",
              "write_coords",
              "write_forces",
              "write_atomic_charges",

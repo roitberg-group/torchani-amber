@@ -211,6 +211,9 @@ There are also some advanced options:
    The index of the CUDA enabled GPU. If `use_cuda_device` is `.true.` then it can be
    set to a (0-indexed) device integer. By default it is set to `0`. It only makes sense
    to change this flag if you can access more than one CUDA enabled GPU in your machine.
+- `torch_num_threads` (*int*)
+   Number of threads PyTorch uses for intra-op parallelism on CPU
+   (`torch::set_num_threads`). Default is `1`.
 
 Output related options:
 - `write_coords` (*bool*)
