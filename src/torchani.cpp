@@ -954,7 +954,8 @@ void mlip_initialize(
         LOG(INFO) << "MLIP Model file name: " << jit_model_fname;
     } else {
         // Assume the path has been passed directly
-        model_path = model_type;
+        // Relative paths are resolved wrt the current working directory
+        model_path = std::filesystem::absolute(model_type);
     }
     LOG(INFO) << "MLIP Model full path: " << model_path.string();
 
@@ -978,7 +979,7 @@ void mlip_initialize(
             << "ERROR (libtorchani)\n"
             << "Could not load model correctly from path: " << model_path.string()
             << "\n"
-            << "Make sure the path is absolute, and correctly specified,\n"
+            << "Make sure the path is correctly specified,\n"
             << "or that you are correctly specifying one of the built-in models.\n"
             << "Also make sure the model has been correctly packaged\n"
             << std::endl;
