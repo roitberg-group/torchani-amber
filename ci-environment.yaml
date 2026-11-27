@@ -1,6 +1,6 @@
 # Minimal env for .github/workflows/ci.yaml (build libtorchani, JIT-compile models, run
 # the C++ tests). For development use environment.yaml
-name: ani-amber
+name: ani-amber-ci
 channels:
   - nodefaults
   - https://conda.anaconda.org/nvidia
@@ -23,8 +23,6 @@ dependencies:
   - conda-forge::tqdm
   - conda-forge::rich
   - conda-forge::huggingface_hub
-  - conda-forge::h5py  # torchani.potentials.dftd3
-  - conda-forge::ase  # torchani.units
 
   - pip:
     - --index-url https://download.pytorch.org/whl/cu130

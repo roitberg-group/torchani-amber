@@ -40,7 +40,7 @@ jobs:
         with:
           miniforge-version: latest
           environment-file: ci-environment.yaml
-          activate-environment: ani-amber
+          activate-environment: ani-amber-ci
           conda-remove-defaults: true
 
       - name: Install TorchANI
