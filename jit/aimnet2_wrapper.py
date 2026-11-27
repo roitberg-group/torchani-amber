@@ -3,15 +3,13 @@ import warnings
 from dataclasses import asdict
 from pathlib import Path
 import typing as tp
-from collections.abc import Sequence
 
 import ase
 import torch
 from torch import Tensor
 from torch.nn import Module
 
-from torchani.annotations import Device, DType
-from torchani.constants import ATOMIC_NUMBER
+from torchani._testing import make_molec
 from torchani.electro import ChargeNormalizer
 from torchani.units import HARTREE_TO_EV
 from torchani.tuples import SpeciesEnergiesAtomicCharges
@@ -371,54 +369,6 @@ def sort_model_inputs(inputs: dict[str, Tensor]) -> dict[str, Tensor]:
         inputs[f"nb_pad_mask{suffix}"] = torch.gather(mask, dim=1, index=sort_idxs)
         inputs[f"shifts{suffix}"] = torch.gather(shifts, dim=1, index=sort_shift_idxs)
     return dict(sorted(inputs.items()))
-
-
-class Molec(tp.NamedTuple):
-    coords: Tensor
-    atomic_nums: Tensor
-    cell: Tensor | None
-    pbc: Tensor | None
-
-
-def make_molec(
-    atoms: int,
-    cell_size: float = 10.0,
-    pbc: bool = False,
-    symbols: Sequence[str] = ("H", "C", "N", "O"),
-    seed: int | None = None,
-    device: Device = None,
-    dtype: DType = None,
-) -> Molec:
-    rng = torch.Generator(device="cpu")
-    rng.manual_seed(seed) if seed is not None else rng.seed()
-    if seed is not None:
-        torch.manual_seed(seed)
-    coords = torch.rand(
-        (1, atoms, 3),
-        generator=rng,
-        device="cpu", dtype=dtype,
-    ) * cell_size + 1.0e-3
-    idxs = torch.randint(
-        low=0,
-        high=len(symbols),
-        size=(atoms,),
-        generator=rng,
-        device="cpu",
-        dtype=torch.long,
-    )
-    idxs = idxs.to(device)
-    coords = coords.to(device)
-    atomic_num_kinds = torch.tensor(
-        list(map(ATOMIC_NUMBER.get, symbols)), device=device, dtype=torch.long
-    )
-    atomic_nums = atomic_num_kinds[idxs].view(1, atoms)
-    if pbc:
-        _pbc = torch.tensor([True, True, True], device=device, dtype=torch.bool)
-        _cell = torch.eye(3, device=device, dtype=dtype) * (cell_size + 2.0e-3)
-    else:
-        _pbc = None
-        _cell = None
-    return Molec(coords, atomic_nums, _cell, _pbc)
 
 
 def generate_aimnet2_wrapper():
