@@ -27,6 +27,9 @@ jobs:
       - name: Print disk space at start
         run: df -h /
 
+      - name: Disk space after cleanup
+        run: df -h /
+
       - name: Checkout code
         uses: actions/checkout@v7
         with:
