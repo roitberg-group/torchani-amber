@@ -389,7 +389,7 @@ auto defaultMlipConfig() -> ConfigDict {
         {"write_forces", {false, NamelistType::BOOL}},
         {"write_atomic_charges", {false, NamelistType::BOOL}},
         {"write_atomic_volumes", {false, NamelistType::BOOL}},
-        {"write_atomic_alphas", {false, NamelistType::BOOL}},
+        {"write_kz_atomic_alphas", {false, NamelistType::BOOL}},
         // The write_* outputs are written at MD steps that are multiples of write_interval
         {"write_interval", {1L, NamelistType::INT}},
         // Dir of the write_* output files, the current working directory if empty
@@ -829,6 +829,12 @@ auto GlobalConfig::validateConfig(
     if (mlip_config.getInt("torch_num_threads") < 1) {
         throw config_validation_error("torch_num_threads must be at least 1");
     }
+    if (mlip_config.getBool("write_kz_atomic_alphas")
+        && !(mlmm_config && mlmm_config->getBool("use_mlip_atomic_volumes"))) {
+        throw config_validation_error(
+            "write_kz_atomic_alphas = T requires use_mlip_atomic_volumes = T"
+        );
+    }
     if (!mlmm_config) {
         return;
     }
@@ -1183,7 +1189,7 @@ auto GlobalConfig::printInfo() const -> void {
             "write_forces",
             "write_atomic_charges",
             "write_atomic_volumes",
-            "write_atomic_alphas",
+            "write_kz_atomic_alphas",
             "write_interval",
         }
     ) {

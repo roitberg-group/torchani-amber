@@ -1530,6 +1530,7 @@ TEST_CASE("Atomic volumes output files", "[io]") {
             0,
             "  mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
             "  use_mlip_atomic_volumes = T, write_atomic_volumes = T,\n"
+            "  volume_kzs = 0.5, , , , , 2.0, write_kz_atomic_alphas = T,\n"
             "  output_dir = '"
                 + output_dir.string() + "',\n",
             "mlmm"
@@ -1561,6 +1562,14 @@ TEST_CASE("Atomic volumes output files", "[io]") {
     );
     CHECK_THAT(
         std::stod(lines[1]), Catch::Matchers::WithinRel(atomic_volumes[1], 1e-6)
+    );
+    lines = read_lines(output_dir / "kz_atomic_alphas_ml_region.mlip.dat");
+    REQUIRE(lines.size() == 3);
+    CHECK_THAT(
+        std::stod(lines[0]), Catch::Matchers::WithinRel(0.5 * atomic_volumes[0], 1e-6)
+    );
+    CHECK_THAT(
+        std::stod(lines[1]), Catch::Matchers::WithinRel(2.0 * atomic_volumes[1], 1e-6)
     );
     std::filesystem::remove_all(output_dir);
 }

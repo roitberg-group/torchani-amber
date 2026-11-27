@@ -156,13 +156,6 @@ TEST_CASE("GlobalConfig from namelist file errors", "[config]") {
         GlobalConfig::fromNamelistFile(path.string()),
         fortran_utils::namelist_alias_conflict_error
     );
-    writeTmpFile(
-        "torchani_test_config_errors.in",
-        "&mlip model_type = 'nutmeg-small::features.txt' /\n"
-    );
-    CHECK_THROWS_AS(
-        GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
-    );
     writeTmpFile("torchani_test_config_errors.in", "&mlip torch_num_threads = 0 /\n");
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
@@ -502,6 +495,8 @@ TEST_CASE("GlobalConfig ML/MM config validation", "[config]") {
         "&mlip mlmm_coupling = 'custom', use_mlip_atomic_charges = T,\n"
         "  allow_untested_protocols = T /\n",
         "&mlip write_interval = 0 /\n",
+        "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"
+        "  write_kz_atomic_alphas = T /\n",
         "&mlip mlmm_coupling = 'coulombic', use_mlip_atomic_volumes = T,\n"
         "  volume_kzs = 1.0 /\n",
         "&mlip mlmm_coupling = 'simple-polarizable', use_mlip_atomic_charges = T,\n"

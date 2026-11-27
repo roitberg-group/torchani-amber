@@ -406,7 +406,7 @@ struct OutputFiles {
     std::string mm_forces;  // Empty if there is no MM region
     std::string atomic_charges;
     std::string atomic_volumes;
-    std::string atomic_alphas;
+    std::string kz_atomic_alphas;
     std::string coords_comment;
 };
 
@@ -416,7 +416,7 @@ const OutputFiles OUTPUT_FILES{
     "",
     "atomic_charges.mlip.dat",
     "atomic_volumes.mlip.dat",
-    "atomic_alphas.mlip.dat",
+    "kz_atomic_alphas.mlip.dat",
     "MLIP: .xyz trajectory file",
 };
 
@@ -426,7 +426,7 @@ const OutputFiles MLMM_OUTPUT_FILES{
     "forces_mlmm_mm_region.mlip.dat",
     "atomic_charges_ml_region.mlip.dat",
     "atomic_volumes_ml_region.mlip.dat",
-    "atomic_alphas_ml_region.mlip.dat",
+    "kz_atomic_alphas_ml_region.mlip.dat",
     "ML/MM: .xyz trajectory file of the ML region",
 };
 
@@ -447,7 +447,7 @@ void createOutputFiles(const OutputFiles& files) {
         or global_config.getBool("write_forces")
         or global_config.getBool("write_atomic_charges")
         or global_config.getBool("write_atomic_volumes")
-        or global_config.getBool("write_atomic_alphas");
+        or global_config.getBool("write_kz_atomic_alphas");
     if (not writes_outputs) {
         return;
     }
@@ -471,8 +471,8 @@ void createOutputFiles(const OutputFiles& files) {
         if (global_config.getBool("write_atomic_volumes")) {
             io::createEmptyFile(outputPath(files.atomic_volumes));
         }
-        if (global_config.getBool("write_atomic_alphas")) {
-            io::createEmptyFile(outputPath(files.atomic_alphas));
+        if (global_config.getBool("write_kz_atomic_alphas")) {
+            io::createEmptyFile(outputPath(files.kz_atomic_alphas));
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
@@ -537,8 +537,17 @@ void writeOutputs(
         if (global_config.getBool("write_atomic_volumes")) {
             appendAtomicScalarsFrame(output, "atomic_volumes", files.atomic_volumes);
         }
-        if (global_config.getBool("write_atomic_alphas")) {
-            appendAtomicScalarsFrame(output, "atomic_alphas", files.atomic_alphas);
+        if (global_config.getBool("write_kz_atomic_alphas")) {
+            if (output.count("atomic_volumes") == 0) {
+                throw std::runtime_error(
+                    "write_kz_atomic_alphas = T, but the model doesn't predict"
+                    " atomic_volumes"
+                );
+            }
+            io::appendDatFrame(
+                outputPath(files.kz_atomic_alphas),
+                mlVolumeKzs() * output.at("atomic_volumes").view({-1})
+            );
         }
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
@@ -954,7 +963,8 @@ void mlip_initialize(
         LOG(INFO) << "MLIP Model file name: " << jit_model_fname;
     } else {
         // Assume the path has been passed directly
-        model_path = model_type;
+        // Relative paths are resolved wrt the current working directory
+        model_path = std::filesystem::absolute(model_type);
     }
     LOG(INFO) << "MLIP Model full path: " << model_path.string();
 
@@ -978,7 +988,7 @@ void mlip_initialize(
             << "ERROR (libtorchani)\n"
             << "Could not load model correctly from path: " << model_path.string()
             << "\n"
-            << "Make sure the path is absolute, and correctly specified,\n"
+            << "Make sure the path is correctly specified,\n"
             << "or that you are correctly specifying one of the built-in models.\n"
             << "Also make sure the model has been correctly packaged\n"
             << std::endl;
@@ -1413,6 +1423,14 @@ void mlip_calc_energy_atomic_charges_vjp(
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlip_calc_energy_atomic_charges_vjp must follow a call to"
                   << " mlip_calc_energy_atomic_charges_retain" << std::endl;
+        std::exit(2);
+    }
+    long retained_atoms_num = tensor_container.get("__retain_coords").size(1);
+    if (num_atoms != retained_atoms_num) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_calc_energy_atomic_charges_vjp was called with " << num_atoms
+                  << " atoms, but the retained graph has " << retained_atoms_num
+                  << " atoms" << std::endl;
         std::exit(2);
     }
     torch::Tensor ml_electrostatic_potential = tensor_utils::dblBufToTensor(

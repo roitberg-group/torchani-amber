@@ -4,6 +4,7 @@ module torchani
 use, intrinsic :: iso_fortran_env
 use, intrinsic :: iso_c_binding
 implicit none (type, external)
+private
 public :: &
     mlip_initialize, &
     mlip_print_config_info, &
@@ -159,7 +160,7 @@ subroutine mlip_set_ml_charge_and_spin_mult( &
 endsubroutine
 
 ! The outputs requested by the write_coords, write_forces, write_atomic_charges,
-! write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
+! write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
 ! mlip_update_md_step)
 subroutine internal_calc_energy_force( &
     num_atoms, &
@@ -184,7 +185,7 @@ subroutine internal_calc_energy_force( &
 endsubroutine
 
 ! The outputs requested by the write_coords, write_forces, write_atomic_charges,
-! write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
+! write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
 ! mlip_update_md_step)
 subroutine internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &

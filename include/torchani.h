@@ -92,7 +92,7 @@ void mlip_set_ml_charge_and_spin_mult(
 );
 
 // The outputs requested by the write_coords, write_forces, write_atomic_charges,
-// write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
+// write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
 // mlip_update_md_step)
 void mlip_calc_energy_force(
     int num_atoms,
@@ -107,7 +107,7 @@ void mlip_calc_energy_force(
 );
 
 // The outputs requested by the write_coords, write_forces, write_atomic_charges,
-// write_atomic_volumes and write_atomic_alphas options are appended to their files, every write_interval steps (see
+// write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
 // mlip_update_md_step)
 void mlip_calc_energy_force_from_external_neighbors(
     int num_atoms,
