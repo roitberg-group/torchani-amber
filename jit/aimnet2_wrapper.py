@@ -5,7 +5,6 @@ from pathlib import Path
 import typing as tp
 from collections.abc import Sequence
 
-import ase
 import torch
 from torch import Tensor
 from torch.nn import Module
@@ -459,12 +458,16 @@ def generate_aimnet2_wrapper():
     m = make_molec(100, pbc=True, seed=1234, cell_size=30.0, device=device)
     cut = 10.0
     dsf = 0.2
-    atoms = ase.Atoms(
-        positions=m.coords.cpu().numpy().squeeze(0),
-        numbers=m.atomic_nums.cpu().numpy().squeeze(0),
-        cell=m.cell.cpu().numpy(),
-        pbc=m.pbc.cpu().numpy(),
-    )
+    if torch.cuda.is_available() and AIMNET2CALC_AVAIL:
+        # Prepare for AIMNET2ASE tests, lazy ASE import to avoid
+        # pulling ase in during CI
+        import ase
+        atoms = ase.Atoms(
+            positions=m.coords.cpu().numpy().squeeze(0),
+            numbers=m.atomic_nums.cpu().numpy().squeeze(0),
+            cell=m.cell.cpu().numpy(),
+            pbc=m.pbc.cpu().numpy(),
+        )
     expect_pbc = {
         "b973c": {
             "ewald": torch.tensor([-4071.60068834]),
