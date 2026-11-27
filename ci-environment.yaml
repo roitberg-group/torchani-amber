@@ -1,0 +1,32 @@
+# Minimal env for .github/workflows/ci.yaml (build libtorchani, JIT-compile models, run
+# the C++ tests). For development use environment.yaml
+name: ani-amber
+channels:
+  - nodefaults
+  - https://conda.anaconda.org/nvidia
+  - https://conda.anaconda.org/conda-forge
+dependencies:
+  - conda-forge::python=3.11
+  - conda-forge::pip>=26.0
+  - conda-forge::cmake=3.31.1
+  - conda-forge::gxx_linux-64=12.2
+  - conda-forge::gcc_linux-64=12.2
+  - nvidia::cuda-toolkit=13.0
+
+  # Build the TorchANI Python package (pip install --no-build-isolation)
+  - conda-forge::setuptools>=75.6
+  - conda-forge::setuptools-scm>=8
+  - conda-forge::packaging>=25
+
+  # Imported when JIT-compiling the models (jit/jit.py)
+  - conda-forge::numpy
+  - conda-forge::tqdm
+  - conda-forge::rich
+  - conda-forge::huggingface_hub
+  - conda-forge::h5py  # torchani.potentials.dftd3
+  - conda-forge::ase  # torchani.units
+
+  - pip:
+    - --index-url https://download.pytorch.org/whl/cu130
+    - --extra-index-url https://pypi.python.org/simple
+    - torch==2.13.*

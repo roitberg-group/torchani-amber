@@ -42,7 +42,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          environment-file: environment.yaml
+          environment-file: ci-environment.yaml
           activate-environment: ani-amber
           conda-remove-defaults: true
 
