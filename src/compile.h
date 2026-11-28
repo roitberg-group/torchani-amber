@@ -9,7 +9,7 @@
 #include <torch/all.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace compile {
 
@@ -18,25 +18,25 @@ namespace compile {
  *
  * The package holds one model per device and precision for each computation:
  *
- * "single_point/<device>/<dtype>": (species, coords, net_charge)
+ * "single_point/<device>/<dtype>": (species, coords, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
- * "single_point_pbc/<device>/<dtype>": (species, coords, cell, pbc, net_charge)
+ * "single_point_pbc/<device>/<dtype>":
+ *     (species, coords, cell, pbc, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
  * "external_neighbors/<device>/<dtype>":
- *     (species, coords, neighbor_idxs, shifts, net_charge)
+ *     (species, coords, neighbor_idxs, shifts, net_charge, spin_mult)
  *     -> (energies, forces, atomic_charges)
  * "custom_mlmm/<device>/<dtype>":
- *     (species, ml_coords, mm_coords, mm_charges, net_charge, spin_mult, mm_cutoff,
- *     pairs_12, pairs_13, pairs_14) -> (energies, forces, mm_forces, atomic_charges)
+ *     (species, ml_coords, mm_coords, mm_charges, net_charge, spin_mult, mm_cutoff)
+ *     -> (energies, forces, mm_forces, atomic_charges)
  * "multipole_mlmm/<device>/<dtype>":
  *     (species, ml_coords, mm_coords, mm_charges, mm_dipoles, mm_quads, net_charge,
- *     spin_mult, mm_cutoff, pairs_12, pairs_13, pairs_14)
+ *     spin_mult, mm_cutoff)
  *     -> (energies, forces, mm_forces, atomic_charges)
  *
  * where <device> is "cpu" or "cuda" and <dtype> is "f32" or "f64", net_charge
  * and spin_mult are int64 tensors of shape (molecules,), mm_cutoff is a float tensor
- * of shape (molecules,), and pairs_12, pairs_13, pairs_14 are int64 tensors of shape
- * (2, pairs). Models are loaded on first use.
+ * of shape (molecules,). Models are loaded on first use.
  * */
 class CompiledMlipModel : public mlip::MlipModel {
     using Loader = torch::inductor::AOTIModelPackageLoader;
@@ -55,7 +55,8 @@ class CompiledMlipModel : public mlip::MlipModel {
 
     auto modelName(const std::string& prefix) const -> std::string;
     auto makeLoader(const std::string& prefix) const -> std::unique_ptr<Loader>;
-    auto perMoleculeTensor(int value, std::int64_t num_molecules) const -> torch::Tensor;
+    auto perMoleculeTensor(int value, std::int64_t num_molecules) const
+        -> torch::Tensor;
     auto runMlmmLoader(
         std::unique_ptr<Loader>& loader,
         const std::string& prefix,
@@ -66,8 +67,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput;
 
@@ -77,7 +76,8 @@ class CompiledMlipModel : public mlip::MlipModel {
     );
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void override;
-    auto readExtraFeaturesFromFile(const std::string& fpath) -> void override;
+    auto setExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_features)
+        -> void override;
     auto setStrategy(const std::string& strat) -> void override;
     auto supportsCustomMlmm() const -> bool override;
     auto supportsMultipoleMlmm() const -> bool override;
@@ -87,12 +87,11 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& coords,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeFromExternalNeighbors(
@@ -101,12 +100,11 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& neighborlist,
         const torch::Tensor& shifts,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMlmm(
@@ -114,9 +112,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -125,8 +120,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMultipoleMlmm(
@@ -136,9 +129,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         const torch::Tensor& mm_charges,
         const torch::Tensor& mm_dipoles,
         const torch::Tensor& mm_quads,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -147,8 +137,6 @@ class CompiledMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
 };

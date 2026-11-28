@@ -38,6 +38,7 @@ dependencies:
 
   ## Running torchani-amber/tests ##
   - conda-forge::netcdf4
+  - conda-forge::f90nml  # reference for the C++ namelist parser tests
   ## Running torchani/tests ##
   - conda-forge::black  # formatter
   - conda-forge::flake8  # linter

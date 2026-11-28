@@ -1,0 +1,18 @@
+ Typical Production MD NVE 
+ &cntrl
+   ntx=1, irest=0, 
+   imin=1, maxcyc=0
+   ntc=1, ntf=1 
+ !  nstlim=0,
+   ntpr=1, ntwx=1,
+   ntwr=1, 
+   cut=12.0
+   ntt=0, 
+   ntb=0, 
+   ntp=0,
+   ioutfm=1,
+ /
+ &ewald
+ eedmeth=4
+ vdwmeth=0
+ /

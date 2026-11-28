@@ -5,7 +5,7 @@ try:
     from rdkit import Chem
     from rdkit.Chem import rdPartialCharges
 except ImportError:
-    print(
+    sys.exit(
         "rdkit is required to generate nutmeg features but it could not be found."
         " Please 'conda install -c conda-forge rdkit' or 'pip install rdkit'"
     )

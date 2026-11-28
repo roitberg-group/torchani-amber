@@ -1,0 +1,30 @@
+! TorchANI-Amber test input (ML/MM)
+&cntrl
+    ifmlmm = 1  ! Use ML/MM
+    imin = 0  ! Dynamics
+    nstlim = 2000  ! Total num of dynamics steps (2 ps)
+    ntx = 1  ! Only read input coords, not vels
+    ntxo = 2  ! Dump restart as NetCDF 3
+    ioutfm = 1  ! Dump traj as NetCDF 3
+    ntwx = 1  ! Dump coords every step
+    ntpr = 1  ! Dump mdout 'logs' every step
+    dt = 0.001  ! Timestep (ps)
+    ntc = 1  ! Shake OFF
+    ntf = 1  ! Shake OFF
+    ig = 5541  ! Manual seed for reproducibility
+    cut = 8.0  ! Non-bonded neighborlist cutoff
+/
+&mlmm
+    ml_mask = ":1-3"  ! Select the first 3 residues as the ML region
+    mm_cutoff = 8.0  ! 15.0 is recommended, 8.0 used for this example
+    cuda_device_index = 0
+    use_cuda_device = .True.
+    use_cuaev = .True.
+    model_type = "ani2x"
+    use_double_precision = .False.
+    use_mlip_atomic_charges = .False.
+    mlmm_coupling = 'coulombic'
+    model_index = -1
+    use_external_neighborlist = .False.
+/
+! End TorchANI-Amber test input

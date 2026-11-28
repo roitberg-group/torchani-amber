@@ -3,13 +3,14 @@ import warnings
 from dataclasses import asdict
 from pathlib import Path
 import typing as tp
+from collections.abc import Sequence
 
-import ase
 import torch
 from torch import Tensor
 from torch.nn import Module
 
-from torchani._testing import make_molec
+from torchani.annotations import Device, DType
+from torchani.constants import ATOMIC_NUMBER
 from torchani.electro import ChargeNormalizer
 from torchani.units import HARTREE_TO_EV
 from torchani.tuples import SpeciesEnergiesAtomicCharges
@@ -124,10 +125,10 @@ class AimNet2Wrapper(torch.nn.Module):
         charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: Tensor | None = None,
+        molecule_idxs: Tensor | None = None,
     ) -> SpeciesEnergiesAtomicCharges:
         species, coords = species_coords
-        neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
+        neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, molecule_idxs)
         # Delegate call since torchscript does not support super().forward()
         return self._run_aimnet_forward(
             species,
@@ -236,22 +237,22 @@ class AimNet2Wrapper(torch.nn.Module):
         coords: Tensor,
         cell: Tensor | None,
         pbc: Tensor | None,
-        _molecule_idxs: Tensor | None,
+        molecule_idxs: Tensor | None,
     ) -> Neighbors:
         # Neighborlist is "complete" (duplicated)
         # edge_attrs is None for these models
         neigh_lr = self._nlist(self._cutoff_lr, species, coords.detach(), cell, pbc)
         # Experimental _molecule_idxs feature
-        if _molecule_idxs is not None:
+        if molecule_idxs is not None:
             if not (torch.jit.is_scripting() or torch.compiler.is_compiling()):
                 warnings.warn("molecule_idxs is experimental and subject to change")
             if coords.shape[0] != 1:
                 raise ValueError("molecule_idxs expects only one conformation")
-            if len(_molecule_idxs) != coords.shape[1]:
+            if len(molecule_idxs) != coords.shape[1]:
                 raise ValueError(
                     "molecule_idxs must be the same length as num atoms, if passed"
                 )
-            neigh_lr = discard_inter_molecule_pairs(neigh_lr, _molecule_idxs)
+            neigh_lr = discard_inter_molecule_pairs(neigh_lr, molecule_idxs)
         return neigh_lr
 
 
@@ -260,10 +261,14 @@ class ANIqAllowNonzeroCharge(ANIq):
 
     @staticmethod
     def _check_inputs(
-        elem_idxs: Tensor, coords: Tensor, charge: Tensor | None = None
+        elem_idxs: Tensor,
+        coords: Tensor | None,
+        charge: Tensor | None = None,
+        spin_mult: Tensor | None = None,
     ) -> None:
         assert elem_idxs.dim() == 2
-        assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
+        if coords is not None:
+            assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
 
 
 class AimNet2Mbis(AimNet2Wrapper):
@@ -305,7 +310,7 @@ class AimNet2Mbis(AimNet2Wrapper):
             for k, v in ani2x_state_dict.items()
             if k.startswith("aev_computer")
         }
-        charge_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=True)
+        charge_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=False)
         model.potentials["nnp"].aev_computer.load_state_dict(aev_state_dict)
         model.potentials["nnp"].charge_networks.load_state_dict(charge_state_dict)
         self._charge_model = model
@@ -318,10 +323,10 @@ class AimNet2Mbis(AimNet2Wrapper):
         charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: Tensor | None = None,
+        molecule_idxs: Tensor | None = None,
     ) -> SpeciesEnergiesAtomicCharges:
         species, coords = species_coords
-        neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
+        neighbors_lr = self._calc_neighbors(species, coords, cell, pbc, molecule_idxs)
         species, energies, _ = self._run_aimnet_forward(
             species,
             coords,
@@ -340,11 +345,10 @@ class AimNet2Mbis(AimNet2Wrapper):
         # Run charge model only
         atomic_charges = self._charge_model.compute_from_neighbors(
             elem_idxs,
-            coords,
             neighbors_lr,
-            charge,
-            atomic,
-            ensemble_values,
+            charge=charge,
+            atomic=atomic,
+            ensemble_values=ensemble_values,
         )["atomic_charges"]
         return SpeciesEnergiesAtomicCharges(species, energies, atomic_charges)
 
@@ -366,6 +370,59 @@ def sort_model_inputs(inputs: dict[str, Tensor]) -> dict[str, Tensor]:
         inputs[f"nb_pad_mask{suffix}"] = torch.gather(mask, dim=1, index=sort_idxs)
         inputs[f"shifts{suffix}"] = torch.gather(shifts, dim=1, index=sort_shift_idxs)
     return dict(sorted(inputs.items()))
+
+
+class Molec(tp.NamedTuple):
+    coords: Tensor
+    atomic_nums: Tensor
+    cell: Tensor | None
+    pbc: Tensor | None
+
+
+def make_molec(
+    atoms: int,
+    cell_size: float = 10.0,
+    pbc: bool = False,
+    symbols: Sequence[str] = ("H", "C", "N", "O"),
+    seed: int | None = None,
+    device: Device = None,
+    dtype: DType = None,
+) -> Molec:
+    rng = torch.Generator(device="cpu")
+    rng.manual_seed(seed) if seed is not None else rng.seed()
+    if seed is not None:
+        torch.manual_seed(seed)
+    coords = (
+        torch.rand(
+            (1, atoms, 3),
+            generator=rng,
+            device="cpu",
+            dtype=dtype,
+        )
+        * cell_size
+        + 1.0e-3
+    )
+    idxs = torch.randint(
+        low=0,
+        high=len(symbols),
+        size=(atoms,),
+        generator=rng,
+        device="cpu",
+        dtype=torch.long,
+    )
+    idxs = idxs.to(device)
+    coords = coords.to(device)
+    atomic_num_kinds = torch.tensor(
+        list(map(ATOMIC_NUMBER.get, symbols)), device=device, dtype=torch.long
+    )
+    atomic_nums = atomic_num_kinds[idxs].view(1, atoms)
+    if pbc:
+        _pbc = torch.tensor([True, True, True], device=device, dtype=torch.bool)
+        _cell = torch.eye(3, device=device, dtype=dtype) * (cell_size + 2.0e-3)
+    else:
+        _pbc = None
+        _cell = None
+    return Molec(coords, atomic_nums, _cell, _pbc)
 
 
 def generate_aimnet2_wrapper():
@@ -401,12 +458,17 @@ def generate_aimnet2_wrapper():
     m = make_molec(100, pbc=True, seed=1234, cell_size=30.0, device=device)
     cut = 10.0
     dsf = 0.2
-    atoms = ase.Atoms(
-        positions=m.coords.cpu().numpy().squeeze(0),
-        numbers=m.atomic_nums.cpu().numpy().squeeze(0),
-        cell=m.cell.cpu().numpy(),
-        pbc=m.pbc.cpu().numpy(),
-    )
+    if torch.cuda.is_available() and AIMNET2CALC_AVAIL:
+        # Prepare for AIMNET2ASE tests, lazy ASE import to avoid
+        # pulling ase in during CI
+        import ase
+
+        atoms = ase.Atoms(
+            positions=m.coords.cpu().numpy().squeeze(0),
+            numbers=m.atomic_nums.cpu().numpy().squeeze(0),
+            cell=m.cell.cpu().numpy(),
+            pbc=m.pbc.cpu().numpy(),
+        )
     expect_pbc = {
         "b973c": {
             "ewald": torch.tensor([-4071.60068834]),

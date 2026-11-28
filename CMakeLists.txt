@@ -8,7 +8,7 @@ project(
     LANGUAGES C CXX
     VERSION 0.7
     DESCRIPTION "Fortran, C and C++ interface to execute general MLIPs, with special support for the TorchANI library"
-    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
+    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber"
 )
 
 # Amber sets global compile definitions, flags, and other settings that would otherwise
@@ -87,6 +87,7 @@ option(TORCHANI_PREFER_CONDA_LIBS "Prefer libraries under $CONDA_PREFIX (the act
 option(TORCHANI_FORCE_SYSTEM_CUDATK "Hardcode CUDA Toolkit to /usr/local/cuda-<version>" OFF)
 option(TORCHANI_ALLOW_UNTESTED_COMPILERS "Allow compiling with an untested compiler" OFF)
 option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require its version, and its CUDA version to match the ones in this CMake config" ON)
+option(TORCHANI_SUPPORT_PYTHON_MODELS "Support Python models (a dir with a model.py), run by an embedded Python interpreter. Requires TORCHANI_LINK_TO_PYTORCH_LIBS" OFF)
 
 # NOTE: Amber doesn't ship NCCL and the CUDA Toolkit doesn't include it, but there is a
 # -DNCCL flag, which if used makes Amber attempt to find NCCL according to NCCL_HOME
@@ -98,6 +99,10 @@ option(TORCHANI_CHECK_PYTORCH_AND_CUDA_VERSIONS "If linking to PyTorch, require 
 # Validate options
 if(TORCHANI_LINK_TO_PYTORCH_LIBS AND TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH)
     Torchani_Msg_error("'TORCHANI_LINK_TO_PYTORCH_LIBS' is incompatible with 'TORCHANI_DOWNLOAD_AND_INSTALL_LIBTORCH'")
+endif()
+# Python models need libtorch_python, and the libtorch that "import torch" loads
+if(TORCHANI_SUPPORT_PYTHON_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
+    Torchani_Msg_error("'TORCHANI_SUPPORT_PYTHON_MODELS' requires 'TORCHANI_LINK_TO_PYTORCH_LIBS'")
 endif()
 if(NOT TORCHANI_EXTERNAL_LIBTORCH_ROOT STREQUAL "")
     if(TORCHANI_LINK_TO_PYTORCH_LIBS)
@@ -157,10 +162,9 @@ if(NOT TORCHANI_ALLOW_UNTESTED_COMPILERS)
 endif()
 
 # JIT: Options and flags
-option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" OFF)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in MLIP models" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
-option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
-option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
+option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all MLIP models, even if jit-compiled *.pt files with the expected names are found" OFF)
 option(TORCHANI_DOWNLOAD_JIT_MODELS "Download the JIT-compiled MLIPs that match the PyTorch/LibTorch version from Hugging Face, and install them into TORCHANI_MLIPS_INSTALL_DIR" ON)
 
 if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
@@ -260,12 +264,34 @@ Torchani_Msg_banner(
 
 if(INSIDE_AMBER)
     Torchani_AmberHelper_disable_torch_mkl_if_not_found(MKL_FOUND "${MKL_FOUND}")
+    Torchani_AmberHelper_set_torch_cuda_arch_list(AMBER_NVCC_FLAGS ${CUDA_NVCC_FLAGS})
 endif()
 find_package(Torch ${TORCHANI_REQUIRED_TORCH_VERSION} REQUIRED)
 
+if(TORCHANI_SUPPORT_PYTHON_MODELS)
+    Torchani_Msg_info("Python models are supported, libtorchani will embed a Python interpreter")
+    find_package(Python REQUIRED COMPONENTS Interpreter Development.Embed)
+    find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
+endif()
+
+# Must match torchani.paths.extensions_build_tag in the TorchANI Python package
+if(TORCHANI_BUILD_CUDA)
+    string(REGEX MATCH "^[0-9]+" CUDA_VERSION_MAJOR "${CMAKE_CUDA_COMPILER_VERSION}")
+    set(TORCHANI_EXTENSIONS_BUILD_TAG "${Torch_VERSION_MAJOR}.${Torch_VERSION_MINOR}-cu${CUDA_VERSION_MAJOR}")
+else()
+    set(TORCHANI_EXTENSIONS_BUILD_TAG "${Torch_VERSION_MAJOR}.${Torch_VERSION_MINOR}-cpu")
+endif()
+
 # *_INSTALL_DIR are all relative to the CMAKE_INSTALL_PREFIX
 set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for the C header")
-set(TORCHANI_LIBRARY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
+
+# NOTE: Technically, from the Linux File System Hierarchy, the convention should be
+# lib/<arch-id>/Torchani/<tag>, but it is lib/Torchani/<tag> for now, for simplicity.
+# TorchANI follows the same convention.
+set(TORCHANI_LIBRARY_INSTALL_DIR "" CACHE STRING "Install dir for libtorchani, cuaev and cell_list. Defaults to lib/${PROJECT_NAME}/<build tag>")
+if(TORCHANI_LIBRARY_INSTALL_DIR STREQUAL "")
+    set(TORCHANI_LIBRARY_INSTALL_DIR "lib/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}")
+endif()
 set(TORCHANI_MLIPS_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mlips/jit" CACHE STRING "Install dir for the downloaded JIT-compiled MLIPs")
 if(IS_ABSOLUTE "${TORCHANI_LIBRARY_INSTALL_DIR}" OR IS_ABSOLUTE "${TORCHANI_MLIPS_INSTALL_DIR}")
     Torchani_Msg_error("'TORCHANI_LIBRARY_INSTALL_DIR' and 'TORCHANI_MLIPS_INSTALL_DIR' must be relative to CMAKE_INSTALL_PREFIX")
@@ -275,6 +301,8 @@ endif()
 set(TORCHANI_LIBRARY_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_LIBRARY_INSTALL_DIR}")
 set(TORCHANI_MLIPS_BUILD_DIR "${PROJECT_BINARY_DIR}/${TORCHANI_MLIPS_INSTALL_DIR}")
 file(RELATIVE_PATH TORCHANI_MLIPS_RELATIVE_DIR "/${TORCHANI_LIBRARY_INSTALL_DIR}" "/${TORCHANI_MLIPS_INSTALL_DIR}")
+# The TorchANI Python package only loads the extensions if this file matches its tag
+file(WRITE "${TORCHANI_LIBRARY_BUILD_DIR}/_extensions_build_tag.txt" "${TORCHANI_EXTENSIONS_BUILD_TAG}")
 
 # Build both libcuaev, libcell_list, and libtorchani
 set(CELL_ROOT "${CMAKE_CURRENT_LIST_DIR}/submodules/torchani/torchani/csrc")
@@ -330,14 +358,18 @@ target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
 
 # The extensions are named as the TorchANI Python package expects them (cuaev.so,
-# cell_list.so). After installation, the TorchANI Python package finds them in
-# <prefix>/lib/Torchani, so they don't need to be built a second time by pip or
-# "ani build-extensions"
+# cell_list.so). The TorchANI Python package looks for them in
+# ~/.local/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so if they are installed with
+# the run-cmake default prefix (~/.local) they don't need to be built a second time by
+# pip or "ani build-extensions"
 set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
 set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
 
 file(GLOB TORCHANI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
+if(NOT TORCHANI_SUPPORT_PYTHON_MODELS)
+    list(REMOVE_ITEM TORCHANI_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/python_model.cpp")
+endif()
 add_library(torchani SHARED ${TORCHANI_SOURCES})
 target_compile_options(
     torchani
@@ -360,7 +392,9 @@ target_compile_definitions(
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
         TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
+        TORCHANI_HOMEPAGE_URL="${PROJECT_HOMEPAGE_URL}"
         $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+        $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
 )
 # libtorchani references none of the symbols of cuaev and cell_list, but loading them is
 # what registers their Torch ops. libtorchani dlopens them at init from its own dir
@@ -368,6 +402,9 @@ if(TORCHANI_USE_CONDA_LIBS)
     target_link_directories(torchani PRIVATE $ENV{CONDA_PREFIX}/lib)
 endif()
 target_link_libraries(torchani PRIVATE ${TORCH_LIBRARIES} ${CMAKE_DL_LIBS})
+if(TORCHANI_SUPPORT_PYTHON_MODELS)
+    target_link_libraries(torchani PRIVATE ${TORCH_PYTHON_LIBRARY} Python::Python)
+endif()
 add_dependencies(torchani torchani_cuaev torchani_cell_list)
 set_target_properties(
     torchani
@@ -431,21 +468,16 @@ set_target_properties(
 
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
-# NOTE: Disabling JIT optimizations during scripting has been confirmed to be a no-op
-# (the saved *.pt files are identical), since these flags only affect how torch *runs*
-# TorchScript graphs, not how it scripts or serializes them
-# TODO: Remove this in the future
 if(TORCHANI_JIT_COMPILE_MODELS)
-    Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
+    Torchani_Msg_info("Will attempt to JIT-compile MLIP models after building the extensions")
     Torchani_TorchScriptUtils_add_jit_compile_models_target(
         FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
-        DISABLE_OPTIMIZATIONS ${TORCHANI_JIT_DISABLE_OPTIMIZATIONS}
         AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
         EXTENSIONS_DIR $<TARGET_FILE_DIR:torchani_cuaev>
     )
     add_dependencies(torchani_jit_compile_models torchani_cuaev torchani_cell_list)
 else()
-    Torchani_Msg_info("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
+    Torchani_Msg_info("Skipping JIT-compilation of models, make sure to manually JIT-compile needed MLIP models")
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
@@ -459,11 +491,38 @@ if(NOT INSIDE_AMBER)
         list(APPEND CMAKE_MODULE_PATH "${CATCH2_ROOT}/extras")
         include(Catch)
 
-        add_executable(torchani_tests "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp")
-        target_include_directories(torchani_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani)
-        target_compile_definitions(torchani_tests PRIVATE TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}")
+        add_executable(
+            torchani_tests
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tests.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_config.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/tests/test_model_formats.cpp"
+        )
+        target_include_directories(
+            torchani_tests
+            PRIVATE
+                "${CMAKE_CURRENT_LIST_DIR}/include"
+                "${CMAKE_CURRENT_LIST_DIR}/src"
+        )
+        target_link_libraries(torchani_tests PRIVATE Catch2::Catch2WithMain torchani ${TORCH_LIBRARIES})
+        target_compile_definitions(
+            torchani_tests
+            PRIVATE
+                TORCHANI_MLIPS_BUILD_DIR="${TORCHANI_MLIPS_BUILD_DIR}"
+                $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
+                $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
+        )
         catch_discover_tests(torchani_tests)
+
+        # Used by tests/test_namelists.py to compare the namelist parser with f90nml
+        add_executable(
+            torchani_namelist_dump
+            "${CMAKE_CURRENT_LIST_DIR}/tests/namelist_dump.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/fortran_utils.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/utils.cpp"
+        )
+        target_include_directories(torchani_namelist_dump PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
+        target_compile_features(torchani_namelist_dump PRIVATE cxx_std_20)
     endif()
 endif()
 
@@ -507,7 +566,7 @@ endif()
 # Install C-interface include file
 install(
     FILES
-        "${CMAKE_CURRENT_LIST_DIR}/include/torchani.h"
+        "${CMAKE_CURRENT_LIST_DIR}/include/mlip_interface.h"
     DESTINATION "${TORCHANI_INCLUDE_INSTALL_DIR}"
 )
 
@@ -527,7 +586,7 @@ if(NOT INSIDE_AMBER)
 
     set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
     set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
-    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
+    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/mlip_interface.F90")
     configure_package_config_file(
         "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
         "${PKG_CONFIG_FILE_BLDTREE_PATH}"
@@ -558,7 +617,7 @@ if(NOT INSIDE_AMBER)
     # Install module file necessary for a portable fortran interface
     install(
         FILES
-            "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
+            "${CMAKE_CURRENT_LIST_DIR}/interface/mlip_interface.F90"
         DESTINATION "${DATA_INSTALL_DIR}/Fortran"
     )
 endif()

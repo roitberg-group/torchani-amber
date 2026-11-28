@@ -1,0 +1,9 @@
+ short md, npt ensemble, truncated octahedron, 
+ &cntrl
+   ntx=7, irest=1,
+   ntc=2, ntf=2, tol=0.0000001, 
+   ntb=2, ntp=1, taup=2.0, 
+   nstlim=10, ntt=3, gamma_ln=5.0,
+   ntpr=2, ntwr=10000, ene_avg_sampling=1,
+   dt=0.001, vlimit=10.0, ig=71277,
+ /

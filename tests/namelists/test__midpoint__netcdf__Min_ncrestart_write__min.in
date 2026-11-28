@@ -1,0 +1,10 @@
+Ala2 explicit solvent Min with netcdf restart
+ &cntrl
+   imin = 1, ntmin = 2, maxcyc = 100,
+   ntx = 1, irest = 0, ig = 1, ntxo = 2,
+   ntwx = 50, ioutfm = 1, ntpr = 10, ntwr = 50000, 
+   ntc = 2, ntf = 2, ntb = 1, cut = 8.0, 
+ &end
+ &ewald
+   nfft1=30, nfft2=30, nfft3=30,
+ &end

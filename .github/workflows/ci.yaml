@@ -5,14 +5,14 @@ on:
     inputs:
       cuda-archs:
         description: CUDA archs to build for (TORCH_CUDA_ARCH_LIST)
-        default: '8.9'
+        default: '8.9;9.0;10.0;10.3;12.0;12.1+PTX'
   pull_request:
   push:
     branches:
       - main
 
 env:
-  TORCH_CUDA_ARCH_LIST: ${{ inputs.cuda-archs || '8.9' }}
+  TORCH_CUDA_ARCH_LIST: ${{ inputs.cuda-archs || '8.9;9.0;10.0;10.3;12.0;12.1+PTX' }}
 
 jobs:
   build-and-test:
@@ -21,8 +21,11 @@ jobs:
       run:
         shell: bash -el {0}
     steps:
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Print number of processors
+        run: getconf _NPROCESSORS_ONLN
+
+      - name: Print disk space at start
+        run: df -h /
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -33,20 +36,24 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-version: latest
-          environment-file: environment.yaml
-          activate-environment: ani-amber
+          environment-file: ci-environment.yaml
+          activate-environment: ani-amber-ci
           conda-remove-defaults: true
 
       - name: Install TorchANI
         run: pip install --no-deps --no-build-isolation -v -e ./submodules/torchani
 
       - name: Build
-        run: ./run-cmake -I -T
+        run: ./run-cmake -I -T -a -x -j 4
 
       - name: Run tests on CPU
         env:
           TORCHANI_SKIP_CUDA_TESTS: 1
-        run: ./build/torchani_tests
+        run: ctest --test-dir build -j 4 --output-on-failure
+
+      - name: Print disk space at end
+        if: always()
+        run: df -h /
 
 concurrency:
   group: ani-amber-ci-${{ github.event.pull_request.number || github.sha }}

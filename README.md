@@ -118,7 +118,9 @@ More detailed installation instructions:
     By default the extensions are built for the GPUs detected in the current node. If
     you don't have access to a GPU currently (e.g. you are compiling in a node without
     a GPU and you want to afterwards run in a node with a GPU) use `./run-cmake -a` to
-    build for many GPU architectures (it will take significantly longer)
+    build for the GPU architectures in the `TORCH_CUDA_ARCH_LIST` env var (the conda
+    env sets it to many architectures on activation, which takes significantly longer
+    to build)
 5. Compile Amber from source. Amber will automatically find TorchANI-Amber and link it
    to both `pmemd` and `sander`. You can refer to [the amber
    website](https://ambermd.org/) for info on how to obtain and install Amber. You can
@@ -160,25 +162,20 @@ installed with `pip install torch --index-url https://download.pytorch.org/whl/c
 and the `nvidia::cuda-toolkit` dependency in `environment.yaml` is not needed. The
 resulting build can't use CUDA devices or the cuAEV CUDA kernels.
 
-When running on CPU, set `export OMP_NUM_THREADS=1` before calling Sander or Pmemd. By
-default LibTorch (and OpenBLAS, if Amber links against it) spawn one thread per core,
-and the resulting oversubscription can make dynamics more than 10x slower.
-
 ## Usage
 
 Familiarity with Amber, Pmemd and/or Sander is assumed in what follows.
 
-To use TorchANI-Amber to run full-ML simulations, you need three different
-namelists in your input file:
-- The usual `&cntrl` namelist, which *must have* the flag `iextpot = 2`, together
-  with the usual simulation configuration.
-- Second, the `&extpot` namelist, with the only setting `extprog = 'TORCHANI'`.
-- Third, the `&ani` namelist, with the actual `TorchANI` configuration.
+To use TorchANI-Amber to run full-ML simulations, you need two different namelists in
+your input file:
+- The usual `&cntrl` namelist, which *must have* the flag `imlip = 1`, together with
+  the usual simulation configuration.
+- Second, the `&mlip` namelist, with the actual `TorchANI` configuration.
 
-The `&ani` namelist supports the following basic options:
+The `&mlip` namelist supports the following basic options:
 - `model_type` (*string*)
    The neural network to choose. Possible values are `"ani1x"`, `"ani1ccx"`, `"ani2x"`,
-   `anidr`. For usage of custom models see section *Support for custom
+   `"ani2dr"`. For usage of custom models see section *Support for custom
    models*. Default is `"ani2x"` (case sensitive).
 - `use_double_precision` (*bool*)
    Determines whether the network runs using float64 parameters. Defaults to `.true.` We
@@ -188,13 +185,19 @@ The `&ani` namelist supports the following basic options:
    the flag is set to `.true.` and a CUDA enabled GPU can't be found, TorchANI-Amber
    will exit with an error. CUDA acceleration provides a very significant performance
    boost over CPU.
+- `ml_charge` (*int*)
+   Total charge of the system evaluated by the model. Default is `0`. Not all models
+   support charged systems.
+- `ml_spin_mult` (*int*)
+   Spin multiplicity of the system evaluated by the model. Default is `1`. Not all
+   models support spin multiplicities other than `1`.
 
 There are also some advanced options:
 - `use_cuaev` (*bool*)
    Whether to use the cuAEV compiled extension to accelerate potentials that support it.
-- `use_amber_neighborlist` (*bool*)
+- `use_external_neighborlist` (*bool*)
    Whether to let Sander | Pmemd handle the neighborlist calculation.
-- `use_all_amber_nonbond` (*bool*)
+- `use_external_nonbond` (*bool*)
    Whether to let Sander handle all inter-molecular non-bonded interactions. See
    section *Amber-NB configuration*. Default is `.false.`.
 - `model_index` (*int*)
@@ -206,18 +209,40 @@ There are also some advanced options:
    The index of the CUDA enabled GPU. If `use_cuda_device` is `.true.` then it can be
    set to a (0-indexed) device integer. By default it is set to `0`. It only makes sense
    to change this flag if you can access more than one CUDA enabled GPU in your machine.
+- `torch_num_threads` (*int*)
+   Number of threads PyTorch uses for intra-op parallelism on CPU
+   (`torch::set_num_threads`). Default is `1`.
+- `model_format` (*string*)
+   How a custom `model_type` path is loaded: `"auto"` (detected from the path),
+   `"torchscript"`, `"pt2-aoti"` or `"python"`. Default is `"auto"`. Can't be set for
+   built-in models. See section *Support for custom models*.
+
+Output related options:
+- `write_coords` (*bool*)
+   Dump the coordinates of the atoms evaluated by the model as a `.xyz` file
+- `write_forces` (*bool*)
+   Dump the forces calculated by the model as a `.dat` file
+- `write_atomic_charges` (*bool*)
+   Dump the atomic charges predicted by the model as a `.dat` file. Requires a
+   charge-predicting model
+- `write_interval` (*int*)
+   The outputs are written every `write_interval` MD steps. Default is `1`
+- `output_dir` (*string*)
+   Directory of the output files. Default is the current working directory
+
+The files are `coords.xyz`, `forces.mlip.dat` and `atomic_charges.mlip.dat`. For
+ML/MM, they are named `ml_region.xyz`,
+`forces_ml_region.mlip.dat` (and `forces_mlmm_mm_region.mlip.dat` for the MM atoms)
+and `atomic_charges_ml_region.mlip.dat`.
 
 An example `mdin` input file with the correct format:
 
 ```
 &cntrl
-    iextpot = 2  ! Required to run full-ML TorchANI-Amber
+    imlip = 1  ! Required to run full-ML TorchANI-Amber
     ! ... Add the rest of the Sander options here
 /
-&extpot
-    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
-/
-&ani
+&mlip
     model_type = "ani2x"
     use_double_precision = .true.
     use_cuda_device = .true.
@@ -234,7 +259,7 @@ electrostatics) are calculated by the force field. Molecules are defined by the
 `ATOMS_PER_MOLECULE` section of the topology file. This configuration is useful, for
 example, for memory-hungry models, or for offloading long range interactions to the FF.
 
-To use it, set `use_all_amber_nonbond = .true.` in the `&ani` namelist of a full-ML
+To use it, set `use_external_nonbond = .true.` in the `&mlip` namelist of a full-ML
 input. The other namelists stay the same.
 Pmemd is (currently) not supported for this configuration. Periodic boundary conditions
 (`igb = 0`) are required.
@@ -243,16 +268,13 @@ An example `mdin` input file for the Amber-NB configuration is, schematically:
 
 ```
 &cntrl
-    iextpot = 2  ! Required to run full-ML TorchANI-Amber
+    imlip = 1  ! Required to run full-ML TorchANI-Amber
     cut = 8.0  ! Cutoff for the inter-molecular FF non-bonded interactions
     ! ... Add the rest of the Sander options here
 /
-&extpot
-    extprog = "TORCHANI"  ! Required to run full-ML TorchANI-Amber
-/
-&ani
+&mlip
     model_type = "ani2x"
-    use_all_amber_nonbond = .true.  ! Required for the Amber-NB configuration
+    use_external_nonbond = .true.  ! Required for the Amber-NB configuration
     use_double_precision = .true.
     use_cuda_device = .true.
     use_cuaev = .true.
@@ -268,64 +290,79 @@ TorchANI-Amber is also integrated with the QM/MM Sander subsystem, which means y
 perform ML/MM simulations with it. Sander is *required* for this, Pmemd is not
 supported.
 
-If you want to run this kind of dynamics, **instead** of setting `iextpot = 2` and
-including the `&extpot` namelist, you should set `ifqnt = 1`, and include the `&qmmm`
-namelist.
+If you want to run this kind of dynamics, **instead** of setting `imlip = 1` and
+including the `&mlip` namelist, you should set `ifmlmm = 1` in the `&cntrl` namelist,
+and include the `&mlmm` namelist. The `&mlmm` namelist replaces both the `&mlip` and the
+`&qmmm` namelists: it accepts all the `&mlip` options, and Sander sets up its QM/MM
+subsystem from it. A `&qmmm` namelist can't be used together with `&mlmm`, and
+`ifmlmm = 1` can't be used together with `ifqnt = 1`.
 
-Many options can be used in the `&qmmm` namelist, but `qmmm_int = 1` (default),
-`qm_ewald = 0`, and `qm_theory = 'EXTERN'` (must be specified) are *required* to run
-ML/MM simulations with TorchANI-Amber. The default for `qm_ewald` is `1`, and it is only
-turned off automatically if `ntb = 0` or `use_pme = 0`, so it must be set explicitly
-for periodic systems. The QM region has no default, it must be selected with `qmmask`
-(or `iqmatoms`). `qmcut` defaults to the value of `cut` in the `&cntrl` namelist.
-
-The `&ani` namelist remains the same, with the following extra available options:
-
-Output related options:
-- `write_xyz` (bool)
-   Dump xyz coordinates of QM region as a `.xyz` file
-- `write_forces` (bool)
-   Dump forces acting on QM atoms as a `.dat` file
-- `write_charges` (bool)
-   Dump charges of the QM atoms as a `.dat` file
-- `write_charges_grad` (bool)
-   Dump charge derivatives w.r.t. coords of the QM atoms as a `.dat` file
+The `&mlmm` namelist supports, in addition to the `&mlip` options:
+- `ml_mask` (str)
+   Amber mask that selects the ML region (e.g. `':1'`). It has no default, if it is not
+   set the ML region is empty and Sander stops with an error.
+- `mm_cutoff = 15.0` (double)
+   Cutoff (in Angstrom) of the MM atoms that interact with the ML region. It can't be
+   set with `mlmm_coupling = 'mechanical-embedding'`.
+- `ml_shake = .true.` (bool)
+   Whether the bonds to hydrogen within the ML region are constrained by SHAKE (only if
+   SHAKE is turned on with `ntc > 1`).
+- `ml_charge = 0` and `ml_spin_mult = 1` (int)
+   Charge and spin multiplicity of the ML region. Sander also uses the charge (e.g. to
+   adjust the MM charges so that the total charge is preserved).
 
 ML/MM and electrostatic related options:
-- `use_torchani_charges` (bool)
+- `use_mlip_atomic_charges` (bool)
    **This option can only be specified if a charge-predicting model is selected.**
    Currently the `model_type`s that support it are `animbis` and `aimnet2-*-mbis-*`.
    Partial charges for the QM atoms will be predicted by TorchANI (MBIS atomic charges at
    the `wB97X/def2-TZVPP` level of theory, *in vacuo*, for ANI-mbis) in each step. These
    charges are geometry-dependent, and the derivatives w.r.t. coordinates are used to
    calculate their contribution to the forces.
-- `mlmm_coupling` (int = `0` or `1`)
-   Currently available are: `0` (*coulombic coupling*) and `1` (*simple polarizable*
-   coupling).
+- `mlmm_coupling` (str, case-insensitive)
+   Currently available are: `'coulombic'` (*coulombic coupling*, the default),
+   `'simple-polarizable'` (*simple polarizable* coupling), `'custom'` (custom ML/MM model,
+   see below), `'none'` (no ML/MM coupling) and `'mechanical-embedding'` (or `'me'`).
+   With `'mechanical-embedding'`, Sander calculates the ML/MM interaction with the force
+   field, using the topology charges of the ML region, and the MLIP only calculates the
+   energy of the ML region in vacuo. In this case `use_mlip_atomic_charges` and
+   `use_mlip_atomic_volumes` must be `.false.`, and periodic boundary conditions
+   (`igb = 0`) are required.
+- `mlmm_coupling = 'coulombic-geep'` and `mlmm_coupling = 'simple-polarizable-geep'`
+   Same as `'coulombic'` and `'simple-polarizable'`, but the MM charges are Gaussians
+   (GEEP), which modifies the electrostatic potential and field they generate at the ML
+   atoms. The width of each Gaussian depends on the element of the ML atom. Only
+   supported with the `&mlmm` namelist.
+- `geep_sigmas = 'builtin'` (str, or list of doubles)
+   GEEP widths, in bohr, only used with the GEEP couplings. `'builtin'` are the widths
+   used by pmemd (defined for H to Xe), and `'builtin-carbon'` uses the width of carbon
+   for all elements up to Xe. A list of doubles gives the width of each element, starting
+   at H (e.g. `geep_sigmas = 1.9, , , , , 2.8` sets H and C). Elements without a width
+   can't be in the ML region.
+- `geep_factor = 1.0` (double)
+   Factor that multiplies all the `geep_sigmas`, only used with the GEEP couplings.
 
 We recommend using one of the following two settings:
-- *mlmm_coupling = 1* and *use_torchani_charges=.true.* (variable nn-predicted charges)
-- *mlmm_coupling = 0* and *use_torchani_charges=.false.* (fixed topology charges)
+- *mlmm_coupling = 'simple-polarizable'* and *use_mlip_atomic_charges=.true.* (variable
+  nn-predicted charges)
+- *mlmm_coupling = 'coulombic'* and *use_mlip_atomic_charges=.false.* (fixed topology
+  charges)
 
 A template for the first setting (simple polarizable with variable charges) is:
 
 ```raw
 &cntrl
-    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ifmlmm = 1  ! Required for all ML/MM TorchANI-Amber dynamics
     ! ... Add extra simulation settings here
 /
-&qmmm
-    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
-    qmmask = ':1',  ! Select the first molecule as the QM-region
-    qmcut = 15.0  ! Recommended
-/
-&ani
+&mlmm
+    ml_mask = ':1'  ! Select the first molecule as the ML region
+    ml_charge = 0  ! Charge of the ML region
+    ml_spin_mult = 1  ! Spin multiplicity of the ML region
+    mm_cutoff = 15.0  ! Recommended
     model_type = 'animbis'  ! Charge-predicting model, 'animbis' or 'aimnet2-*-mbis-*'
-    use_torchani_charges = .true.  ! Use geometry dependent, nn-predicted charges
-    mlmm_coupling = 1  ! Simple polarizable coupling
-    use_torch_coupling = .True.  ! Accelerated torch coupling
+    use_mlip_atomic_charges = .true.  ! Use geometry dependent, nn-predicted charges
+    mlmm_coupling = 'simple-polarizable'  ! Simple polarizable coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
@@ -334,21 +371,15 @@ An example of the second (coulombic with fixed charges, i.e. mechanical embeddin
 
 ```raw
 &cntrl
-    ifqnt = 1  ! Required for all ML/MM TorchANI-Amber dynamics
+    ifmlmm = 1  ! Required for all ML/MM TorchANI-Amber dynamics
     ! ... Add extra simulation settings here
 /
-&qmmm
-    qm_theory = 'EXTERN'  ! Required for all ML/MM TorchANI-Amber dynamics
-    qm_ewald = 0  ! Required for Sander EXTERN QM/MM
-    qmmm_int = 1  ! Required, let TorchANI-Amber handle the ML/MM coupling
-    qmmask = ':1'  ! Select the first molecule as the QM-region
-    qmcut = 15.0  ! Recommended
-/
-&ani
+&mlmm
+    ml_mask = ':1'  ! Select the first molecule as the ML region
+    mm_cutoff = 15.0  ! Recommended
     model_type = 'ani2x'  ! Select any model
-    use_torchani_charges = .false.  ! Use fixed topology charges
-    mlmm_coupling = 0  ! Coulombic coupling
-    use_torch_coupling = .True.  ! Accelerated torch coupling
+    use_mlip_atomic_charges = .false.  ! Use fixed topology charges
+    mlmm_coupling = 'coulombic'  ! Coulombic coupling
     ! ... Add the rest of the TorchANI-Amber config options here
 /
 ```
@@ -374,7 +405,7 @@ limitations will be lifted in the future:
 ## Support for custom models
 
 Custom models are supported by passing a full path to the jit-compiled file to
-`model_type`. Custom models must fullfil some API requiremets.
+`model_type`. Custom models must fullfil some API requirements.
 
 The easiest way to fullfil requirements needed for usage of custom models is for your
 model to be an instance of `ANI` or `ANIq`. This is flexible, since they are highly
@@ -382,7 +413,7 @@ customizable.
 
 Alternatively, subclassing `ANI` or `ANIq` and overriding `compute_from_neighbors(...)`
 is also supported. This is more complex. Consult the `TorchANI 2` source code for a
-reference implementation of `compute_from_neighbors`. `use_cuaev` and `network_index`
+reference implementation of `compute_from_neighbors`. `use_cuaev` and `model_index`
 may not be supported in this case, depending on your model.
 
 *ADVANCED*: AOTInductor-compiled, exported models (PyTorch 2 compilation method) are supported
@@ -390,6 +421,52 @@ on an experimental basis. Support will improve as PyTorch's 2 support improves.
 The easiest way to generate a compliant AOTI package is to use
 `torchani.compile.compile_model(...)` on your model, passing the supported
 configurations as arguments. Consult the `torchani` documentation for more info.
+
+*EXPERIMENTAL*: Python models, which don't need to be TorchScript- or
+AOTI-compilable, are run by a Python interpreter embedded in libtorchani. This requires
+building with `-DTORCHANI_SUPPORT_PYTHON_MODELS=ON` (default `OFF`), which in turn
+requires `TORCHANI_LINK_TO_PYTORCH_LIBS=ON`, since libtorchani then links to
+`libpython` and to the PyTorch wheel's `libtorch_python`. Amber must run with the same
+Python environment (e.g. the conda env) that was used to build. A Python model is a
+directory, passed as `model_type`:
+
+```
+my-model/
+    model.py  # Defines make_model
+    ...       # Anything else the model needs (weights, other modules)
+```
+
+`model.py` must define
+
+```python
+def make_model(device: str, dtype: torch.dtype) -> torch.nn.Module:
+    ...
+```
+
+The returned module must have the same methods as the TorchScript models described
+below (they don't need `@torch.jit.export`). `charge` is always a tensor, and all
+arguments except the leading positional ones (`species_coords`, or `species, coords,
+neighbor_idxs, shifts`, or the ML/MM coords and charges) are passed by name. Loading a
+model runs its `model.py`, so only load trusted models. Other `.py` files and packages
+in the model directory are importable by `model.py`, and their names must not clash
+with installed Python packages or with the files of other loaded Python models.
+These `&mlip` options only apply to Python models, and are ignored with a warning for
+other formats:
+
+- `skip_py_preamble` (*bool*)
+   By default `.to(device=device, dtype=dtype)` and `.eval()` are called on the model
+   returned by `make_model`. Set to `.true.` to skip both. Default is `.false.`
+- `do_torch_compile` (*bool*)
+   Compile the `forward`, `compute_from_external_neighbors`, `compute_mlmm` and
+   `compute_multipole_mlmm` methods of the model (those it has) with `torch.compile`.
+   Default is `.false.`
+- `torch_compile_mode` (*string*)
+   The `mode` passed to `torch.compile`: `"default"`, `"reduce-overhead"`,
+   `"max-autotune"` or `"max-autotune-no-cudagraphs"`. Requires `do_torch_compile`.
+   Default is `"default"`. On CUDA, `"reduce-overhead"` and `"max-autotune"` use CUDA
+   graphs, which record a new graph for each new input shape (e.g. each new number of
+   MM atoms within the cutoff in ML/MM), and `"max-autotune"` can take minutes to
+   compile.
 
 *ADVANCED*: The exact requirements are as follows. If the model outputs atomic energies,
 `forward` must have the following signature:
@@ -401,25 +478,23 @@ def forward(
     cell: Tensor | None = None,
     pbc: Tensor | None = None,
     charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
+    spin_mult: Tensor | None = None,  # Spin multiplicity per molec, shape: (1,) for single molec
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
-) -> tuple[Tensor, Tensor, Tensor]:
-    # Where the output is a tuple:
-    #     - species (shape: [1, atoms])
-    #     - energies (shape: [1,])
-    #     - atomic_charges (shape: [1, atoms])
+) -> dict[str, Tensor]:
+    # Where the output is a dict with:
+    #     - "energies" (shape: [1,])
+    #     - Optionally, extra outputs of the model, e.g.
+    #       "atomic_charges" (shape: [1, atoms]) or "atomic_volumes" (shape: [1, atoms])
     # For more information about the signature consult the `TorchANI 2` docs
     # and source code.
     ...
-    return species, energies, atomic_charges
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
-If the model doesn't support atomic charges, the signature is the same, but with
-`tuple[Tensor, Tensor]` instead, omitting `atomic_charges`.
-
-`charge` is an `int64` tensor with one entry per molecule (the first dim of the
-coords).
+`charge` and `spin_mult` are `int64` tensors with one entry per molecule (the first dim
+of the coords).
 
 If you want to use the internal Amber neighborlists, your should additionally
 support the following method:
@@ -433,15 +508,14 @@ def compute_from_external_neighbors(
     neighbor_idxs: Tensor,  # External neighbors
     shifts: Tensor,  # External shifts that have to be applied to wrap PBC
     charge: Tensor | None = None,  # Net charge per molec, shape: (1,) for single molec
+    spin_mult: Tensor | None = None,  # Spin multiplicity per molec, shape: (1,) for single molec
     atomic: bool = False,
     ensemble_values: bool = False,
     molecule_idxs: Tensor | None = None,  # Can be used if your mlip needs
-) -> tuple[Tensor, Tensor | None]:
-    # Where the output is a tuple:
-    #     - energies (shape: [1,])
-    #     - atomic_charges (shape: [1, atoms]) (or None)
+) -> dict[str, Tensor]:
+    # Where the output is a dict, the same as for 'forward'
     ...
-    return energies, atomic_charges
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
 *EXPERIMENTAL*: If you want to use the 'switching' feature, the model should correctly
@@ -450,9 +524,10 @@ an extra dim prepended in this case, which indexes the models in the network.
 
 ## Tests
 
-To run the `Amber` integration tests run `pytest -v ./tests/test_sander.py` (a working Sander
-binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
-and Full-ML Amber integrations.
+To run the `Amber` integration tests run `pytest -v ./tests/test_amber_integration.py`
+(working `sander` and `pmemd` binaries are assumed to be on `PATH`). This will run CPU
+and CUDA tests for the ML/MM and Full-ML Amber integrations. If the
+`TORCHANI_SKIP_CUDA_TESTS` env var is set, the CUDA tests are skipped.
 
 ## Debug logging
 
@@ -485,7 +560,7 @@ examples see the [EMLE-engine repository](https://github.com/chemle/emle-engine)
 and the corresponding [EMLE-engine article](https://pubs.acs.org/jctcce/article/20/11/4514/169286/emle-engine-A-Flexible-Electrostatic-Machine).
 
 Custom ML/MM models, which calculate both the in-vacuo energy and the ML/MM coupling
-internally, are supported by setting `mlmm_coupling = 2`. Forces on the ML and MM
+internally, are supported by setting `mlmm_coupling = 'custom'`. Forces on the ML and MM
 regions are calculated by autograd from the returned energy. The model must support the
 following method:
 
@@ -504,20 +579,21 @@ def compute_mlmm(
     atomic: bool = False,  # Controls atomic energy decomposition
     ensemble_values: bool = False,  # Controls whether the model outputs ensemble values
     molecule_idxs: Tensor | None = None,
-) -> Tensor:
-    # Where the output is:
-    #     - energies, in-vacuo + ML/MM coupling (shape: [1,])
+) -> dict[str, Tensor]:
+    # Where the output is a dict with:
+    #     - "energies", in-vacuo + ML/MM coupling (shape: [1,])
+    #     - Optionally, "atomic_charges" (shape: [1, atoms])
     ...
-    return energies
+    return {"energies": energies, "atomic_charges": atomic_charges}
 ```
 
-If the model supports atomic charges, the signature is the same, but the output is
-the tuple `(energies, atomic_charges)` instead, with `atomic_charges` of shape
-`(1, atoms)` for a single molecule.
 `spin_mult`: `int64` tensor with the spin multiplicity of each molecule (default 1).
 `mm_cutoff`: float tensor with the MM cutoff of each molecule (default 0).
 
 Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
-energies. Currently Amber always calls `compute_mlmm` with `cell = None`,
-`pbc = None`, `spin_mult = 1`, `mm_cutoff = 0`, `atomic = False` and
-`ensemble_values = False`.
+energies. `charge` and `spin_mult` are set from `ml_charge` and `ml_spin_mult`. `cell`
+is only passed (with `pbc` all `True`) if the md engine passes a cell to
+`mlip_calc_energy_force_mlmm`.
+
+Amber always calls `compute_mlmm` with `cell = None`, `pbc = None`, `mm_cutoff = 0`,
+`atomic = False` and `ensemble_values = False`.

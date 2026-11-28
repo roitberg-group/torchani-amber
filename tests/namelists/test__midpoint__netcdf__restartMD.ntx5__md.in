@@ -1,0 +1,13 @@
+Ala2 explicit solvent MD using text restart
+&cntrl
+   imin = 0, nstlim = 100, dt=0.001, 
+   ntx = 5, irest = 1, ig = 1, ntxo = 1, 
+   ntwx = 50, ioutfm = 1, ntpr = 10, ntwr = 50000, ntwe=10,
+   iwrap = 0, nscm = 0,
+   ntc = 2, ntf = 2, ntb = 1, cut = 8.0, 
+   ntt = 1, tautp = 5.0, temp0 = 300.0, tempi = 300.0,
+   ntp = 0, taup = 5.0,
+&end
+&ewald
+   nfft1 = 30, nfft2 = 30, nfft3 = 30
+&end

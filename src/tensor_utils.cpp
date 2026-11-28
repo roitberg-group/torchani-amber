@@ -19,41 +19,34 @@ namespace tensor_utils {
 // coords must be set to require grad, since automatic differentiation is
 // used to get the forces
 torch::Tensor dblBufToCoordsTensor(
-    const config::GlobalConfig& config,
-    double coords_buf[][3],
-    long num_atoms
+    const config::GlobalConfig& config, double coords_buf[][3], long num_atoms
 ) {
     // torchani needs an extra dimension as "batch dimension"
-    return dblBufToTensor(config, coords_buf, {num_atoms, 3}).unsqueeze(0).requires_grad_(true);
+    return dblBufToTensor(config, coords_buf, {num_atoms, 3})
+        .unsqueeze(0)
+        .requires_grad_(true);
 }
 
 torch::Tensor dblBufToShiftsTensor(
-    const config::GlobalConfig& config,
-    double shifts_buf[][3],
-    long num_neighbors
+    const config::GlobalConfig& config, double shifts_buf[][3], long num_neighbors
 ) {
     return dblBufToTensor(config, shifts_buf, {num_neighbors, 3}).requires_grad_(true);
 }
 
 torch::Tensor dblBufToCellTensor(
-    const config::GlobalConfig& config,
-    double cell_buf[][3]
+    const config::GlobalConfig& config, double cell_buf[][3]
 ) {
     return dblBufToTensor(config, cell_buf, {3, 3});
 }
 
 torch::Tensor intBufToNeighborlistTensor(
-    const config::GlobalConfig& config,
-    int neighborlist_buf[],
-    long num_neighbors
+    const config::GlobalConfig& config, int neighborlist_buf[], long num_neighbors
 ) {
     return intBufToI64Tensor(config, neighborlist_buf, {2, num_neighbors});
 }
 
 torch::Tensor dblBufToTensor(
-    const config::GlobalConfig& config,
-    void* buf,
-    const std::vector<long> shape_vec
+    const config::GlobalConfig& config, void* buf, const std::vector<long> shape_vec
 ) {
     torch::IntArrayRef shape{shape_vec.data(), shape_vec.size()};
     torch::TensorOptions options = torch::TensorOptions().dtype(torch::kDouble);
@@ -62,9 +55,7 @@ torch::Tensor dblBufToTensor(
 }
 
 torch::Tensor intBufToI64Tensor(
-    const config::GlobalConfig& config,
-    void* buf,
-    const std::vector<long> shape_vec
+    const config::GlobalConfig& config, void* buf, const std::vector<long> shape_vec
 ) {
     torch::IntArrayRef shape{shape_vec.data(), shape_vec.size()};
     torch::TensorOptions options = torch::TensorOptions().dtype(torch::kInt);

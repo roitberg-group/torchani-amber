@@ -1,0 +1,16 @@
+REMD test with 4 replicas
+ &cntrl
+        imin = 0, nstlim = 100,			!MD for 100 steps
+        irest=1,ntx = 5, 			!read coordinates and velocities
+	tempi = 0.0, temp0 = 325.0,		!initial and target temperature
+        ischeme= 1,				!"LFMiddle" scheme
+	ithermostat = 1,			!Langevin thermostat
+	therm_par = 1.0,			!thermostat parameter,in 1/ps
+ 	dt = 0.002,				!time step, in ps
+	ig=6666,				!random seed
+        ntc = 2, ntf = 2,			!SHAKE hydrogen atoms
+        ntwx = 50,  ntwr = 50, ntpr = 50,	!output setting 	
+	ntb=0,					!no periodicity
+        cut = 99.0,				!non bond cut off
+        numexchg=5, 				!exchange frequency
+ &end

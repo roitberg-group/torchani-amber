@@ -1,0 +1,31 @@
+Minimize
+ &cntrl
+  imin=1,
+  ntx=1,
+  igb=8,
+  irest=0,
+  maxcyc=2000,
+  ncyc=1000,
+  ntpr=100,
+  ntwx=0,
+  cut=9999.0,
+  gbion=3,
+  nmropt=1,
+  intdiel=1,
+  gi_coef_1_n=0.05,
+  gi_coef_2_pn=0.05,
+  intdiel_ion_1_p=54,
+  intdiel_ion_1_n=10,
+  intdiel_ion_2_pp=54,
+  intdiel_ion_2_pn=10,
+  intdiel_ion_2_nn=10,
+ /
+ &wt type='END',
+ /
+DISANG=disang_NaCl.txt
+&end
+RESTRAIN DNA
+0.01
+RES 1 24
+END
+END

@@ -1,0 +1,32 @@
+Test input file
+&cntrl
+  imin = 1,
+  maxcyc = 1,
+  ntpr = 1,
+  ntwx = 1,
+  ioutfm = 1,
+  cut = 8.0,
+  ntb = 1,
+  ibelly=1,
+  bellymask='@O,H1,H2',
+!  noshakemask='@O,H1,H2',
+!  jfastw=4
+  ntc=2,
+  ntf=2,
+/
+&music
+  debug = true,
+  do_angle = true,
+  s_ang = 1.0,
+  r_ang = 2.0,
+  a1 = 1.9864,
+  a2 = 0.4790,
+  a3 = -0.5470,
+  a4 = 0.2400,
+  b_h_surf = 308.342,
+  do_gauss = true,
+  vs_atom_type = 'VS',
+  eps_gauss = 5.0,
+  bxy_gauss = 2.0, 
+  bz_gauss = 0.5
+/

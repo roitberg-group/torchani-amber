@@ -1,0 +1,26 @@
+NMPIMD: NPT simulation of liquid water
+
+&cntrl
+
+    ipimd = 2, nstlim = 10   ! NMPIMD for 10 steps
+    ntx = 5, irest = 0       ! read coordinates
+                             ! and run as a new simulation. 
+    temp0 = 300, tempi = 300 ! target and initial temperature
+    dt = 0.001               ! time step in ps
+    cut = 7.0                ! non-bond cut off
+    ischeme = 1,             !! leapfrog middle scheme
+    ithermostat = 1,         !! Langevin thermostat
+    therm_par = 5.0          !! thermostat parameter, in 1/ps
+                             !! (friction coefficient for Langevin thermostat)
+    therm_vol = 2.0          !! barostat parameter, in 1/ps
+                             !! (friction coefficient for MTTK-Langevin barostat)
+    ntb = 2,                 ! constant pressure simulation
+    ntp = 1,                 ! md with isotropic position scaling
+    barostat = 1,            ! using MTTK-Langevin equation
+                             ! only work as MTTK when using PIMD
+    taup = 2.0,              ! pressure relaxation time, in ps
+    pres0 = 1.013,           ! reference external pressure, in bar
+    ntc = 1                  ! no constraints, default
+    ntpr=1, ntwr=5, ntwx=5   ! output settings 
+
+/

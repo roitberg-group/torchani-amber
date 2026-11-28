@@ -3,18 +3,24 @@
 usage() { echo "Usage: [OPTION]...
     Configure, Generate buildsystem, build, run tests, and install TorchANI MLIP Interface.
 
-    All options are boolean flags.
+    All options are boolean flags, except -j.
+    -j N Build and run tests with N parallel jobs (default: CMAKE_BUILD_PARALLEL_LEVEL and
+         CTEST_PARALLEL_LEVEL if set, otherwise the number of processors, at most 8)
     -B Don't build or install, only configure and generate
     -I Don't install, only configure, generate and build
     -T Don't run tests after build / installation
     -P Don't auto detect and link to PyTorch, download and install LibTorch instead
     -N Don't use Conda libraries
     -c Build CPU-only (requires a CPU-only PyTorch or LibTorch)
+    -x Support Python models, run by an embedded Python interpreter (requires PyTorch,
+       incompatible with -P)
+    -a Build for the CUDA archs in the TORCH_CUDA_ARCH_LIST env var (e.g.
+       TORCH_CUDA_ARCH_LIST=\"8.9;10.0\"), instead of auto detecting them
     -g Build in Debug configuration
     -h Print this message
 
-    CUDA archs are auto detected by default, set the TORCH_CUDA_ARCH_LIST env var
-    to override them (e.g. TORCH_CUDA_ARCH_LIST=\"8.9;10.0\")" 1>&2; }
+    CUDA archs are auto detected by default (the GPUs of this machine). Conda envs with
+    cuda-nvcc set TORCH_CUDA_ARCH_LIST on activation, it is only used with -a" 1>&2; }
 
 use_conda_libs=ON
 build_cuda=ON
@@ -23,11 +29,16 @@ use_pytorch_libs=ON
 run_tests=1
 cmake_build=1
 cmake_install=1
-torch_cuda_archs="${TORCH_CUDA_ARCH_LIST:-}"
+use_env_cuda_archs=0
+support_python_models=OFF
 cmake_build_type="Release"
 prefix="$HOME/.local/"
-while getopts "TIBPNcgh" o; do
+parallel_jobs=""
+while getopts "TIBPNcaxghj:" o; do
     case "${o}" in
+        j)
+            parallel_jobs="$OPTARG"
+            ;;
         P)
             use_pytorch_libs=OFF
             use_libtorch=ON
@@ -37,6 +48,12 @@ while getopts "TIBPNcgh" o; do
             ;;
         c)
             build_cuda=OFF
+            ;;
+        a)
+            use_env_cuda_archs=1
+            ;;
+        x)
+            support_python_models=ON
             ;;
         T)
             run_tests=0
@@ -65,6 +82,22 @@ while getopts "TIBPNcgh" o; do
     esac
 done
 
+if [ -z "$parallel_jobs" ] && [ -z "$CMAKE_BUILD_PARALLEL_LEVEL" ] \
+    && [ -z "$CTEST_PARALLEL_LEVEL" ]; then
+    num_processors=$(getconf _NPROCESSORS_ONLN 2> /dev/null || echo 1)
+    parallel_jobs=$((num_processors < 8 ? num_processors : 8))
+fi
+
+# An empty list makes PyTorch auto detect the archs
+torch_cuda_archs=""
+if [ "$use_env_cuda_archs" -eq 1 ]; then
+    if [ -z "$TORCH_CUDA_ARCH_LIST" ]; then
+        echo "-a requires the TORCH_CUDA_ARCH_LIST env var to be set" 1>&2
+        exit 1
+    fi
+    torch_cuda_archs="$TORCH_CUDA_ARCH_LIST"
+fi
+
 # The directory of this script, taken from:
 # https://stackoverflow.com/questions/59895/
 # how-do-i-get-the-directory-where-a-bash-script-is-located-from-within-the-script
@@ -84,6 +117,7 @@ cmake \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DCMAKE_BUILD_TYPE="$cmake_build_type" \
     -DTORCHANI_BUILD_CUDA=$build_cuda \
+    -DTORCHANI_SUPPORT_PYTHON_MODELS=$support_python_models \
     -DTORCHANI_LINK_TO_PYTORCH_LIBS=$use_pytorch_libs \
     -DTORCHANI_JIT_COMPILE_MODELS=$use_pytorch_libs \
     -DTORCHANI_PREFER_CONDA_LIBS=$use_conda_libs \
@@ -101,7 +135,7 @@ if [ "$cmake_build" -eq 0 ]; then
     exit 0
 fi
 
-if ! cmake --build "$bld_dir"; then
+if ! cmake --build "$bld_dir" ${parallel_jobs:+-j "$parallel_jobs"}; then
     echo "Build failed!!"
     exit 1
 fi
@@ -111,7 +145,7 @@ if [ "$run_tests" -eq 1 ]; then
     if [ "$build_cuda" = "OFF" ]; then
         export TORCHANI_SKIP_CUDA_TESTS=1
     fi
-    if ! "$bld_dir/torchani_tests"; then
+    if ! ctest --test-dir "$bld_dir" --output-on-failure ${parallel_jobs:+-j "$parallel_jobs"}; then
         echo "Tests failed!! Skipping install step"
         exit 1
     fi

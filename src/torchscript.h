@@ -8,7 +8,7 @@
 #include <torch/all.h>
 #include <torch/script.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace torchscript {
 
@@ -23,21 +23,17 @@ class TorchScriptMlipModel : public mlip::MlipModel {
     bool m_legacy_charge_type;
 
     auto castFloatTensors(torch::ScalarType dtype) -> void;
-    auto computeFromMlmmMethod(
+    auto computeMlmmCoreImpl(
         const std::string& method_name,
-        std::vector<torch::jit::IValue> inputs,
+        std::vector<torch::jit::IValue> args,
+        torch::jit::Kwargs kwargs,
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         int spin_mult,
         double mm_cutoff,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         bool atomic,
         bool ensemble_values,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput;
 
@@ -47,7 +43,8 @@ class TorchScriptMlipModel : public mlip::MlipModel {
     );
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void override;
-    auto readExtraFeaturesFromFile(const std::string& fpath) -> void override;
+    auto setExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_features)
+        -> void override;
     auto setStrategy(const std::string& strat) -> void override;
     auto supportsCustomMlmm() const -> bool override;
     auto supportsMultipoleMlmm() const -> bool override;
@@ -57,12 +54,11 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& coords,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeFromExternalNeighbors(
@@ -71,12 +67,11 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& neighborlist,
         const torch::Tensor& shifts,
         int net_charge,
+        int spin_mult,
         bool atomic,
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMlmm(
@@ -84,9 +79,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& ml_coords,
         const torch::Tensor& mm_coords,
         const torch::Tensor& mm_charges,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -95,8 +87,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
     auto computeMultipoleMlmm(
@@ -106,9 +96,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         const torch::Tensor& mm_charges,
         const torch::Tensor& mm_dipoles,
         const torch::Tensor& mm_quads,
-        const torch::Tensor& pairs_12,
-        const torch::Tensor& pairs_13,
-        const torch::Tensor& pairs_14,
         const std::optional<torch::Tensor>& cell,
         int net_charge,
         int spin_mult,
@@ -117,8 +104,6 @@ class TorchScriptMlipModel : public mlip::MlipModel {
         bool ensemble_values,
         const std::optional<torch::Tensor>& molecule_idxs,
         bool calc_forces,
-        bool calc_charges,
-        bool calc_charges_grad,
         bool calc_qbc_and_qbc_grad
     ) -> mlip::MlipOutput override;
 };
