@@ -12,7 +12,7 @@
 #include <torch/all.h>
 
 #include "constants.h"
-#include "mlip.h"
+#include "mlip_model.h"
 
 // c10 defines a CHECK macro, which must not replace the one from Catch2
 #undef CHECK
