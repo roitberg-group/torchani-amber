@@ -1,5 +1,6 @@
 #include "torchscript.h"
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -23,14 +24,31 @@
 using model_output::computeOutput;
 
 namespace {
-auto chargeArgIsInt(const torch::jit::Module& module) -> bool {
-    const c10::FunctionSchema& schema =
-        module.get_method("forward").function().getSchema();
+auto methodChargeArgIsInt(const torch::jit::Method& method) -> bool {
+    const c10::FunctionSchema& schema = method.function().getSchema();
     std::optional<int> charge_idx = schema.argumentIndexWithName("charge");
     if (not charge_idx.has_value()) {
-        throw std::runtime_error("Model's 'forward' has no 'charge' argument");
+        throw std::runtime_error(
+            "Model's '" + method.name() + "' has no 'charge' argument"
+        );
     }
     return schema.arguments().at(*charge_idx).type()->kind() == c10::TypeKind::IntType;
+}
+
+auto chargeArgIsInt(const torch::jit::Module& module) -> bool {
+    bool charge_is_int = methodChargeArgIsInt(module.get_method("forward"));
+    const std::array<const char*, 3> other_methods = {
+        "compute_from_external_neighbors",
+        "compute_mlmm",
+        "compute_multipole_mlmm",
+    };
+    for (const char* name : other_methods) {
+        std::optional<torch::jit::Method> method = module.find_method(name);
+        if (method.has_value() and methodChargeArgIsInt(*method) != charge_is_int) {
+            throw std::runtime_error("Inconsistent 'charge' type in different methods");
+        }
+    }
+    return charge_is_int;
 }
 
 auto chargeInput(int net_charge, const torch::Tensor& coords, bool legacy_charge_type)

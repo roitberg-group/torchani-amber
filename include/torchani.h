@@ -92,8 +92,8 @@ void mlip_set_ml_charge_and_spin_mult(
 );
 
 // The outputs requested by the write_coords, write_forces, write_atomic_charges,
-// write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-// mlip_update_md_step)
+// write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+// files, every write_interval steps (see mlip_update_md_step)
 void mlip_calc_energy_force(
     int num_atoms,
     double coords[][3],  // Shape (num_atoms, 3)
@@ -107,8 +107,8 @@ void mlip_calc_energy_force(
 );
 
 // The outputs requested by the write_coords, write_forces, write_atomic_charges,
-// write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-// mlip_update_md_step)
+// write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+// files, every write_interval steps (see mlip_update_md_step)
 void mlip_calc_energy_force_from_external_neighbors(
     int num_atoms,
     int num_neighbors,
@@ -122,13 +122,13 @@ void mlip_calc_energy_force_from_external_neighbors(
     double* out_pot_energy
 );
 
-// This two-call API (retain + vjp) is only needed if the md engine's energy includes
-// interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-// with periodic images of ML charges (including their own images). If the ML charges
-// interact only with MM charges (and their periodic images, e.g. PME with the ML
-// charges left out of the grid and the real-space pair list), the potential of the MM
-// charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-// single call (not currently implemented).
+// This two-call API (retain + vjp) is only needed if the md engine's energy
+// includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+// ML charges with periodic images of ML charges (including their own images). If the
+// ML charges interact only with MM charges (and their periodic images, e.g. PME with
+// the ML charges left out of the grid and the real-space pair list), the potential
+// of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+// passed in a single call (not currently implemented).
 // For an md engine that uses the predicted charges in its own electrostatics
 // (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
 // and the charges (forward pass only) and keeps the graph. Then
@@ -147,18 +147,18 @@ void mlip_calc_energy_atomic_charges_retain(
     double* pot_energy
 );
 
-// This two-call API (retain + vjp) is only needed if the md engine's energy includes
-// interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-// with periodic images of ML charges (including their own images). If the ML charges
-// interact only with MM charges (and their periodic images, e.g. PME with the ML
-// charges left out of the grid and the real-space pair list), the potential of the MM
-// charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-// single call (not currently implemented).
-// ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
-// and must be passed in kcal/mol/e
+// This two-call API (retain + vjp) is only needed if the md engine's energy
+// includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+// ML charges with periodic images of ML charges (including their own images). If the
+// ML charges interact only with MM charges (and their periodic images, e.g. PME with
+// the ML charges left out of the grid and the real-space pair list), the potential
+// of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+// passed in a single call (not currently implemented).
+// ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number
+// of ML atoms, and must be passed in kcal/mol/e
 // The returned forces don't include the electrostatic force at fixed charges on the
-// ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
-// otherwise the forces on the ML atoms are incomplete.
+// ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must
+// add it, otherwise the forces on the ML atoms are incomplete.
 void mlip_calc_energy_atomic_charges_vjp(
     int num_atoms,
     double ml_electrostatic_potential[],  // Shape (num_atoms,)
@@ -172,18 +172,19 @@ void mlip_calc_energy_atomic_charges_vjp(
 // 'custom'. With 'none', the ML/MM coupling energy is 0. With 'simple-polarizable'
 // (and its GEEP variant), the atomic polarizabilities and the inverse polarization
 // dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-// ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths read
-// from the geep_sigmas and geep_factor options. 'coulombic', 'simple-polarizable' and
-// their GEEP variants use the atomic charges predicted by the model if the
+// ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths
+// read from the geep_sigmas and geep_factor options. 'coulombic',
+// 'simple-polarizable' and their GEEP variants use the atomic charges predicted by
+// the model if the
 // use_mlip_atomic_charges option is set, and otherwise the ones stored as
 // 'fixed_atomic_charges' (with mlip_store_tensor), exiting if they are missing. With
 // 'custom', the TorchScript model
 // receives ML species+coords and MM coords+charges and computes the total energy
 // internally. The model must export a 'compute_mlmm' method (see README). Forces on
 // both regions via autograd. use_pbc is only supported with 'custom'. cell is
-// ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-// energy, with 'custom') are printed to stdout, or to the unit set by
-// mlip_set_output_unit
+// ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling
+// energies (or the total energy, with 'custom') are printed to stdout, or to the
+// unit set by mlip_set_output_unit
 void mlip_calc_energy_force_mlmm(
     int ml_atoms_num,
     int mm_atoms_num,
@@ -251,21 +252,22 @@ void mlip_store_mask_tensor(
     int dims_num
 );
 
-// Copy a result of the last calculation into values, with shape dims (C order). The
-// results are the outputs of the model other than the energy and the forces (e.g.
-// 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
-// the molecules dim. Exits if there is no such result, or if the shapes don't match.
+// Copy a result of the last calculation into values, with shape dims (C order).
+// The results are the outputs of the model other than the energy and the forces
+// (e.g. 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol),
+// without the molecules dim. Exits if there is no such result, or if the shapes
+// don't match.
 // In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
 // of any rank, or a scalar. dims is taken from its shape
 void mlip_fetch_result(
     const char* name,
-    /* outputs */
     double values[],  // Shape (prod(dims),)
     int dims[],  // Shape (dims_num,)
     int dims_num
 );
 
-// Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
+// Get the value of an int option of the &mlip namelist, by its
+// (case-insensitive) name.
 // Exits if the option doesn't exist, or is not an int
 void mlip_get_config_int_option(
     const char* name,
@@ -273,7 +275,8 @@ void mlip_get_config_int_option(
     int* out_value
 );
 
-// Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
+// Get the value of a bool option of the &mlip namelist, by its
+// (case-insensitive) name.
 // Exits if the option doesn't exist, or is not a bool
 void mlip_get_config_bool_option(
     const char* name,
@@ -281,7 +284,8 @@ void mlip_get_config_bool_option(
     bool* out_value
 );
 
-// Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
+// Get the value of a float option of the &mlip namelist, by its
+// (case-insensitive) name.
 // Exits if the option doesn't exist, or is not a float
 void mlip_get_config_float_option(
     const char* name,
@@ -289,8 +293,10 @@ void mlip_get_config_float_option(
     double* out_value
 );
 
-// Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
-// out_value is a buffer of length out_value_len, the value is copied null-terminated.
+// Get the value of a str option of the &mlip namelist, by its
+// (case-insensitive) name.
+// out_value is a buffer of length out_value_len, the value is copied
+// null-terminated.
 // Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
 void mlip_get_config_str_option(
     const char* name,

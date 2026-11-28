@@ -74,7 +74,7 @@ auto calcEfield(
     // Electric fields with angstrom units are unintuitive, to avoid that
     // Output in AU (Hartree / e), so perform the conversion:
     // E_field_AU = E_field_Angstrom / A2B**2
-    return torch::sum(efield, 0) / std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2);
+    return torch::sum(efield, 0) / std::pow(constants::CODATA06_ANGSTROM_TO_BOHR, 2);
 }
 
 /**
@@ -127,6 +127,6 @@ auto coulombicEmbeddingEnergy(
         * torch::reshape(ml_atomic_charges, {1, -1}) * kernel;
     // Output in AU (Hartree), so perform the conversion
     // Epot_AU = E_pot_Angstrom / A2B
-    return torch::sum(pair_energies) / constants::CODATA08_ANGSTROM_TO_BOHR;
+    return torch::sum(pair_energies) / constants::CODATA06_ANGSTROM_TO_BOHR;
 }
 }  // namespace electro

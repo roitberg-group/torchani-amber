@@ -120,12 +120,15 @@ auto perMoleculeLongTensor(int value, const torch::Tensor& coords) -> torch::Ten
 }
 
 // Old models take 'charge: int', new ones 'charge: Tensor | None' of shape (molecules,)
-auto chargeArgIsInt(const py::object& model) -> bool {
-    py::object forward = model.attr("forward");
-    if (not methodAcceptsArg(forward, "charge")) {
-        throw std::runtime_error("Model's 'forward' has no 'charge' argument");
+auto methodChargeArgIsInt(const py::object& model, const std::string& method_name)
+    -> bool {
+    py::object method = model.attr(method_name.c_str());
+    if (not methodAcceptsArg(method, "charge")) {
+        throw std::runtime_error(
+            "Model's '" + method_name + "' has no 'charge' argument"
+        );
     }
-    py::object signature = py::module_::import("inspect").attr("signature")(forward);
+    py::object signature = py::module_::import("inspect").attr("signature")(method);
     py::object parameters = signature.attr("parameters");
     if (not parameters.contains("charge")) {
         return false;
@@ -136,6 +139,22 @@ auto chargeArgIsInt(const py::object& model) -> bool {
         return annotation.cast<std::string>() == "int";
     }
     return annotation.is(py::module_::import("builtins").attr("int"));
+}
+
+auto chargeArgIsInt(const py::object& model) -> bool {
+    bool charge_is_int = methodChargeArgIsInt(model, "forward");
+    const std::array<const char*, 3> other_methods = {
+        "compute_from_external_neighbors",
+        "compute_mlmm",
+        "compute_multipole_mlmm",
+    };
+    for (const char* name : other_methods) {
+        if (py::hasattr(model, name)
+            and methodChargeArgIsInt(model, name) != charge_is_int) {
+            throw std::runtime_error("Inconsistent 'charge' type in different methods");
+        }
+    }
+    return charge_is_int;
 }
 
 auto chargeInput(int net_charge, const torch::Tensor& coords, bool legacy_charge_type)

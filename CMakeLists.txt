@@ -8,7 +8,7 @@ project(
     LANGUAGES C CXX
     VERSION 0.7
     DESCRIPTION "Fortran, C and C++ interface to execute general MLIPs, with special support for the TorchANI library"
-    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
+    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber"
 )
 
 # Amber sets global compile definitions, flags, and other settings that would otherwise
@@ -392,6 +392,7 @@ target_compile_definitions(
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
         TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
+        TORCHANI_HOMEPAGE_URL="${PROJECT_HOMEPAGE_URL}"
         $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
         $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
 )

@@ -16,7 +16,7 @@ typedef void (*mlip_write_line_fn)(int unit, const char* line, int line_len);
 {% endfor %}
 void {{ fn.name }}(
 {% for arg in fn.args %}
-{% if arg.intent != "in" and (loop.first or loop.previtem.intent == "in") %}
+{% if loop.index0 == fn.outputs_start %}
     /* outputs */
 {% endif %}
     {{ arg.c_decl }}{{ "," if not loop.last }}{% if arg.shape %}  // Shape ({{ arg.shape | join(", ") }}{{ "," if arg.shape | length == 1 }}){% endif %}

@@ -42,6 +42,7 @@ namespace {
 config::GlobalConfig global_config{};
 std::unique_ptr<mlip::MlipModel> model;
 // Tensors stored through the C API, and the graph kept between
+// mlip_calc_energy_atomic_charges_retain and mlip_calc_energy_atomic_charges_vjp.
 // Cleared by mlip_initialize.
 // Names starting with "__" are reserved for internal use
 tensor_utils::TensorContainer tensor_container;
@@ -598,7 +599,7 @@ void calcEnergyForceCustomMlmm(
             << "mlmm_coupling = 'custom' requires the model to export"
             << " 'compute_mlmm(...)'. "
             << " Consult the TorchANI-Amber README.md for the required signature\n"
-            << "https://github.com/roitberg-group/torchani-amber" << std::endl;
+            << TORCHANI_HOMEPAGE_URL << std::endl;
         std::exit(2);
     }
     torch::Tensor ml_coords =
@@ -660,8 +661,6 @@ void calcEnergyForceCustomMlmm(
 /**
  * Note that currently this function can't split the QM forces in two parts, it only
  * outputs net forces due to the model in vacuum and the potential energies
- *
- * Currently this is the only code path that supports charged molecules
  */
 void calcEnergyForceMlmm(
     int ml_atoms_num,
@@ -774,7 +773,7 @@ void calcEnergyForceMlmm(
 
         std::optional<torch::Tensor> ml_geep_sigmas;
         if (config::isGeepCoupling(mlmm_coupling)) {
-            ml_geep_sigmas = mlGeepSigmas() / constants::CODATA08_ANGSTROM_TO_BOHR;
+            ml_geep_sigmas = mlGeepSigmas() / constants::CODATA06_ANGSTROM_TO_BOHR;
         }
         ene_pot_coulomb = electro::coulombicEmbeddingEnergy(
             ml_atomic_charges, mm_atomic_charges, mm_to_ml_distances, ml_geep_sigmas
@@ -1172,7 +1171,7 @@ void mlip_calc_energy_force_from_external_neighbors(
             << "To use an external neighborlist (use_amber_neighborlist=.true.)\n"
             << " the model must export 'compute_from_external_neighbors(...)'."
             << " Consult the TorchANI-Amber README.md for the required signature\n"
-            << "https://github.com/roitberg-group/torchani-amber" << std::endl;
+            << TORCHANI_HOMEPAGE_URL << std::endl;
         std::exit(2);
     }
     torch::Tensor coords =

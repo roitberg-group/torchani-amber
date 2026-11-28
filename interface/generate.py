@@ -115,6 +115,13 @@ def prepare_arg(arg: dict) -> dict:
     return arg
 
 
+def outputs_start(args: list[dict]) -> int:
+    start = len(args)
+    while start > 0 and args[start - 1]["intent"] != "in":
+        start -= 1
+    return start
+
+
 def prepare_function(fn: dict) -> dict:
     fn = {"comment": "", "fortran_wrapper": "auto", "fortran_generic": "", **fn}
     fn["args"] = [prepare_arg(arg) for arg in fn["args"]]
@@ -139,6 +146,8 @@ def prepare_function(fn: dict) -> dict:
     needs_wrapper = fn["has_bool_args"] or fn["has_str_args"]
     fn["generate_f_wrapper"] = needs_wrapper and fn["fortran_wrapper"] == "auto"
     fn["f_wrapper_args"] = [arg for arg in fn["args"] if arg["f_is_wrapper_arg"]]
+    fn["outputs_start"] = outputs_start(fn["args"])
+    fn["f_wrapper_outputs_start"] = outputs_start(fn["f_wrapper_args"])
     fn["f_binding_name"] = fn["name"]
     if needs_wrapper or fn["fortran_wrapper"] != "auto":
         fn["f_binding_name"] = "internal_" + fn["name"].removeprefix("mlip_")

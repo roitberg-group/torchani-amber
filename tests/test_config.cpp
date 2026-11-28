@@ -835,15 +835,15 @@ TEST_CASE("GlobalConfig GEEP sigmas", "[config]") {
     // The builtin widths are in Angstrom, converted to bohr
     CHECK_THAT(
         config.getGeepSigma(1L),
-        WithinRel(1.00 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.00 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THAT(
         config.getGeepSigma(6L),
-        WithinRel(1.50 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.50 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THAT(
         config.getGeepSigma(54L),
-        WithinRel(1.80 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.80 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);
     CHECK_THROWS_AS(config.getGeepSigma(0L), std::out_of_range);
@@ -858,7 +858,7 @@ TEST_CASE("GlobalConfig GEEP sigmas", "[config]") {
     for (long atomic_num : {1L, 6L, 54L}) {
         CHECK_THAT(
             config.getGeepSigma(atomic_num),
-            WithinRel(3.0 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+            WithinRel(3.0 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
         );
     }
     CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);

@@ -43,7 +43,7 @@ subroutine {{ fn.f_binding_name }}( &
 ) bind(c, name="{{ fn.name }}")
     use, intrinsic :: iso_c_binding
 {% for arg in fn.args %}
-{% if arg.intent != "in" and (loop.first or loop.previtem.intent == "in") %}
+{% if loop.index0 == fn.outputs_start %}
     ! Outputs
 {% endif %}
     {{ arg.f_binding_decl }}
@@ -69,7 +69,7 @@ subroutine {{ fn.name }}( &
 {% endfor %}
 )
 {% for arg in fn.f_wrapper_args %}
-{% if arg.intent != "in" and (loop.first or loop.previtem.intent == "in") %}
+{% if loop.index0 == fn.f_wrapper_outputs_start %}
     ! Outputs
 {% endif %}
     {{ arg.f_wrapper_decl }}

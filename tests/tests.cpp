@@ -373,11 +373,11 @@ static double expectedEmbeddingEnergy(
                         * std::exp(-scaled_dist * scaled_dist);
             }
             expect_coulomb += potential_screening * COUPLING_MM_ATOMIC_CHARGES[k]
-                * ml_atomic_charges[j] / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
+                * ml_atomic_charges[j] / (dist * constants::CODATA06_ANGSTROM_TO_BOHR);
             for (int c = 0; c != 3; ++c) {
                 efield[c] += efield_screening * COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
                     / (dist_sq * dist
-                        * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
+                        * std::pow(constants::CODATA06_ANGSTROM_TO_BOHR, 2));
             }
         }
         double efield_sq =
@@ -807,7 +807,7 @@ static auto checkGeepCoupling(EntryPoint& entry, const std::string& mlmm_couplin
     double ml_geep_sigmas[ENTRY_POINT_SIZE];
     for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
         ml_geep_sigmas[j] = COUPLING_GEEP_SIGMAS[j] * COUPLING_GEEP_FACTOR
-            / constants::CODATA08_ANGSTROM_TO_BOHR;
+            / constants::CODATA06_ANGSTROM_TO_BOHR;
     }
     double zero_alphas[ENTRY_POINT_SIZE] = {0.0, 0.0};
     const double* ml_atomic_charges =

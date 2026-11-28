@@ -160,8 +160,8 @@ subroutine mlip_set_ml_charge_and_spin_mult( &
 endsubroutine
 
 ! The outputs requested by the write_coords, write_forces, write_atomic_charges,
-! write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-! mlip_update_md_step)
+! write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+! files, every write_interval steps (see mlip_update_md_step)
 subroutine internal_calc_energy_force( &
     num_atoms, &
     coords, &
@@ -185,8 +185,8 @@ subroutine internal_calc_energy_force( &
 endsubroutine
 
 ! The outputs requested by the write_coords, write_forces, write_atomic_charges,
-! write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-! mlip_update_md_step)
+! write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+! files, every write_interval steps (see mlip_update_md_step)
 subroutine internal_calc_energy_force_from_external_neighbors( &
     num_atoms, &
     num_neighbors, &
@@ -211,13 +211,13 @@ subroutine internal_calc_energy_force_from_external_neighbors( &
     real(c_double), intent(out) :: out_pot_energy
 endsubroutine
 
-! This two-call API (retain + vjp) is only needed if the md engine's energy includes
-! interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-! with periodic images of ML charges (including their own images). If the ML charges
-! interact only with MM charges (and their periodic images, e.g. PME with the ML
-! charges left out of the grid and the real-space pair list), the potential of the MM
-! charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-! single call (not currently implemented).
+! This two-call API (retain + vjp) is only needed if the md engine's energy
+! includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+! ML charges with periodic images of ML charges (including their own images). If the
+! ML charges interact only with MM charges (and their periodic images, e.g. PME with
+! the ML charges left out of the grid and the real-space pair list), the potential
+! of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+! passed in a single call (not currently implemented).
 ! For an md engine that uses the predicted charges in its own electrostatics
 ! (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
 ! and the charges (forward pass only) and keeps the graph. Then
@@ -242,18 +242,18 @@ subroutine mlip_calc_energy_atomic_charges_retain( &
     real(c_double), intent(out) :: pot_energy
 endsubroutine
 
-! This two-call API (retain + vjp) is only needed if the md engine's energy includes
-! interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-! with periodic images of ML charges (including their own images). If the ML charges
-! interact only with MM charges (and their periodic images, e.g. PME with the ML
-! charges left out of the grid and the real-space pair list), the potential of the MM
-! charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-! single call (not currently implemented).
-! ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
-! and must be passed in kcal/mol/e
+! This two-call API (retain + vjp) is only needed if the md engine's energy
+! includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+! ML charges with periodic images of ML charges (including their own images). If the
+! ML charges interact only with MM charges (and their periodic images, e.g. PME with
+! the ML charges left out of the grid and the real-space pair list), the potential
+! of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+! passed in a single call (not currently implemented).
+! ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number
+! of ML atoms, and must be passed in kcal/mol/e
 ! The returned forces don't include the electrostatic force at fixed charges on the
-! ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
-! otherwise the forces on the ML atoms are incomplete.
+! ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must
+! add it, otherwise the forces on the ML atoms are incomplete.
 subroutine mlip_calc_energy_atomic_charges_vjp( &
     num_atoms, &
     ml_electrostatic_potential, &
@@ -272,18 +272,19 @@ endsubroutine
 ! 'custom'. With 'none', the ML/MM coupling energy is 0. With 'simple-polarizable'
 ! (and its GEEP variant), the atomic polarizabilities and the inverse polarization
 ! dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-! ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths read
-! from the geep_sigmas and geep_factor options. 'coulombic', 'simple-polarizable' and
-! their GEEP variants use the atomic charges predicted by the model if the
+! ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths
+! read from the geep_sigmas and geep_factor options. 'coulombic',
+! 'simple-polarizable' and their GEEP variants use the atomic charges predicted by
+! the model if the
 ! use_mlip_atomic_charges option is set, and otherwise the ones stored as
 ! 'fixed_atomic_charges' (with mlip_store_tensor), exiting if they are missing. With
 ! 'custom', the TorchScript model
 ! receives ML species+coords and MM coords+charges and computes the total energy
 ! internally. The model must export a 'compute_mlmm' method (see README). Forces on
 ! both regions via autograd. use_pbc is only supported with 'custom'. cell is
-! ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-! energy, with 'custom') are printed to stdout, or to the unit set by
-! mlip_set_output_unit
+! ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling
+! energies (or the total energy, with 'custom') are printed to stdout, or to the
+! unit set by mlip_set_output_unit
 subroutine internal_calc_energy_force_mlmm( &
     ml_atoms_num, &
     mm_atoms_num, &
@@ -395,10 +396,11 @@ subroutine internal_store_mask_tensor( &
     integer(c_int), value, intent(in) :: dims_num
 endsubroutine
 
-! Copy a result of the last calculation into values, with shape dims (C order). The
-! results are the outputs of the model other than the energy and the forces (e.g.
-! 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
-! the molecules dim. Exits if there is no such result, or if the shapes don't match.
+! Copy a result of the last calculation into values, with shape dims (C order).
+! The results are the outputs of the model other than the energy and the forces
+! (e.g. 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol),
+! without the molecules dim. Exits if there is no such result, or if the shapes
+! don't match.
 ! In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
 ! of any rank, or a scalar. dims is taken from its shape
 subroutine internal_fetch_result( &
@@ -409,13 +411,13 @@ subroutine internal_fetch_result( &
 ) bind(c, name="mlip_fetch_result")
     use, intrinsic :: iso_c_binding
     character(len=1, kind=c_char), intent(in) :: name(*)
-    ! Outputs
     real(c_double), intent(out) :: values(*)
     integer(c_int), intent(in) :: dims(*)
     integer(c_int), value, intent(in) :: dims_num
 endsubroutine
 
-! Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
+! Get the value of an int option of the &mlip namelist, by its
+! (case-insensitive) name.
 ! Exits if the option doesn't exist, or is not an int
 subroutine internal_get_config_int_option( &
     name, &
@@ -427,7 +429,8 @@ subroutine internal_get_config_int_option( &
     integer(c_int), intent(out) :: out_value
 endsubroutine
 
-! Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
+! Get the value of a bool option of the &mlip namelist, by its
+! (case-insensitive) name.
 ! Exits if the option doesn't exist, or is not a bool
 subroutine internal_get_config_bool_option( &
     name, &
@@ -439,7 +442,8 @@ subroutine internal_get_config_bool_option( &
     logical(c_bool), intent(out) :: out_value
 endsubroutine
 
-! Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
+! Get the value of a float option of the &mlip namelist, by its
+! (case-insensitive) name.
 ! Exits if the option doesn't exist, or is not a float
 subroutine internal_get_config_float_option( &
     name, &
@@ -451,8 +455,10 @@ subroutine internal_get_config_float_option( &
     real(c_double), intent(out) :: out_value
 endsubroutine
 
-! Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
-! out_value is a buffer of length out_value_len, the value is copied null-terminated.
+! Get the value of a str option of the &mlip namelist, by its
+! (case-insensitive) name.
+! out_value is a buffer of length out_value_len, the value is copied
+! null-terminated.
 ! Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
 subroutine internal_get_config_str_option( &
     name, &
@@ -818,6 +824,12 @@ subroutine mlip_calc_energy_force_mlmm( &
 
     real(c_double) :: pbc_cell(3, 3)
     logical :: do_calc_qbc_and_qbc_grad
+    if (size(ml_coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: ml_coords must have shape (3, ML)")
+    endif
+    if (size(mm_coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: mm_coords must have shape (3, MM)")
+    endif
     if (any(shape(out_ml_forces) /= shape(ml_coords))) then
         call exit_with_error("mlip_calc_energy_force_mlmm: out_ml_forces and ml_coords shapes differ")
     endif
@@ -895,7 +907,7 @@ subroutine convert_sander_neighborlist_to_ani_fmt( &
 )
     integer, intent(in) :: img_idx_to_atom_idx(:)
     integer, intent(in) :: atom_idx_to_neighbors_num(:)
-    ! Sander's list is assumed-shape, so (:) can't be used
+    ! Sander's list is assumed-size, so (:) can't be used
     integer, intent(in) :: sander_neighborlist(*)
     double precision, intent(in) :: translation_vector(1:3, 1:18)
     integer, allocatable, intent(out) :: ani_neighborlist(:, :)

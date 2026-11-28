@@ -7,7 +7,8 @@
 namespace constants {
 
 // Factor used by Amber
-constexpr double CODATA08_ANGSTROM_TO_BOHR = 1.8897261328727875;
+// Amber calls it CODATA08, after the publication year of the CODATA 2006 values
+constexpr double CODATA06_ANGSTROM_TO_BOHR = 1.8897261328727875;
 
 // This factor should come straight from torchani.units and be consistent with ASE
 constexpr double HARTREE_TO_KCALMOL = 627.5094738898777;

@@ -271,7 +271,7 @@ std::vector<double> builtinGeepSigmas(const std::string& name) {
         );
     }
     for (double& sigma : sigmas) {
-        sigma *= constants::CODATA08_ANGSTROM_TO_BOHR;
+        sigma *= constants::CODATA06_ANGSTROM_TO_BOHR;
     }
     return sigmas;
 }

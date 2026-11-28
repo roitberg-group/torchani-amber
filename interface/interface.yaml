@@ -9,9 +9,9 @@
 #   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
 #       in templates/torchani_fortran_utils.F90. "none" if the function is not exposed
 #       in Fortran by its own name, only through the hand-written wrapper of another
-#       function. Otherwise, functions with bool or str
-#       args get an auto-generated Fortran wrapper that converts logical <-> logical(c_bool)
-#       and fortran strings <-> null-terminated C strings
+#       function. Otherwise, functions with bool or str args get an auto-generated
+#       Fortran wrapper that converts logical <-> logical(c_bool) and fortran strings
+#       <-> null-terminated C strings
 #   fortran_generic: (optional) name of a Fortran generic interface the function is
 #       exposed through. The function's own name is then private in Fortran
 #
@@ -125,8 +125,8 @@ functions:
     fortran_wrapper: manual
     comment: |
       The outputs requested by the write_coords, write_forces, write_atomic_charges,
-      write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-      mlip_update_md_step)
+      write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+      files, every write_interval steps (see mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}
       - {name: coords, dtype: double, shape: [num_atoms, 3]}
@@ -141,8 +141,8 @@ functions:
     fortran_wrapper: manual
     comment: |
       The outputs requested by the write_coords, write_forces, write_atomic_charges,
-      write_atomic_volumes and write_kz_atomic_alphas options are appended to their files, every write_interval steps (see
-      mlip_update_md_step)
+      write_atomic_volumes and write_kz_atomic_alphas options are appended to their
+      files, every write_interval steps (see mlip_update_md_step)
     args:
       - {name: num_atoms, dtype: int}
       - {name: num_neighbors, dtype: int}
@@ -156,13 +156,13 @@ functions:
 
   - name: mlip_calc_energy_atomic_charges_retain
     comment: |
-      This two-call API (retain + vjp) is only needed if the md engine's energy includes
-      interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-      with periodic images of ML charges (including their own images). If the ML charges
-      interact only with MM charges (and their periodic images, e.g. PME with the ML
-      charges left out of the grid and the real-space pair list), the potential of the MM
-      charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-      single call (not currently implemented).
+      This two-call API (retain + vjp) is only needed if the md engine's energy
+      includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+      ML charges with periodic images of ML charges (including their own images). If the
+      ML charges interact only with MM charges (and their periodic images, e.g. PME with
+      the ML charges left out of the grid and the real-space pair list), the potential
+      of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+      passed in a single call (not currently implemented).
       For an md engine that uses the predicted charges in its own electrostatics
       (e.g. PME). mlip_calc_energy_atomic_charges_retain returns the in-vacuo energy
       and the charges (forward pass only) and keeps the graph. Then
@@ -181,18 +181,18 @@ functions:
 
   - name: mlip_calc_energy_atomic_charges_vjp
     comment: |
-      This two-call API (retain + vjp) is only needed if the md engine's energy includes
-      interactions of ML charges with other ML charges: direct ML-ML pairs, or ML charges
-      with periodic images of ML charges (including their own images). If the ML charges
-      interact only with MM charges (and their periodic images, e.g. PME with the ML
-      charges left out of the grid and the real-space pair list), the potential of the MM
-      charges over the ML atoms doesn't depend on the ML charges, so it can be passed in a
-      single call (not currently implemented).
-      ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number of ML atoms,
-      and must be passed in kcal/mol/e
+      This two-call API (retain + vjp) is only needed if the md engine's energy
+      includes interactions of ML charges with other ML charges: direct ML-ML pairs, or
+      ML charges with periodic images of ML charges (including their own images). If the
+      ML charges interact only with MM charges (and their periodic images, e.g. PME with
+      the ML charges left out of the grid and the real-space pair list), the potential
+      of the MM charges over the ML atoms doesn't depend on the ML charges, so it can be
+      passed in a single call (not currently implemented).
+      ml_electrostatic_potential has shape (num_atoms,), where num_atoms is the number
+      of ML atoms, and must be passed in kcal/mol/e
       The returned forces don't include the electrostatic force at fixed charges on the
-      ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must add it,
-      otherwise the forces on the ML atoms are incomplete.
+      ML atoms, -dE_mdengine/d(coords) with the charges held fixed. The md engine must
+      add it, otherwise the forces on the ML atoms are incomplete.
     args:
       - {name: num_atoms, dtype: int}
       - {name: ml_electrostatic_potential, dtype: double, shape: [num_atoms]}
@@ -207,18 +207,19 @@ functions:
       'custom'. With 'none', the ML/MM coupling energy is 0. With 'simple-polarizable'
       (and its GEEP variant), the atomic polarizabilities and the inverse polarization
       dielectric are read from the pol_<symbol> and inv_pol_dielectric options of the
-      ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths read
-      from the geep_sigmas and geep_factor options. 'coulombic', 'simple-polarizable' and
-      their GEEP variants use the atomic charges predicted by the model if the
+      ML/MM config. The GEEP variants treat the MM charges as Gaussians, with widths
+      read from the geep_sigmas and geep_factor options. 'coulombic',
+      'simple-polarizable' and their GEEP variants use the atomic charges predicted by
+      the model if the
       use_mlip_atomic_charges option is set, and otherwise the ones stored as
       'fixed_atomic_charges' (with mlip_store_tensor), exiting if they are missing. With
       'custom', the TorchScript model
       receives ML species+coords and MM coords+charges and computes the total energy
       internally. The model must export a 'compute_mlmm' method (see README). Forces on
       both regions via autograd. use_pbc is only supported with 'custom'. cell is
-      ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling energies (or the total
-      energy, with 'custom') are printed to stdout, or to the unit set by
-      mlip_set_output_unit
+      ignored when use_pbc is false. If verbose, the in vacuo and the ML/MM coupling
+      energies (or the total energy, with 'custom') are printed to stdout, or to the
+      unit set by mlip_set_output_unit
     args:
       - {name: ml_atoms_num, dtype: int}
       - {name: mm_atoms_num, dtype: int}
@@ -296,10 +297,11 @@ functions:
   - name: mlip_fetch_result
     fortran_wrapper: manual
     comment: |
-      Copy a result of the last calculation into values, with shape dims (C order). The
-      results are the outputs of the model other than the energy and the forces (e.g.
-      'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol), without
-      the molecules dim. Exits if there is no such result, or if the shapes don't match.
+      Copy a result of the last calculation into values, with shape dims (C order).
+      The results are the outputs of the model other than the energy and the forces
+      (e.g. 'atomic_charges'), and the QBC and its grads ('qbc', 'qbc_grad', kcal/mol),
+      without the molecules dim. Exits if there is no such result, or if the shapes
+      don't match.
       In Fortran, call mlip_fetch_result(name, values), with values a contiguous array
       of any rank, or a scalar. dims is taken from its shape
     args:
@@ -311,7 +313,8 @@ functions:
   - name: mlip_get_config_int_option
     fortran_generic: mlip_get_config_option
     comment: |
-      Get the value of an int option of the &mlip namelist, by its (case-insensitive) name.
+      Get the value of an int option of the &mlip namelist, by its
+      (case-insensitive) name.
       Exits if the option doesn't exist, or is not an int
     args:
       - {name: name, dtype: str}
@@ -320,7 +323,8 @@ functions:
   - name: mlip_get_config_bool_option
     fortran_generic: mlip_get_config_option
     comment: |
-      Get the value of a bool option of the &mlip namelist, by its (case-insensitive) name.
+      Get the value of a bool option of the &mlip namelist, by its
+      (case-insensitive) name.
       Exits if the option doesn't exist, or is not a bool
     args:
       - {name: name, dtype: str}
@@ -329,7 +333,8 @@ functions:
   - name: mlip_get_config_float_option
     fortran_generic: mlip_get_config_option
     comment: |
-      Get the value of a float option of the &mlip namelist, by its (case-insensitive) name.
+      Get the value of a float option of the &mlip namelist, by its
+      (case-insensitive) name.
       Exits if the option doesn't exist, or is not a float
     args:
       - {name: name, dtype: str}
@@ -338,8 +343,10 @@ functions:
   - name: mlip_get_config_str_option
     fortran_generic: mlip_get_config_option
     comment: |
-      Get the value of a str option of the &mlip namelist, by its (case-insensitive) name.
-      out_value is a buffer of length out_value_len, the value is copied null-terminated.
+      Get the value of a str option of the &mlip namelist, by its
+      (case-insensitive) name.
+      out_value is a buffer of length out_value_len, the value is copied
+      null-terminated.
       Exits if the option doesn't exist, is not a str, or doesn't fit in the buffer
     args:
       - {name: name, dtype: str}
