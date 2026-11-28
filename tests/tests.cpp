@@ -1,4 +1,4 @@
-#include <torchani.h>
+#include <mlip_interface.h>
 
 #include <cmath>
 #include <cstdlib>

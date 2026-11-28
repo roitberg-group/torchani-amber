@@ -12,7 +12,7 @@
 #include <torch/all.h>
 #include <torch/types.h>
 
-#include <torchani.h>
+#include <mlip_interface.h>
 
 #include "fortran_utils.h"
 

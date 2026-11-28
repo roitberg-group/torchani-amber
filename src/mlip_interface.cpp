@@ -1,4 +1,4 @@
-#include <torchani.h>
+#include <mlip_interface.h>
 
 #include <dlfcn.h>
 
@@ -143,7 +143,7 @@ void exitIfNoEvalAtoms(
     std::source_location loc = std::source_location::current()
 ) {
     if (config.useNoEvalAtoms()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " does not support"
                   << " atoms excluded from the evaluation" << std::endl;
         std::exit(2);
@@ -155,7 +155,7 @@ void exitIfNoMlmmConfig(
     std::source_location loc = std::source_location::current()
 ) {
     if (not config.hasMlmmConfig()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " requires the ML/MM config, call"
                   << " mlip_initialize with from_namelist = \"mlmm\" first"
                   << std::endl;
@@ -168,7 +168,7 @@ void exitIfNotInitialized(
     std::source_location loc = std::source_location::current()
 ) {
     if (not config.mlipInterfaceIsInit()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " was called before mlip_initialize"
                   << std::endl;
         std::exit(2);
@@ -180,7 +180,7 @@ void exitIfNoAtomicNumbers(
     std::source_location loc = std::source_location::current()
 ) {
     if (not config.hasAtomicNumbers()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " requires the atomic numbers, call"
                   << " mlip_set_atomic_numbers first" << std::endl;
         std::exit(2);
@@ -194,7 +194,7 @@ void exitIfAtomsNumMismatch(
 ) {
     long expect_num_atoms = tensor_container.get("__all_atomic_numbers").size(1);
     if (num_atoms != expect_num_atoms) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " was called with " << num_atoms
                   << " atoms, but mlip_set_atomic_numbers was called with "
                   << expect_num_atoms << std::endl;
@@ -220,7 +220,7 @@ torch::Tensor mlAtomicPolarizabilities() {
         try {
             alpha = global_config.getPolarizability(atomic_num);
         } catch (const std::exception& e) {
-            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
             std::exit(2);
         }
         alphas.push_back(alpha);
@@ -263,7 +263,7 @@ torch::Tensor mlVolumeKzs() {
     try {
         return computeMlVolumeKzs();
     } catch (const std::exception& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
 }
@@ -275,7 +275,7 @@ torch::Tensor mlGeepSigmas() {
     try {
         return computeMlGeepSigmas();
     } catch (const std::exception& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
 }
@@ -303,7 +303,7 @@ void printPolarizabilitiesInUse() {
                 value = global_config.getPolarizability(atomic_num);
             }
         } catch (const std::exception& e) {
-            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+            std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
             std::exit(2);
         }
         out << " " << constants::ELEMENT_SYMBOLS.at(atomic_num - 1) << ", "
@@ -315,7 +315,7 @@ void printPolarizabilitiesInUse() {
 void exitWithConfigOptionError(
     const std::string& name, const std::string& type_name, const std::exception& err
 ) {
-    std::cerr << "ERROR (libtorchani)\n"
+    std::cerr << "ERROR (mlip_interface)\n"
               << "Could not get config option " << name << " as " << type_name << ": "
               << err.what() << std::endl;
     std::exit(2);
@@ -351,7 +351,7 @@ std::string libtorchaniDir() {
 torch::Tensor readExtraScalarAtomicFeatures(const std::string& fpath, long num_atoms) {
     std::ifstream file(fpath);
     if (!file) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Could not open the extra features file " << fpath << std::endl;
         std::exit(2);
     }
@@ -361,13 +361,13 @@ torch::Tensor readExtraScalarAtomicFeatures(const std::string& fpath, long num_a
         extra_scalar_atomic_features.push_back(value);
     }
     if (!file.eof()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The extra features file " << fpath
                   << " has values that are not floats" << std::endl;
         std::exit(2);
     }
     if (static_cast<long>(extra_scalar_atomic_features.size()) != num_atoms) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The extra features file " << fpath << " has "
                   << extra_scalar_atomic_features.size() << " values, but there are "
                   << num_atoms << " atoms" << std::endl;
@@ -382,7 +382,7 @@ void setModelExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_feature
     try {
         model->setExtraScalarAtomicFeatures(extra_scalar_atomic_features);
     } catch (const std::runtime_error& e) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Could not set the extra features of the model:\n"
                   << e.what() << std::endl;
         std::exit(2);
@@ -502,7 +502,7 @@ void createOutputFiles(const OutputFiles& files) {
             io::createEmptyFile(outputPath(files.kz_atomic_alphas));
         }
     } catch (const std::runtime_error& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
 }
@@ -577,7 +577,7 @@ void writeOutputs(
             );
         }
     } catch (const std::runtime_error& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
 }
@@ -586,7 +586,7 @@ void writeOutputs(
 // use_mlip_atomic_charges = F. Exits if they are missing, or don't match the ML atoms
 torch::Tensor fixedAtomicCharges(int ml_atoms_num, const std::string& mlmm_coupling) {
     if (not tensor_container.contains("fixed_atomic_charges")) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlmm_coupling = '" << mlmm_coupling << "' with"
                   << " use_mlip_atomic_charges = F uses fixed atomic charges for the ML"
                   << " atoms, they must be stored as 'fixed_atomic_charges' (with"
@@ -595,7 +595,7 @@ torch::Tensor fixedAtomicCharges(int ml_atoms_num, const std::string& mlmm_coupl
     }
     torch::Tensor fixed_atomic_charges = tensor_container.get("fixed_atomic_charges");
     if (fixed_atomic_charges.numel() != ml_atoms_num) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The stored 'fixed_atomic_charges' have "
                   << fixed_atomic_charges.numel() << " values, but there are "
                   << ml_atoms_num << " ML atoms" << std::endl;
@@ -621,7 +621,7 @@ void calcEnergyForceCustomMlmm(
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     if (!model->supportsCustomMlmm()) {
         std::cerr
-            << "ERROR (libtorchani)\n"
+            << "ERROR (mlip_interface)\n"
             << "mlmm_coupling = 'custom' requires the model to export"
             << " 'compute_mlmm(...)'. "
             << " Consult the TorchANI-Amber README.md for the required signature\n"
@@ -705,13 +705,13 @@ void calcEnergyForceMlmm(
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     const std::string& mlmm_coupling = global_config.getString("mlmm_coupling");
     if (mlmm_coupling != "custom" && use_pbc) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "use_pbc is only supported with mlmm_coupling = 'custom'"
                   << std::endl;
         std::exit(2);
     }
     if (mlmm_coupling == "custom" && calc_qbc) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlmm_coupling = 'custom' doesn't support the QBC" << std::endl;
         std::exit(2);
     }
@@ -747,7 +747,7 @@ void calcEnergyForceMlmm(
         || (config::isPolarizableCoupling(mlmm_coupling)
             && global_config.getBool("use_mlip_atomic_volumes"));
     if (model_is_aoti && !coupling_is_none && uses_mlip_charges_or_volumes) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlmm_coupling = '" << mlmm_coupling
                   << "' with use_mlip_atomic_charges = T or use_mlip_atomic_volumes = T"
                   << " is currently not supported with pt2-aoti models" << std::endl;
@@ -795,7 +795,7 @@ void calcEnergyForceMlmm(
         if (global_config.getBool("use_mlip_atomic_charges")) {
             if (output.count("atomic_charges") == 0) {
                 std::cerr
-                    << "ERROR (libtorchani)\n"
+                    << "ERROR (mlip_interface)\n"
                     << "use_mlip_atomic_charges = T, but the model doesn't predict"
                     << " atomic charges" << std::endl;
                 std::exit(2);
@@ -821,7 +821,7 @@ void calcEnergyForceMlmm(
             torch::Tensor atomic_alphas;
             if (global_config.getBool("use_mlip_atomic_volumes")) {
                 if (output.count("atomic_volumes") == 0) {
-                    std::cerr << "ERROR (libtorchani)\n"
+                    std::cerr << "ERROR (mlip_interface)\n"
                               << "use_mlip_atomic_volumes = T, but the model doesn't"
                               << " predict atomic volumes" << std::endl;
                     std::exit(2);
@@ -903,7 +903,7 @@ void exitIfChargesGraphIsRetained(
         or tensor_container.contains("__retain_energy")
         or tensor_container.contains("__retain_atomic_charges");
     if (charges_graph_is_retained) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << loc.function_name() << " can't be called between"
                   << " mlip_calc_energy_atomic_charges_retain and"
                   << " mlip_calc_energy_atomic_charges_vjp" << std::endl;
@@ -914,7 +914,7 @@ void exitIfChargesGraphIsRetained(
 // Names starting with "__" are reserved for tensors stored internally
 void exitIfNameIsReserved(const char* name) {
     if (std::string_view{name}.starts_with("__")) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Tensor " << name << " can't be stored, names starting with __ are"
                   << " reserved" << std::endl;
         std::exit(2);
@@ -931,7 +931,7 @@ std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
     bool has_negative_dim =
         std::any_of(shape.begin(), shape.end(), [](long d) { return d < 0; });
     if (dims_num < 0 || has_negative_dim) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Invalid shape for tensor " << name
                   << ", dims_num and its dims must be non-negative" << std::endl;
         std::exit(2);
@@ -954,10 +954,10 @@ void mlip_initialize(
             config_path, from_namelist, calling_program
         );
     } catch (const config::unsupported_device_error& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     } catch (const std::exception& e) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Could not read the config from " << config_path << ":\n"
                   << e.what() << std::endl;
         std::exit(2);
@@ -1025,7 +1025,7 @@ void mlip_initialize(
         );
     } catch (const std::exception& e) {
         std::cerr
-            << "ERROR (libtorchani)\n"
+            << "ERROR (mlip_interface)\n"
             << "Could not load model correctly from path: " << model_path.string()
             << "\n"
             << "Make sure the path is correctly specified,\n"
@@ -1042,7 +1042,7 @@ void mlip_initialize(
         try {
             model->useOnlyEnsembleMember(model_index);
         } catch (const std::runtime_error& e) {
-            std::cerr << "ERROR (libtorchani)\n"
+            std::cerr << "ERROR (mlip_interface)\n"
                       << "You set 'model_index' to a value != -1, but:\n"
                       << e.what() << std::endl;
             std::exit(2);
@@ -1085,7 +1085,7 @@ void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) 
     exitIfNotInitialized(global_config);
     exitIfChargesGraphIsRetained();
     if (global_config.hasAtomicNumbers()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlip_set_atomic_numbers can only be called once after each"
                   << " mlip_initialize" << std::endl;
         std::exit(2);
@@ -1144,7 +1144,7 @@ void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) 
             tensor_container.store("__geep_sigmas", computeMlGeepSigmas());
         }
     } catch (const std::exception& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
     if (print_info && global_config.hasMlmmConfig()
@@ -1159,7 +1159,7 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
     exitIfChargesGraphIsRetained();
     torch::Tensor all_atomic_numbers = tensor_container.get("__all_atomic_numbers");
     if (num_atoms != all_atomic_numbers.size(1)) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The no-eval atoms mask has " << num_atoms
                   << " values, but there are " << all_atomic_numbers.size(1) << " atoms"
                   << std::endl;
@@ -1169,7 +1169,7 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
         values, {num_atoms}, torch::TensorOptions().dtype(torch::kInt)
     );
     if (not((no_eval_atoms_mask == 0) | (no_eval_atoms_mask == 1)).all().item<bool>()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The no-eval atoms mask can only have values 0 and 1" << std::endl;
         std::exit(2);
     }
@@ -1199,7 +1199,7 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
             tensor_container.store("__geep_sigmas", computeMlGeepSigmas());
         }
     } catch (const std::exception& e) {
-        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::cerr << "ERROR (mlip_interface)\n" << e.what() << std::endl;
         std::exit(2);
     }
 }
@@ -1233,7 +1233,7 @@ void mlip_calc_energy_force_from_external_neighbors(
     timing::ScopedTimer timer{};
     if (!model->supportsComputeFromExternalNeighbors()) {
         std::cerr
-            << "ERROR (libtorchani)\n"
+            << "ERROR (mlip_interface)\n"
             << "To use an external neighborlist (use_amber_neighborlist=.true.)\n"
             << " the model must export 'compute_from_external_neighbors(...)'."
             << " Consult the TorchANI-Amber README.md for the required signature\n"
@@ -1446,7 +1446,7 @@ void mlip_calc_energy_atomic_charges_retain(
     exitIfNoEvalAtoms(global_config);
     exitIfAtomsNumMismatch(num_atoms);
     if (model->format() == mlip::ModelFormat::PT2_AOTI) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlip_calc_energy_atomic_charges_retain is currently not supported"
                   << " with pt2-aoti models" << std::endl;
         std::exit(2);
@@ -1472,7 +1472,7 @@ void mlip_calc_energy_atomic_charges_retain(
     );
     if (output.count("atomic_charges") == 0) {
         std::cerr
-            << "ERROR (libtorchani)\n"
+            << "ERROR (mlip_interface)\n"
             << "mlip_calc_energy_atomic_charges_retain requires a model that predicts"
             << " atomic charges" << std::endl;
         std::exit(2);
@@ -1499,14 +1499,14 @@ void mlip_calc_energy_atomic_charges_vjp(
         and tensor_container.contains("__retain_energy")
         and tensor_container.contains("__retain_atomic_charges");
     if (not charges_graph_is_retained) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlip_calc_energy_atomic_charges_vjp must follow a call to"
                   << " mlip_calc_energy_atomic_charges_retain" << std::endl;
         std::exit(2);
     }
     long retained_atoms_num = tensor_container.get("__retain_coords").size(1);
     if (num_atoms != retained_atoms_num) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "mlip_calc_energy_atomic_charges_vjp was called with " << num_atoms
                   << " atoms, but the retained graph has " << retained_atoms_num
                   << " atoms" << std::endl;
@@ -1569,7 +1569,7 @@ void mlip_store_mask_tensor(const char* name, int* values, int* dims, int dims_n
     torch::Tensor tensor =
         torch::from_blob(values, shape, torch::TensorOptions().dtype(torch::kInt));
     if (not((tensor == 0) | (tensor == 1)).all().item<bool>()) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Mask tensor " << name << " can only have values 0 and 1"
                   << std::endl;
         std::exit(2);
@@ -1584,7 +1584,7 @@ void mlip_fetch_result(const char* name, double* values, int* dims, int dims_num
     exitIfNotInitialized(global_config);
     std::string key = std::string("__result_") + name;
     if (not tensor_container.contains(key)) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "There is no result '" << name << "', the last calculation didn't"
                   << " produce it" << std::endl;
         std::exit(2);
@@ -1592,7 +1592,7 @@ void mlip_fetch_result(const char* name, double* values, int* dims, int dims_num
     torch::Tensor result = tensor_container.get(key);
     std::vector<long> shape = shapeFromDims(name, dims, dims_num);
     if (result.sizes() != torch::IntArrayRef(shape)) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "The result '" << name << "' has shape " << result.sizes()
                   << ", but the shape of the array is " << torch::IntArrayRef(shape)
                   << " (C order)" << std::endl;

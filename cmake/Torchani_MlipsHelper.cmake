@@ -71,10 +71,10 @@ function(_Torchani_MlipsHelper_fetch_repo_dir)
         file(GLOB_RECURSE _REL_PATHS RELATIVE "${_FN_CACHE_DIR}" "${_FN_CACHE_DIR}/*.pt")
         if(NOT _REL_PATHS)
             Torchani_Msg_error(
-                "MLIPs - Could not fetch ${_LISTING_URL} (${_DOWNLOAD_MSG}), and there are no cached models in ${_FN_CACHE_DIR}. Either there is no network access, or ${_FN_REPO_DIR} doesn't exist in ${_FN_REPO}"
+                "MLIPs - Could not fetch ${_LISTING_URL} (${_DOWNLOAD_MSG}), and there are no cached MLIP models in ${_FN_CACHE_DIR}. Either there is no network access, or ${_FN_REPO_DIR} doesn't exist in ${_FN_REPO}"
             )
         endif()
-        Torchani_Msg_warn("MLIPs - Could not fetch ${_LISTING_URL} (${_DOWNLOAD_MSG}), using the cached models in ${_FN_CACHE_DIR}")
+        Torchani_Msg_warn("MLIPs - Could not fetch ${_LISTING_URL} (${_DOWNLOAD_MSG}), using the cached MLIP models in ${_FN_CACHE_DIR}")
     endif()
 
     foreach(_REL_PATH IN LISTS _REL_PATHS)
@@ -123,5 +123,5 @@ function(Torchani_MlipsHelper_fetch_jit_models)
         CACHE_DIR "${_PORTABLE_CACHE_DIR}"
         DESTINATION "${_FN_DESTINATION}"
     )
-    Torchani_Msg_success("MLIPs - Copied JIT-compiled models into ${_FN_DESTINATION}")
+    Torchani_Msg_success("MLIPs - Copied JIT-compiled MLIP models into ${_FN_DESTINATION}")
 endfunction()

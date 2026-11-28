@@ -1,9 +1,9 @@
 ! Hand-written part of the torchani module, from
-! interface/templates/torchani_fortran_utils.F90.
+! interface/templates/mlip_interface_fortran_utils.F90.
 !
-! This is not a standalone file. interface/templates/torchani.F90.jinja includes
+! This is not a standalone file. interface/templates/mlip_interface.F90.jinja includes
 ! it verbatim inside the "contains" section of module torchani, and the result
-! is interface/torchani.F90. This file holds the hand-written code. Things to
+! is interface/mlip_interface.F90. This file holds the hand-written code. Things to
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and
 !   "implicit none" are not repeated here.
@@ -21,7 +21,7 @@
 ! - The generated Fortran wrappers call fbool_to_cbool, defined here.
 ! - mlip_set_output_unit calls internal_set_output_unit, generated from
 !   interface/interface.yaml, and passes it mlip_write_line_to_unit. The args of
-!   mlip_write_line_to_unit must match mlip_write_line_fn in include/torchani.h.
+!   mlip_write_line_to_unit must match mlip_write_line_fn in include/mlip_interface.h.
 ! - The mlip_store_*_tensor wrappers call the bind(c) interfaces
 !   internal_store_*_tensor, generated from interface/interface.yaml.
 ! - Routines here are made public in the "public" list of the template, so a
@@ -329,7 +329,7 @@ endsubroutine
 ! Convert the amber-neighborlist to "ANI fmt", which is a 2-dim array. Each column
 ! in the array holds the index of one of the two atoms in each pair. The array's shape
 ! is not known at compile-time, so it is dynamically created *each time this function is called*
-subroutine convert_sander_neighborlist_to_ani_fmt( &
+subroutine mlip_convert_sander_neighborlist( &
     img_idx_to_atom_idx, &
     atom_idx_to_neighbors_num, &
     translation_vector, &
@@ -387,7 +387,7 @@ end subroutine
 ! Convert the pmemd-neighborlist to "ANI fmt", which is a 2-dim array. Each column
 ! in the array holds the index of one of the two atoms in each pair. The array's shape
 ! is not known at compile-time, so it is dynamically created *each time this function is called*
-subroutine convert_pmemd_neighborlist_to_ani_fmt( &
+subroutine mlip_convert_pmemd_neighborlist( &
     image_idx_to_atom_idx, &
     translation_vector, &
     pmemd_neighborlist, &
@@ -474,7 +474,7 @@ end subroutine
 ! Same format and exit code as the errors of libtorchani
 subroutine exit_with_error(message)
     character(len=*), intent(in) :: message
-    write(error_unit, "(a)") "ERROR (libtorchani)"
+    write(error_unit, "(a)") "ERROR (mlip_interface)"
     write(error_unit, "(a)") message
     error stop 2
 endsubroutine

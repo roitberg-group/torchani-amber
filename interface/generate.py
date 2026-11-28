@@ -1,4 +1,5 @@
-r"""Generate include/torchani.h and interface/torchani.F90 from interface.yaml"""
+r"""Generate include/mlip_interface.h and interface/mlip_interface.F90 from
+interface.yaml"""
 
 from pathlib import Path
 
@@ -9,8 +10,8 @@ INTERFACE_DIR = Path(__file__).resolve().parent
 REPO_DIR = INTERFACE_DIR.parent
 
 TEMPLATE_TO_OUTPUT = {
-    "torchani.h.jinja": REPO_DIR / "include" / "torchani.h",
-    "torchani.F90.jinja": INTERFACE_DIR / "torchani.F90",
+    "mlip_interface.h.jinja": REPO_DIR / "include" / "mlip_interface.h",
+    "mlip_interface.F90.jinja": INTERFACE_DIR / "mlip_interface.F90",
 }
 
 C_TYPES = {

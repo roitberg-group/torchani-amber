@@ -162,9 +162,9 @@ if(NOT TORCHANI_ALLOW_UNTESTED_COMPILERS)
 endif()
 
 # JIT: Options and flags
-option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" OFF)
+option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in MLIP models" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
-option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
+option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all MLIP models, even if jit-compiled *.pt files with the expected names are found" OFF)
 option(TORCHANI_DOWNLOAD_JIT_MODELS "Download the JIT-compiled MLIPs that match the PyTorch/LibTorch version from Hugging Face, and install them into TORCHANI_MLIPS_INSTALL_DIR" ON)
 
 if(TORCHANI_JIT_COMPILE_MODELS AND NOT TORCHANI_LINK_TO_PYTORCH_LIBS)
@@ -469,7 +469,7 @@ set_target_properties(
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
 if(TORCHANI_JIT_COMPILE_MODELS)
-    Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
+    Torchani_Msg_info("Will attempt to JIT-compile MLIP models after building the extensions")
     Torchani_TorchScriptUtils_add_jit_compile_models_target(
         FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
         AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
@@ -477,7 +477,7 @@ if(TORCHANI_JIT_COMPILE_MODELS)
     )
     add_dependencies(torchani_jit_compile_models torchani_cuaev torchani_cell_list)
 else()
-    Torchani_Msg_info("Skipping JIT-compilation of models, make sure to manually JIT-compile needed ANI models")
+    Torchani_Msg_info("Skipping JIT-compilation of models, make sure to manually JIT-compile needed MLIP models")
 endif()
 
 # Build Catch2 subproject (unit test framework) and Torchani unit tests
@@ -566,7 +566,7 @@ endif()
 # Install C-interface include file
 install(
     FILES
-        "${CMAKE_CURRENT_LIST_DIR}/include/torchani.h"
+        "${CMAKE_CURRENT_LIST_DIR}/include/mlip_interface.h"
     DESTINATION "${TORCHANI_INCLUDE_INSTALL_DIR}"
 )
 
@@ -586,7 +586,7 @@ if(NOT INSIDE_AMBER)
 
     set(PKGDATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/cmake/${PROJECT_NAME}")
     set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}")
-    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/torchani.F90")
+    set(FORTRAN_INTERFACE_INSTALL_SRC_FILE "${DATA_INSTALL_DIR}/Fortran/mlip_interface.F90")
     configure_package_config_file(
         "${CMAKE_CURRENT_LIST_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
         "${PKG_CONFIG_FILE_BLDTREE_PATH}"
@@ -617,7 +617,7 @@ if(NOT INSIDE_AMBER)
     # Install module file necessary for a portable fortran interface
     install(
         FILES
-            "${CMAKE_CURRENT_LIST_DIR}/interface/torchani.F90"
+            "${CMAKE_CURRENT_LIST_DIR}/interface/mlip_interface.F90"
         DESTINATION "${DATA_INSTALL_DIR}/Fortran"
     )
 endif()
