@@ -1,8 +1,8 @@
-! Hand-written part of the torchani module, from
+! Hand-written part of the mlip_interface module, from
 ! interface/templates/mlip_interface_fortran_utils.F90.
 !
 ! This is not a standalone file. interface/templates/mlip_interface.F90.jinja includes
-! it verbatim inside the "contains" section of module torchani, and the result
+! it verbatim inside the "contains" section of module mlip_interface, and the result
 ! is interface/mlip_interface.F90. This file holds the hand-written code. Things to
 ! keep in mind:
 ! - It relies on the module header in the template: "use iso_c_binding" and

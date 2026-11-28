@@ -150,7 +150,7 @@ auto MlipModel::from_python_model_path(
     const ModelOptions& /* options */
 ) -> std::unique_ptr<MlipModel> {
     throw std::runtime_error(
-        "Python models are not supported, since libtorchani was built with"
+        "Python models are not supported, since the MLIP Interface was built with"
         " TORCHANI_SUPPORT_PYTHON_MODELS=OFF"
     );
 }
