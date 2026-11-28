@@ -15,7 +15,7 @@
 #include <torch/all.h>
 #include <torch/csrc/utils/pybind.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 #include "model_output.h"
 
 namespace py = pybind11;

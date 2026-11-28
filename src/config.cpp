@@ -525,7 +525,7 @@ GlobalConfig::GlobalConfig(
 #ifndef TORCHANI_BUILD_CUDA
     if (getBool("use_cuda_device")) {
         throw unsupported_device_error(
-            "A CUDA device was requested, but libtorchani was built\n"
+            "A CUDA device was requested, but the MLIP Interface was built\n"
             "without CUDA support (TORCHANI_BUILD_CUDA=OFF).\n"
             "Select CPU, or rebuild with TORCHANI_BUILD_CUDA=ON"
         );

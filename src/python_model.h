@@ -7,7 +7,7 @@
 #include <pybind11/pybind11.h>
 #include <torch/all.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace python_model {
 

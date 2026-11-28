@@ -18,7 +18,7 @@
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/script.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 #include "model_output.h"
 
 using model_output::computeOutput;
@@ -216,7 +216,7 @@ void validateModelOutput(
     try {
         output.toTuple();
     } catch (const c10::Error& e) {
-        std::cerr << "ERROR (libtorchani)\n"
+        std::cerr << "ERROR (mlip_interface)\n"
                   << "Expected model to return a tuple of tensors" << std::endl;
 #ifdef DEBUG
         throw;
@@ -224,7 +224,7 @@ void validateModelOutput(
         std::exit(2);
     }
     if (output.toTuple()->elements().size() < expect_len) {
-        std::cerr << "ERROR (libtorchani)\n";
+        std::cerr << "ERROR (mlip_interface)\n";
         std::cerr << "Expected model to return ";
         if (expect_len == 2) {
             if (external) {

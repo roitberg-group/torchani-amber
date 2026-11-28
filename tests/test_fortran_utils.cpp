@@ -412,7 +412,7 @@ TEST_CASE("Namelist aliases print a deprecation warning", "[namelist]") {
     parseNamelists("&g\n new=1 /\n&g\n\n old=2 /\n", "", {}, aliases);
     std::cerr.rdbuf(cerr_buf);
     std::string warning = captured.str();
-    CHECK(warning.find("WARNING (libtorchani)") != std::string::npos);
+    CHECK(warning.find("WARNING (mlip_interface)") != std::string::npos);
     CHECK(
         warning.find("key old in group &g (line 5) is deprecated") != std::string::npos
     );

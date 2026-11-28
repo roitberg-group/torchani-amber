@@ -8,7 +8,7 @@
 namespace utils {
 
 void printWarning(const std::string& msg) {
-    std::cerr << "WARNING (libtorchani)\n" << msg << std::endl;
+    std::cerr << "WARNING (mlip_interface)\n" << msg << std::endl;
 }
 
 std::string toLower(std::string str) {

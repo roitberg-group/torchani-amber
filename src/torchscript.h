@@ -8,7 +8,7 @@
 #include <torch/all.h>
 #include <torch/script.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace torchscript {
 

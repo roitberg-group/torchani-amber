@@ -4,7 +4,7 @@ This directory contains the scripts that compile models into TorchScript with th
 Torch compiler, so that LibTorch can run them in a C++ environment. The compiled
 `*.pt` files are written to this directory.
 
-`python jit.py` compiles the following TorchANI models, if they are not found here
+`python jit.py` compiles the following MLIP models, if they are not found here
 (`--force` recompiles them):
 
 - `ani1x.pt`, `ani1ccx.pt`, `ani2x.pt`, `ani2xr.pt`, `ani2dr.pt`, `animbis.pt`,

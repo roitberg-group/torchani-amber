@@ -1,5 +1,5 @@
-# Single source of truth for the C interface (include/torchani.h) and the
-# Fortran interface (interface/torchani.F90). After editing, run:
+# Single source of truth for the C interface (include/mlip_interface.h) and the
+# Fortran interface (interface/mlip_interface.F90). After editing, run:
 #   python interface/generate.py
 # (this also runs automatically as a pre-commit / pre-push hook)
 #
@@ -7,11 +7,11 @@
 #   name: C symbol name
 #   comment: (optional) emitted above the declaration in both languages
 #   fortran_wrapper: (optional) "manual" if the Fortran wrapper is hand-written
-#       in templates/torchani_fortran_utils.F90. "none" if the function is not exposed
-#       in Fortran by its own name, only through the hand-written wrapper of another
-#       function. Otherwise, functions with bool or str args get an auto-generated
-#       Fortran wrapper that converts logical <-> logical(c_bool) and fortran strings
-#       <-> null-terminated C strings
+#       in templates/mlip_interface_fortran_utils.F90. "none" if the function is not
+#       exposed in Fortran by its own name, only through the hand-written wrapper of
+#       another function. Otherwise, functions with bool or str args get an
+#       auto-generated Fortran wrapper that converts logical <-> logical(c_bool) and
+#       fortran strings <-> null-terminated C strings
 #   fortran_generic: (optional) name of a Fortran generic interface the function is
 #       exposed through. The function's own name is then private in Fortran
 #

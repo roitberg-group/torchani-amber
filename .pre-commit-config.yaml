@@ -38,7 +38,7 @@ repos:
       - id: autoflake
         stages: [pre-push]
 
-  # Regenerate include/torchani.h and interface/torchani.F90
+  # Regenerate include/mlip_interface.h and interface/mlip_interface.F90
   - repo: local
     hooks:
       - id: generate-interfaces

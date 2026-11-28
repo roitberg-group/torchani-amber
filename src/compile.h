@@ -9,7 +9,7 @@
 #include <torch/all.h>
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace compile {
 
