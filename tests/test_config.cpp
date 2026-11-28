@@ -889,6 +889,9 @@ TEST_CASE("GlobalConfig GEEP validation", "[config]") {
         "&mlmm mlmm_coupling = 'coulombic-geep', inv_pol_dielectric = 1.0 /\n",
         "&mlmm mlmm_coupling = 'coulombic-geep', use_mlip_atomic_volumes = T /\n",
         "&mlmm mlmm_coupling = 'simple-polarizable-geep' /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = , /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = 3* /\n",
     };
     for (const std::string& text : invalid_texts) {
         std::filesystem::path path = writeTmpFile(fname, text);

@@ -36,7 +36,7 @@ constexpr bool BUILT_WITH_CUDA = false;
 #endif
 
 // Values are assigned element-wise. Null values, and keys not in the group, keep the
-// values in config
+// values in config. Unlike Fortran, assigning only null values (e.g. "a = ,") is an error
 ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
     ConfigDict updated_config = config;
     for (const auto& [key, option] : config.options()) {
@@ -45,6 +45,19 @@ ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
             continue;
         }
         const std::vector<fortran_utils::NamelistValue>& new_values = values_it->second;
+        bool values_are_all_null = std::all_of(
+            new_values.begin(),
+            new_values.end(),
+            [](const fortran_utils::NamelistValue& v) {
+                return std::holds_alternative<std::monostate>(v);
+            }
+        );
+        if (values_are_all_null) {
+            throw config_validation_error(
+                key + " is assigned only null values (e.g. '" + key
+                + " = ,'), give it a value or remove it"
+            );
+        }
         std::vector<fortran_utils::NamelistValue> values = option.values;
         if (values.size() < new_values.size()) {
             values.resize(new_values.size());

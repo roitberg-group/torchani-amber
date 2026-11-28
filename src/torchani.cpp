@@ -118,23 +118,24 @@ void populateForces(torch::Tensor forces, double forces_buf[][3], int num_atoms)
 }
 
 void populateAtomicCharges(
-    torch::Tensor& atomic_charges_tensor, double* atomic_charges, int num_atoms
+    const torch::Tensor& atomic_charges_tensor, double* atomic_charges, int num_atoms
 ) {
-    atomic_charges_tensor = atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
-    auto atomic_charges_accessor = atomic_charges_tensor.accessor<double, 2>();
+    torch::Tensor cpu_atomic_charges =
+        atomic_charges_tensor.to(torch::kCPU, torch::kDouble);
+    auto atomic_charges_accessor = cpu_atomic_charges.accessor<double, 2>();
 
     for (int atom = 0; atom != num_atoms; ++atom) {
         atomic_charges[atom] = atomic_charges_accessor[0][atom];
     }
 }
 
-void populateEnergyScalar(torch::Tensor& output, double* energy_scalar) {
+void populateEnergyScalar(const torch::Tensor& output, double* energy_scalar) {
     // data is copied here, otherwise errors ocurr, since the data dies as soon
     // as the function exits.
     // This cast does nothing if output is already of the required type and
     // device, so there should be no overhead
-    output = output.to(torch::kCPU, torch::kDouble);
-    *energy_scalar = (*output.data_ptr<double>()) * constants::HARTREE_TO_KCALMOL;
+    torch::Tensor cpu_output = output.to(torch::kCPU, torch::kDouble);
+    *energy_scalar = (*cpu_output.data_ptr<double>()) * constants::HARTREE_TO_KCALMOL;
 }
 
 void exitIfNoEvalAtoms(
@@ -620,11 +621,10 @@ void calcEnergyForceCustomMlmm(
     torch::Tensor mm_charges = tensor_utils::dblBufToTensor(
         global_config, mm_atomic_charges_buf, {1, mm_atoms_num}
     );
-    torch::Tensor cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
 
     std::optional<torch::Tensor> maybe_cell;
     if (use_pbc) {
-        maybe_cell = cell;
+        maybe_cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
     }
     mlip::MlipOutput output = model->computeMlmm(
         atomic_numbers,
@@ -907,7 +907,8 @@ void exitIfNameIsReserved(const char* name) {
     }
 }
 
-// Shape of a tensor stored through the C API. Exits if any dim, or dims_num, is negative
+// Shape of the tensor referred to by the C API. Exits if any dim, or dims_num, is
+// negative
 std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
     std::vector<long> shape;
     if (dims_num >= 0) {
@@ -917,9 +918,8 @@ std::vector<long> shapeFromDims(const char* name, int* dims, int dims_num) {
         std::any_of(shape.begin(), shape.end(), [](long d) { return d < 0; });
     if (dims_num < 0 || has_negative_dim) {
         std::cerr << "ERROR (libtorchani)\n"
-                  << "Tensor " << name
-                  << " can't be stored, dims_num and its dims must be"
-                  << " non-negative" << std::endl;
+                  << "Invalid shape for tensor " << name
+                  << ", dims_num and its dims must be non-negative" << std::endl;
         std::exit(2);
     }
     return shape;
@@ -1289,7 +1289,6 @@ void mlip_calc_energy_force(
     timing::ScopedTimer timer{};
     torch::Tensor coords =
         tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
-    torch::Tensor cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
     torch::Tensor molecule_idxs =
         tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
     // Atoms excluded from the evaluation feel no forces, and don't contribute to the
@@ -1302,7 +1301,7 @@ void mlip_calc_energy_force(
     // Inputs are setup with PBC
     std::optional<torch::Tensor> maybe_cell;
     if (use_pbc) {
-        maybe_cell = cell;
+        maybe_cell = tensor_utils::dblBufToCellTensor(global_config, cell_buf);
     }
     std::optional<torch::Tensor> maybe_molecule_idxs;
     if (calc_only_bonded) {
@@ -1448,10 +1447,7 @@ void mlip_calc_energy_atomic_charges_retain(
     torch::Tensor atomic_charges = output.at("atomic_charges");
 
     populateEnergyScalar(energy, pot_energy_buf);
-    // populateAtomicCharges converts its argument to CPU double, keep the
-    // original tensor (and its graph) for the backward pass
-    torch::Tensor charges_copy = atomic_charges;
-    populateAtomicCharges(charges_copy, atomic_charges_buf, num_atoms);
+    populateAtomicCharges(atomic_charges, atomic_charges_buf, num_atoms);
     tensor_container.store("__retain_coords", coords);
     tensor_container.store("__retain_energy", energy);
     tensor_container.store("__retain_atomic_charges", atomic_charges);

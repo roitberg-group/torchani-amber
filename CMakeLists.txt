@@ -164,7 +164,6 @@ endif()
 # JIT: Options and flags
 option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
-option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 option(TORCHANI_DOWNLOAD_JIT_MODELS "Download the JIT-compiled MLIPs that match the PyTorch/LibTorch version from Hugging Face, and install them into TORCHANI_MLIPS_INSTALL_DIR" ON)
 
@@ -468,15 +467,10 @@ set_target_properties(
 
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
-# NOTE: Disabling JIT optimizations during scripting has been confirmed to be a no-op
-# (the saved *.pt files are identical), since these flags only affect how torch *runs*
-# TorchScript graphs, not how it scripts or serializes them
-# TODO: Remove this in the future
 if(TORCHANI_JIT_COMPILE_MODELS)
     Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
     Torchani_TorchScriptUtils_add_jit_compile_models_target(
         FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
-        DISABLE_OPTIMIZATIONS ${TORCHANI_JIT_DISABLE_OPTIMIZATIONS}
         AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
         EXTENSIONS_DIR $<TARGET_FILE_DIR:torchani_cuaev>
     )
