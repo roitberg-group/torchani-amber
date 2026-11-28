@@ -163,7 +163,7 @@ if __name__ == "__main__":
         if args.aimnet2:
             console.print("-- JIT - Generating AimNet2 Wrappers")
             # jit one model to cache the NNPotential class
-            import torchani
+            import torchani  # noqa
             import torch  # noqa
 
             generate_aimnet2_wrapper()
