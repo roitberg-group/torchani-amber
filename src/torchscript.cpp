@@ -216,30 +216,25 @@ void validateModelOutput(
     try {
         output.toTuple();
     } catch (const c10::Error& e) {
-        std::cerr << "ERROR (mlip_interface)\n"
-                  << "Expected model to return a tuple of tensors" << std::endl;
-#ifdef DEBUG
-        throw;
-#endif
-        std::exit(2);
+        throw std::runtime_error(
+            std::string("Expected model to return a tuple of tensors ")
+            + "but got an error when accessing it " + e.what()
+        );
     }
     if (output.toTuple()->elements().size() < expect_len) {
-        std::cerr << "ERROR (mlip_interface)\n";
-        std::cerr << "Expected model to return ";
+        std::string msg = "Expected model to return ";
         if (expect_len == 2) {
             if (external) {
-                std::cerr << "a tuple (energies, atomic_scalars)";
+                msg += "a tuple (energies, atomic_scalars)";
             } else {
-                std::cerr << "a tuple (species, energies, ...)";
+                msg += "a tuple (species, energies, ...)";
             }
         } else if (expect_len == 3) {
-            std::cerr
-                << "a tuple (species, energies, atomic_charges, ...) or (species, energies, scalars)";
+            msg += "a tuple (species, energies, atomic_charges, ...) or (species, energies, scalars)";
         } else {
-            std::cerr << "a tuple of len at least " << expect_len;
+            msg += "a tuple of len at least " + std::to_string(expect_len);
         }
-        std::cerr << std::endl;
-        std::exit(2);
+        throw std::runtime_error(msg);
     }
 }
 
