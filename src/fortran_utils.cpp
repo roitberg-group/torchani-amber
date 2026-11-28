@@ -41,13 +41,6 @@ bool isNameChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
-std::string toLower(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
-        return std::tolower(c);
-    });
-    return str;
-}
-
 std::size_t nextLineStart(const std::string& text, std::size_t pos) {
     std::size_t newline = text.find('\n', pos);
     return newline == std::string::npos ? text.size() : newline + 1;
@@ -208,12 +201,12 @@ bool isReal(const std::string& token) {
 }
 
 bool isTrue(const std::string& token) {
-    std::string lower = toLower(token);
+    std::string lower = utils::toLower(token);
     return lower == ".true." || lower == ".t." || lower == "true" || lower == "t";
 }
 
 bool isFalse(const std::string& token) {
-    std::string lower = toLower(token);
+    std::string lower = utils::toLower(token);
     return lower == ".false." || lower == ".f." || lower == "false" || lower == "f";
 }
 
@@ -421,7 +414,7 @@ NamelistGroup parseGroup(
         if (text[pos] == '&' || text[pos] == '$') {
             std::size_t end_start = pos;
             ++pos;
-            if (toLower(readName(text, pos)) != "end") {
+            if (utils::toLower(readName(text, pos)) != "end") {
                 throwParseError<namelist_syntax_error>(
                     text, end_start, "expected '&end' or '/'"
                 );
@@ -434,7 +427,7 @@ NamelistGroup parseGroup(
             continue;
         }
         std::size_t key_start = pos;
-        std::string written_key = toLower(readName(text, pos));
+        std::string written_key = utils::toLower(readName(text, pos));
         if (written_key.empty()) {
             throwParseError<namelist_syntax_error>(text, key_start, "expected a key");
         }
@@ -525,7 +518,7 @@ std::string groupNameAt(
         return "";
     }
     name_end = token_start + 1;
-    std::string name = toLower(readName(text, name_end));
+    std::string name = utils::toLower(readName(text, name_end));
     return name == "end" ? "" : name;
 }
 
@@ -552,13 +545,13 @@ std::vector<NamelistGroup> parseNamelists(
 ) {
     NamelistSchema lower_schema;
     for (const auto& [key, type] : schema) {
-        lower_schema[toLower(key)] = type;
+        lower_schema[utils::toLower(key)] = type;
     }
     NamelistAliases lower_aliases;
     for (const auto& [alias, key] : aliases) {
-        lower_aliases[toLower(alias)] = toLower(key);
+        lower_aliases[utils::toLower(alias)] = utils::toLower(key);
     }
-    std::string selected_name = toLower(group_name);
+    std::string selected_name = utils::toLower(group_name);
     std::vector<NamelistGroup> groups;
     std::size_t pos = 0;
     while (pos < text.size()) {

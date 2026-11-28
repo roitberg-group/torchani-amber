@@ -35,7 +35,7 @@ class AnalyticModel(torch.nn.Module):
     def set_active_members(self, idxs: list[int]) -> None:
         self.active_members = idxs
 
-    def set_extra_features(self, features: list[float]) -> None:
+    def set_extra_scalar_atomic_features(self, features: list[float]) -> None:
         self.extra_features = features
 
     def set_strategy(self, strategy: str) -> None:

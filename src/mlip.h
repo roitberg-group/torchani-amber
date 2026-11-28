@@ -63,7 +63,9 @@ class MlipModel {
     virtual ~MlipModel() = default;
 
     virtual auto useOnlyEnsembleMember(std::int64_t member_idx) -> void = 0;
-    virtual auto setExtraFeatures(torch::Tensor extra_features) -> void = 0;
+    virtual auto setExtraScalarAtomicFeatures(
+        torch::Tensor extra_scalar_atomic_features
+    ) -> void = 0;
     virtual auto setStrategy(const std::string& strat) -> void = 0;
     virtual auto supportsCustomMlmm() const -> bool = 0;
     virtual auto supportsMultipoleMlmm() const -> bool = 0;

@@ -14,10 +14,10 @@ import unittest
 from pathlib import Path
 
 import f90nml
+import pytest
 from parameterized import parameterized
 
 this_dir = Path(__file__).parent
-DUMP_EXE = this_dir.parent / "build" / "torchani_namelist_dump"
 NAMELIST_FILES = sorted((this_dir / "namelists").iterdir())
 
 # f90nml takes a lone "&end" line outside a group as the start of a group named "end".
@@ -78,9 +78,11 @@ def parse_with_f90nml(text: str) -> dict[str, list[dict[str, list[tp.Any]]]]:
     return groups
 
 
-def parse_with_cpp(path: Path) -> dict[str, list[dict[str, list[tp.Any]]]]:
+def parse_with_cpp(
+    dump_exe: Path, path: Path
+) -> dict[str, list[dict[str, list[tp.Any]]]]:
     proc = subprocess.run(
-        [str(DUMP_EXE), str(path)], capture_output=True, text=True, check=True
+        [str(dump_exe), str(path)], capture_output=True, text=True, check=True
     )
     groups: dict[str, list[dict[str, list[tp.Any]]]] = {}
     for group in json.loads(proc.stdout):
@@ -88,8 +90,11 @@ def parse_with_cpp(path: Path) -> dict[str, list[dict[str, list[tp.Any]]]]:
     return groups
 
 
-@unittest.skipIf(not DUMP_EXE.is_file(), f"{DUMP_EXE} not found, build the tests first")
 class TestNamelistParser(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def _set_dump_exe(self, pytestconfig: pytest.Config) -> None:
+        self._dump_exe = pytestconfig.getoption("dump_exe")
+
     def testFilesFound(self) -> None:
         self.assertGreater(len(NAMELIST_FILES), 0)
 
@@ -97,7 +102,8 @@ class TestNamelistParser(unittest.TestCase):
     def testAmberInput(self, _name: str, path: Path) -> None:
         expect = parse_with_f90nml(path.read_text())
         self.assertIn("cntrl", expect)
-        self.assertEqual(as_typed(parse_with_cpp(path)), as_typed(expect))
+        actual = parse_with_cpp(self._dump_exe, path)
+        self.assertEqual(as_typed(actual), as_typed(expect))
 
     @parameterized.expand(EDGE_CASES)
     def testEdgeCase(self, _name: str, text: str) -> None:
@@ -105,9 +111,6 @@ class TestNamelistParser(unittest.TestCase):
             path = Path(tmp_dir) / "input"
             path.write_text(text)
             self.assertEqual(
-                as_typed(parse_with_cpp(path)), as_typed(parse_with_f90nml(text))
+                as_typed(parse_with_cpp(self._dump_exe, path)),
+                as_typed(parse_with_f90nml(text)),
             )
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -60,9 +60,11 @@ class NutmegWrapper(torch.nn.Module):
         self._nlist = AdaptiveList().to(device=param.device, dtype=param.dtype)
 
     @torch.jit.export
-    def set_extra_features(self, extra_features: list[float]) -> None:
+    def set_extra_scalar_atomic_features(
+        self, extra_scalar_atomic_features: list[float]
+    ) -> None:
         self._atomic_charges = torch.tensor(
-            extra_features,
+            extra_scalar_atomic_features,
             dtype=self._atomic_charges.dtype,
             device=self._atomic_charges.device,
         )

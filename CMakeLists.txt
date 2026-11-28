@@ -358,9 +358,10 @@ target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
 
 # The extensions are named as the TorchANI Python package expects them (cuaev.so,
-# cell_list.so). After installation, the TorchANI Python package finds them in
-# <prefix>/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so they don't need to be built
-# a second time by pip or "ani build-extensions"
+# cell_list.so). The TorchANI Python package looks for them in
+# ~/.local/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so if they are installed with
+# the run-cmake default prefix (~/.local) they don't need to be built a second time by
+# pip or "ani build-extensions"
 set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
 set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)

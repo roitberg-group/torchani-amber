@@ -51,12 +51,14 @@ interface
 ! Read the config from the file at config_path (the mdin, relative paths are
 ! resolved wrt the current working directory), and load the MLIP. from_namelist is
 ! (case-insensitive):
-! - "mlip": read the first &mlip namelist, without the ML/MM options
-! - "qmmm-and-mlip" (deprecated): read the first &mlip namelist, with the ML/MM
+! - "mlip": read the &mlip namelist, without the ML/MM options
+! - "qmmm-and-mlip" (deprecated): read the &mlip namelist, with the ML/MM
 !   options. If calling_program is "sander", the &qmmm namelist is also read, and
 !   the config is validated against it
-! - "mlmm": read the first &mlmm namelist, with the ML/MM options. A &qmmm
+! - "mlmm": read the &mlmm namelist, with the ML/MM options. A &qmmm
 !   namelist is an error
+! The file must have a single &mlip (or &mlmm) namelist, and a single &qmmm
+! namelist if it is read
 ! calling_program is the md engine, "none", "sander" or "pmemd".
 ! In Fortran, from_namelist and calling_program are optional, default "mlip" and
 ! "none"
@@ -105,10 +107,10 @@ endsubroutine
 ! Set the atomic numbers of the atoms. Required by mlip_set_no_eval_atoms_mask and
 ! the mlip_calc_* functions, which exit if they are not set. Can only be called once
 ! after each mlip_initialize, exits otherwise. The extra features file
-! (extra_features_file_path) is read here, and must have one value per atom. With
-! use_mlip_atomic_volumes, exits if an element has no kz. With mlmm_coupling
-! 'coulombic-geep' or 'simple-polarizable-geep', exits if an element has no GEEP
-! width. If print_info and mlmm_coupling is 'simple-polarizable' or
+! (extra_scalar_atomic_features_file_path) is read here, and must have one value
+! per atom. With use_mlip_atomic_volumes, exits if an element has no kz. With
+! mlmm_coupling 'coulombic-geep' or 'simple-polarizable-geep', exits if an element
+! has no GEEP width. If print_info and mlmm_coupling is 'simple-polarizable' or
 ! 'simple-polarizable-geep', the polarizabilities (or kz factors) in use are printed
 ! to stdout, or to the unit set by mlip_set_output_unit. In Fortran, num_atoms is
 ! size(atomic_nums), and print_info is optional, default false

@@ -187,12 +187,20 @@ void exitIfNoAtomicNumbers(
     }
 }
 
-// Namelist keys are lowercase
-std::string lowercase(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
-    return str;
+// num_atoms is the number of atoms passed to mlip_set_atomic_numbers, including the
+// atoms excluded from the evaluation
+void exitIfAtomsNumMismatch(
+    int num_atoms, std::source_location loc = std::source_location::current()
+) {
+    long expect_num_atoms = tensor_container.get("__all_atomic_numbers").size(1);
+    if (num_atoms != expect_num_atoms) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << loc.function_name() << " was called with " << num_atoms
+                  << " atoms, but mlip_set_atomic_numbers was called with "
+                  << expect_num_atoms << std::endl;
+        std::exit(2);
+    }
 }
-
 
 // Atomic numbers of the ML atoms, on the CPU
 std::vector<long> mlAtomicNumbers() {
@@ -340,17 +348,17 @@ std::string libtorchaniDir() {
 
 // One float per atom, from a newline separated file. Exits if the file can't be read,
 // or if the number of floats doesn't match num_atoms
-torch::Tensor readExtraFeatures(const std::string& fpath, long num_atoms) {
+torch::Tensor readExtraScalarAtomicFeatures(const std::string& fpath, long num_atoms) {
     std::ifstream file(fpath);
     if (!file) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "Could not open the extra features file " << fpath << std::endl;
         std::exit(2);
     }
-    std::vector<double> extra_features;
+    std::vector<double> extra_scalar_atomic_features;
     double value = 0.0;
     while (file >> value) {
-        extra_features.push_back(value);
+        extra_scalar_atomic_features.push_back(value);
     }
     if (!file.eof()) {
         std::cerr << "ERROR (libtorchani)\n"
@@ -358,19 +366,21 @@ torch::Tensor readExtraFeatures(const std::string& fpath, long num_atoms) {
                   << " has values that are not floats" << std::endl;
         std::exit(2);
     }
-    if (static_cast<long>(extra_features.size()) != num_atoms) {
+    if (static_cast<long>(extra_scalar_atomic_features.size()) != num_atoms) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "The extra features file " << fpath << " has "
-                  << extra_features.size() << " values, but there are " << num_atoms
-                  << " atoms" << std::endl;
+                  << extra_scalar_atomic_features.size() << " values, but there are "
+                  << num_atoms << " atoms" << std::endl;
         std::exit(2);
     }
-    return torch::tensor(extra_features, torch::TensorOptions().dtype(torch::kDouble));
+    return torch::tensor(
+        extra_scalar_atomic_features, torch::TensorOptions().dtype(torch::kDouble)
+    );
 }
 
-void setModelExtraFeatures(torch::Tensor extra_features) {
+void setModelExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_features) {
     try {
-        model->setExtraFeatures(extra_features);
+        model->setExtraScalarAtomicFeatures(extra_scalar_atomic_features);
     } catch (const std::runtime_error& e) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "Could not set the extra features of the model:\n"
@@ -442,6 +452,10 @@ const OutputFiles MLMM_OUTPUT_FILES{
     "kz_atomic_alphas_ml_region.mlip.dat",
     "ML/MM: .xyz trajectory file of the ML region",
 };
+
+const OutputFiles& configOutputFiles() {
+    return global_config.hasMlmmConfig() ? MLMM_OUTPUT_FILES : OUTPUT_FILES;
+}
 
 // Path of an output file, in the output_dir option, or the current working directory if
 // it is empty
@@ -537,7 +551,7 @@ void writeOutputs(
                 outputPath(files.forces),
                 forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
             );
-            if (not files.mm_forces.empty() and mm_forces.numel() > 0) {
+            if (not files.mm_forces.empty() and mm_forces.defined()) {
                 io::appendDatFrame(
                     outputPath(files.mm_forces),
                     mm_forces.view({-1, 3}) * constants::HARTREE_TO_KCALMOL
@@ -1045,7 +1059,7 @@ void mlip_initialize(
             + " you can safely disregard this warning."
         );
     }
-    createOutputFiles(global_config.hasMlmmConfig() ? MLMM_OUTPUT_FILES : OUTPUT_FILES);
+    createOutputFiles(configOutputFiles());
     last_written_md_step.reset();
 
     // (7) Epilogue
@@ -1102,15 +1116,21 @@ void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) 
     // Models can read arbitrary features from a newline separated
     // file with floats (e.g. Nutmeg potentials use this)
     // Relative paths are resolved wrt the current working directory
-    std::string extra_features_fpath =
-        global_config.getString("extra_features_file_path");
-    if (not extra_features_fpath.empty()) {
-        extra_features_fpath = std::filesystem::absolute(extra_features_fpath).string();
-        torch::Tensor extra_features =
-            readExtraFeatures(extra_features_fpath, num_atoms);
-        tensor_container.store("__all_extra_features", extra_features);
-        tensor_container.store("__extra_features", extra_features);
-        setModelExtraFeatures(extra_features);
+    std::string extra_scalar_atomic_features_fpath =
+        global_config.getString("extra_scalar_atomic_features_file_path");
+    if (not extra_scalar_atomic_features_fpath.empty()) {
+        extra_scalar_atomic_features_fpath =
+            std::filesystem::absolute(extra_scalar_atomic_features_fpath).string();
+        torch::Tensor extra_scalar_atomic_features = readExtraScalarAtomicFeatures(
+            extra_scalar_atomic_features_fpath, num_atoms
+        );
+        tensor_container.store(
+            "__all_extra_scalar_atomic_features", extra_scalar_atomic_features
+        );
+        tensor_container.store(
+            "__extra_scalar_atomic_features", extra_scalar_atomic_features
+        );
+        setModelExtraScalarAtomicFeatures(extra_scalar_atomic_features);
     }
     try {
         if (global_config.hasMlmmConfig()
@@ -1162,12 +1182,14 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
               << atomic_numbers;
     tensor_container.store("__do_eval_atoms_idxs", do_eval_atoms_idxs);
     tensor_container.store("__atomic_numbers", atomic_numbers);
-    if (tensor_container.contains("__all_extra_features")) {
-        torch::Tensor extra_features =
-            tensor_container.get("__all_extra_features")
+    if (tensor_container.contains("__all_extra_scalar_atomic_features")) {
+        torch::Tensor extra_scalar_atomic_features =
+            tensor_container.get("__all_extra_scalar_atomic_features")
                 .index_select(0, do_eval_atoms_idxs.to(torch::kCPU));
-        tensor_container.store("__extra_features", extra_features);
-        setModelExtraFeatures(extra_features);
+        tensor_container.store(
+            "__extra_scalar_atomic_features", extra_scalar_atomic_features
+        );
+        setModelExtraScalarAtomicFeatures(extra_scalar_atomic_features);
     }
     try {
         if (tensor_container.contains("__volume_kzs")) {
@@ -1206,6 +1228,7 @@ void mlip_calc_energy_force_from_external_neighbors(
 ) {
     exitIfNotInitialized(global_config);
     exitIfNoAtomicNumbers(global_config);
+    exitIfAtomsNumMismatch(num_atoms);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     timing::ScopedTimer timer{};
     if (!model->supportsComputeFromExternalNeighbors()) {
@@ -1224,8 +1247,6 @@ void mlip_calc_energy_force_from_external_neighbors(
     torch::Tensor neighborlist = tensor_utils::intBufToNeighborlistTensor(
         global_config, neighborlist_buf, num_neighbors
     );
-    torch::Tensor molecule_idxs =
-        tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
 
     if (global_config.useNoEvalAtoms()) {
         torch::Tensor do_eval_atoms_idxs = tensor_container.get("__do_eval_atoms_idxs");
@@ -1239,12 +1260,18 @@ void mlip_calc_energy_force_from_external_neighbors(
         auto do_eval_pairs = (neighborlist >= 0).all(0).nonzero().flatten();
         neighborlist = neighborlist.index_select(1, {do_eval_pairs});
         shifts = shifts.index_select(0, {do_eval_pairs});
-        molecule_idxs = molecule_idxs.index({do_eval_atoms_idxs});
         coords = coords.index_select(1, {do_eval_atoms_idxs});
     }
 
     std::optional<torch::Tensor> maybe_molecule_idxs;
     if (calc_only_bonded) {
+        torch::Tensor molecule_idxs = tensor_utils::intBufToI64Tensor(
+            global_config, molecule_idxs_buf, {num_atoms}
+        );
+        if (global_config.useNoEvalAtoms()) {
+            molecule_idxs =
+                molecule_idxs.index({tensor_container.get("__do_eval_atoms_idxs")});
+        }
         maybe_molecule_idxs = molecule_idxs;
     }
     mlip::MlipOutput output = model->computeFromExternalNeighbors(
@@ -1264,7 +1291,7 @@ void mlip_calc_energy_force_from_external_neighbors(
     populateForces(output.at("forces"), forces_buf, num_atoms);
     populateEnergyScalar(energy, pot_energy_buf);
     writeOutputs(
-        OUTPUT_FILES,
+        configOutputFiles(),
         atomic_numbers,
         coords,
         output.at("forces"),
@@ -1285,17 +1312,15 @@ void mlip_calc_energy_force(
 ) {
     exitIfNotInitialized(global_config);
     exitIfNoAtomicNumbers(global_config);
+    exitIfAtomsNumMismatch(num_atoms);
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     timing::ScopedTimer timer{};
     torch::Tensor coords =
         tensor_utils::dblBufToCoordsTensor(global_config, coords_buf, num_atoms);
-    torch::Tensor molecule_idxs =
-        tensor_utils::intBufToI64Tensor(global_config, molecule_idxs_buf, {num_atoms});
     // Atoms excluded from the evaluation feel no forces, and don't contribute to the
     // energy
     if (global_config.useNoEvalAtoms()) {
         torch::Tensor do_eval_atoms_idxs = tensor_container.get("__do_eval_atoms_idxs");
-        molecule_idxs = molecule_idxs.index({do_eval_atoms_idxs});
         coords = coords.index_select(1, {do_eval_atoms_idxs});
     }
     // Inputs are setup with PBC
@@ -1305,6 +1330,13 @@ void mlip_calc_energy_force(
     }
     std::optional<torch::Tensor> maybe_molecule_idxs;
     if (calc_only_bonded) {
+        torch::Tensor molecule_idxs = tensor_utils::intBufToI64Tensor(
+            global_config, molecule_idxs_buf, {num_atoms}
+        );
+        if (global_config.useNoEvalAtoms()) {
+            molecule_idxs =
+                molecule_idxs.index({tensor_container.get("__do_eval_atoms_idxs")});
+        }
         maybe_molecule_idxs = molecule_idxs;
     }
     mlip::MlipOutput output = model->computeSinglePoint(
@@ -1323,7 +1355,7 @@ void mlip_calc_energy_force(
     populateForces(output.at("forces"), forces_buf, num_atoms);
     populateEnergyScalar(energy, pot_energy_buf);
     writeOutputs(
-        OUTPUT_FILES,
+        configOutputFiles(),
         atomic_numbers,
         coords,
         output.at("forces"),
@@ -1350,6 +1382,7 @@ void mlip_calc_energy_force_mlmm(
     exitIfNoAtomicNumbers(global_config);
     exitIfNoMlmmConfig(global_config);
     exitIfNoEvalAtoms(global_config);
+    exitIfAtomsNumMismatch(ml_atoms_num);
     calcEnergyForceMlmm(
         ml_atoms_num,
         mm_atoms_num,
@@ -1384,6 +1417,7 @@ void mlip_calc_energy_force_mlmm_qbc(
     exitIfNoAtomicNumbers(global_config);
     exitIfNoMlmmConfig(global_config);
     exitIfNoEvalAtoms(global_config);
+    exitIfAtomsNumMismatch(ml_atoms_num);
     calcEnergyForceMlmm(
         ml_atoms_num,
         mm_atoms_num,
@@ -1410,6 +1444,7 @@ void mlip_calc_energy_atomic_charges_retain(
     exitIfNotInitialized(global_config);
     exitIfNoAtomicNumbers(global_config);
     exitIfNoEvalAtoms(global_config);
+    exitIfAtomsNumMismatch(num_atoms);
     if (model->format() == mlip::ModelFormat::PT2_AOTI) {
         std::cerr << "ERROR (libtorchani)\n"
                   << "mlip_calc_energy_atomic_charges_retain is currently not supported"
@@ -1571,7 +1606,7 @@ void mlip_fetch_result(const char* name, double* values, int* dims, int dims_num
 
 void mlip_get_config_int_option(const char* name, int* out_value) {
     try {
-        std::string key = lowercase(name);
+        std::string key = utils::toLower(name);
         *out_value = global_config.getInt(key);
     } catch (const std::exception& err) {
         exitWithConfigOptionError(name, "an int", err);
@@ -1580,7 +1615,7 @@ void mlip_get_config_int_option(const char* name, int* out_value) {
 
 void mlip_get_config_bool_option(const char* name, bool* out_value) {
     try {
-        std::string key = lowercase(name);
+        std::string key = utils::toLower(name);
         *out_value = global_config.getBool(key);
     } catch (const std::exception& err) {
         exitWithConfigOptionError(name, "a bool", err);
@@ -1589,7 +1624,7 @@ void mlip_get_config_bool_option(const char* name, bool* out_value) {
 
 void mlip_get_config_float_option(const char* name, double* out_value) {
     try {
-        std::string key = lowercase(name);
+        std::string key = utils::toLower(name);
         *out_value = global_config.getDouble(key);
     } catch (const std::exception& err) {
         exitWithConfigOptionError(name, "a float", err);
@@ -1603,7 +1638,7 @@ void mlip_get_config_str_option(
     char out_value[]
 ) {
     try {
-        std::string key = lowercase(name);
+        std::string key = utils::toLower(name);
         const std::string& value = global_config.getString(key);
         if (static_cast<int>(value.size()) + 1 > out_value_len) {
             throw std::length_error(

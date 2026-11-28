@@ -17,7 +17,7 @@ namespace python_model {
  * The model is a directory with a model.py that defines
  * make_model(device: str, dtype: torch.dtype) -> torch.nn.Module. The module has a
  * 'forward', and optionally 'compute_from_external_neighbors', 'compute_mlmm',
- * 'compute_multipole_mlmm', 'set_active_members', 'set_extra_features' and
+ * 'compute_multipole_mlmm', 'set_active_members', 'set_extra_scalar_atomic_features' and
  * 'set_strategy'. The leading arguments (species_coordinates, or species, coords,
  * neighbor_idxs, shifts, or the ML/MM coords and charges) are positional, the rest are
  * passed by name. 'charge' is an int if annotated as such in 'forward', otherwise it
@@ -70,7 +70,8 @@ class __attribute__((visibility("hidden"))) PythonMlipModel : public mlip::MlipM
     auto operator=(const PythonMlipModel&) -> PythonMlipModel& = delete;
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void override;
-    auto setExtraFeatures(torch::Tensor extra_features) -> void override;
+    auto setExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_features)
+        -> void override;
     auto setStrategy(const std::string& strat) -> void override;
     auto supportsCustomMlmm() const -> bool override;
     auto supportsMultipoleMlmm() const -> bool override;

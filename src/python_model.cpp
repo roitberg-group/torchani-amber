@@ -359,20 +359,24 @@ auto PythonMlipModel::useOnlyEnsembleMember(std::int64_t member_idx) -> void {
     m_model.attr("set_active_members")(idxs);
 }
 
-auto PythonMlipModel::setExtraFeatures(torch::Tensor extra_features) -> void {
-    if (not hasMethod("set_extra_features")) {
+auto PythonMlipModel::setExtraScalarAtomicFeatures(
+    torch::Tensor extra_scalar_atomic_features
+) -> void {
+    if (not hasMethod("set_extra_scalar_atomic_features")) {
         throw std::runtime_error(
-            "Model doesn't export a method 'set_extra_features(list[float]) -> None'"
+            "Model doesn't export a method 'set_extra_scalar_atomic_features(list[float]) -> None'"
         );
     }
-    extra_features = extra_features.to(torch::kCPU, torch::kDouble).contiguous();
-    auto extra_features_a = extra_features.accessor<double, 1>();
+    extra_scalar_atomic_features =
+        extra_scalar_atomic_features.to(torch::kCPU, torch::kDouble).contiguous();
+    auto extra_scalar_atomic_features_a =
+        extra_scalar_atomic_features.accessor<double, 1>();
     py::gil_scoped_acquire gil;
     py::list features;
-    for (std::int64_t i = 0; i != extra_features.size(0); ++i) {
-        features.append(extra_features_a[i]);
+    for (std::int64_t i = 0; i != extra_scalar_atomic_features.size(0); ++i) {
+        features.append(extra_scalar_atomic_features_a[i]);
     }
-    m_model.attr("set_extra_features")(features);
+    m_model.attr("set_extra_scalar_atomic_features")(features);
 }
 
 auto PythonMlipModel::supportsCustomMlmm() const -> bool {
@@ -426,7 +430,9 @@ auto PythonMlipModel::computeSinglePoint(
         kwargs["charge"] = chargeInput(net_charge, coords, m_legacy_charge_type);
         kwargs["atomic"] = false;
         kwargs["ensemble_values"] = calc_qbc_and_qbc_grad;
-        kwargs["molecule_idxs"] = molecule_idxs;
+        if (molecule_idxs.has_value()) {
+            kwargs["molecule_idxs"] = *molecule_idxs;
+        }
         insertSpinMultKwarg(method, "forward", kwargs, spin_mult, coords);
         output = callMethod(
             method,
@@ -472,7 +478,9 @@ auto PythonMlipModel::computeFromExternalNeighbors(
         kwargs["charge"] = chargeInput(net_charge, coords, m_legacy_charge_type);
         kwargs["atomic"] = false;
         kwargs["ensemble_values"] = calc_qbc_and_qbc_grad;
-        kwargs["molecule_idxs"] = molecule_idxs;
+        if (molecule_idxs.has_value()) {
+            kwargs["molecule_idxs"] = *molecule_idxs;
+        }
         insertSpinMultKwarg(
             method, "compute_from_external_neighbors", kwargs, spin_mult, coords
         );
@@ -620,7 +628,9 @@ auto PythonMlipModel::computeMlmmCoreImpl(
         kwargs["charge"] = chargeInput(net_charge, ml_coords, m_legacy_charge_type);
         kwargs["atomic"] = false;
         kwargs["ensemble_values"] = calc_qbc_and_qbc_grad;
-        kwargs["molecule_idxs"] = molecule_idxs;
+        if (molecule_idxs.has_value()) {
+            kwargs["molecule_idxs"] = *molecule_idxs;
+        }
         for (const auto& [name, value, is_default] : extra_inputs) {
             if (methodAcceptsArg(method, name.c_str())) {
                 kwargs[py::str(name)] = value;

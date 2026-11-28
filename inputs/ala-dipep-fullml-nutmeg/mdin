@@ -20,7 +20,7 @@
     use_cuaev = .False.
     model_type = "nutmeg-small"
     ! Gasteiger charges of all the atoms, relative to the current working directory
-    extra_features_file_path = "ala-dipep-bulk.charges"
+    extra_scalar_atomic_features_file_path = "ala-dipep-bulk.charges"
     use_external_nonbond = .True.  ! Run in Amber-NB configuration since Nutmeg is very memory hungry
     use_double_precision = .False.
     model_index = -1

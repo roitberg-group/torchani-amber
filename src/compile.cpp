@@ -92,7 +92,9 @@ auto CompiledMlipModel::useOnlyEnsembleMember(std::int64_t /* member_idx */) -> 
     );
 }
 
-auto CompiledMlipModel::setExtraFeatures(torch::Tensor /* extra_features */) -> void {
+auto CompiledMlipModel::
+    setExtraScalarAtomicFeatures(torch::Tensor /* extra_scalar_atomic_features */)
+        -> void {
     throw std::runtime_error("Compiled models don't support extra features");
 }
 

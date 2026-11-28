@@ -164,11 +164,12 @@ class GlobalConfig {
         std::optional<ConfigDict> amber_qmmm_config = std::nullopt
     );
 
-    // Read the config from an Amber input file (mdin). from_namelist is "mlip" (first
-    // "&mlip" namelist, no ML/MM options), "qmmm-and-mlip" (deprecated, first "&mlip"
+    // Read the config from an Amber input file (mdin). from_namelist is "mlip" (the
+    // "&mlip" namelist, no ML/MM options), "qmmm-and-mlip" (deprecated, the "&mlip"
     // namelist with the ML/MM options, and if calling_program is "sander" also the
-    // first "&qmmm" namelist, the config is validated against it) or "mlmm" (first
-    // "&mlmm" namelist with the ML/MM options, a "&qmmm" namelist is an error).
+    // "&qmmm" namelist, the config is validated against it) or "mlmm" (the
+    // "&mlmm" namelist with the ML/MM options, a "&qmmm" namelist is an error). The
+    // file must have a single "&mlip" (or "&mlmm"), and "&qmmm" if it is read.
     // calling_program is "none", "sander" or "pmemd". Both are case-insensitive
     static auto fromNamelistFile(
         const std::string& fpath,

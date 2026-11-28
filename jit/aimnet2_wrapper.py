@@ -310,7 +310,7 @@ class AimNet2Mbis(AimNet2Wrapper):
             for k, v in ani2x_state_dict.items()
             if k.startswith("aev_computer")
         }
-        charge_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=True)
+        charge_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=False)
         model.potentials["nnp"].aev_computer.load_state_dict(aev_state_dict)
         model.potentials["nnp"].charge_networks.load_state_dict(charge_state_dict)
         self._charge_model = model

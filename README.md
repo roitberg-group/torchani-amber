@@ -413,7 +413,7 @@ customizable.
 
 Alternatively, subclassing `ANI` or `ANIq` and overriding `compute_from_neighbors(...)`
 is also supported. This is more complex. Consult the `TorchANI 2` source code for a
-reference implementation of `compute_from_neighbors`. `use_cuaev` and `network_index`
+reference implementation of `compute_from_neighbors`. `use_cuaev` and `model_index`
 may not be supported in this case, depending on your model.
 
 *ADVANCED*: AOTInductor-compiled, exported models (PyTorch 2 compilation method) are supported

@@ -55,7 +55,8 @@ ConfigDict updatedConfig(const ConfigDict& config, const NamelistGroup& group) {
         if (values_are_all_null) {
             throw config_validation_error(
                 key + " is assigned only null values (e.g. '" + key
-                + " = ,'), give it a value or remove it"
+                + " = ,'), give it a value or remove it. String values must be"
+                  " quoted, an unquoted value that starts with '/' ends the namelist"
             );
         }
         std::vector<fortran_utils::NamelistValue> values = option.values;
@@ -339,10 +340,7 @@ bool isMechanicalEmbedding(const std::string& mlmm_coupling) {
 // 'mechanical-embedding-no-electrostatics'
 std::string normalizedMlmmCoupling(const fortran_utils::NamelistValue& value) {
     if (std::holds_alternative<std::string>(value)) {
-        std::string mlmm_coupling = std::get<std::string>(value);
-        std::transform(
-            mlmm_coupling.begin(), mlmm_coupling.end(), mlmm_coupling.begin(), ::tolower
-        );
+        std::string mlmm_coupling = utils::toLower(std::get<std::string>(value));
         if (mlmm_coupling == "me") {
             return "mechanical-embedding";
         }
@@ -387,7 +385,8 @@ auto defaultMlipConfig() -> ConfigDict {
         {"do_torch_compile", {false, NamelistType::BOOL}},
         {"torch_compile_mode", {std::string{"default"}, NamelistType::STR}},
         {"no_eval_mask", {std::string{""}, NamelistType::STR}},
-        {"extra_features_file_path", {std::string{""}, NamelistType::STR}},
+        {"extra_scalar_atomic_features_file_path",
+            {std::string{""}, NamelistType::STR}},
         {"ml_charge", {0L, NamelistType::INT}},
         {"ml_spin_mult", {1L, NamelistType::INT}},
         {"model_index", {-1L, NamelistType::INT}},
@@ -478,8 +477,8 @@ auto defaultMlmmConfig() -> ConfigDict {
             polarizability = known_polarizabilities[i];
         }
         // Namelist keys are lowercased by the parser
-        std::string key = "pol_" + std::string(constants::ELEMENT_SYMBOLS[i]);
-        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        std::string key =
+            utils::toLower("pol_" + std::string(constants::ELEMENT_SYMBOLS[i]));
         options.emplace(key, ConfigOption{polarizability, NamelistType::FLOAT});
     }
     return ConfigDict{options};
@@ -552,16 +551,14 @@ auto GlobalConfig::fromNamelistFile(
     const std::string& from_namelist,
     const std::string& calling_program
 ) -> GlobalConfig {
-    std::string program = calling_program;
-    std::transform(program.begin(), program.end(), program.begin(), ::tolower);
+    std::string program = utils::toLower(calling_program);
     if (!isOneOf(program, {"none", "sander", "pmemd"})) {
         throw std::runtime_error(
             "calling_program must be 'none', 'sander' or 'pmemd', but it is '"
             + calling_program + "'"
         );
     }
-    std::string source = from_namelist;
-    std::transform(source.begin(), source.end(), source.begin(), ::tolower);
+    std::string source = utils::toLower(from_namelist);
     if (!isOneOf(source, {"mlip", "qmmm-and-mlip", "mlmm"})) {
         throw std::runtime_error(
             "from_namelist must be 'mlip', 'qmmm-and-mlip' or 'mlmm', but it is '"
@@ -613,12 +610,20 @@ auto GlobalConfig::fromNamelistFile(
             );
         }
         group_name = file_has_mlip ? "mlip" : "ani";
-        if (source == "qmmm-and-mlip") {
-            utils::printWarning(
-                "Reading the ML/MM options from the &" + group_name + " and &qmmm"
-                " namelists is deprecated, use the &mlmm namelist instead"
-            );
-        }
+    }
+    std::size_t num_groups =
+        std::count(group_names.begin(), group_names.end(), group_name);
+    if (num_groups > 1) {
+        throw config_validation_error(
+            std::to_string(num_groups) + " &" + group_name + " namelists found in "
+            + abs_fpath + ", there should be a single &" + group_name + " namelist"
+        );
+    }
+    if (source == "qmmm-and-mlip") {
+        utils::printWarning(
+            "Reading the ML/MM options from the &" + group_name + " and &qmmm"
+            " namelists is deprecated, use the &mlmm namelist instead"
+        );
     }
 
     ConfigDict mlip_config = defaultMlipConfig();
@@ -703,13 +708,8 @@ auto GlobalConfig::fromNamelistFile(
                 " &mlmm namelist"
             );
         }
-        std::string electrostatics_kind = mlmm_config->getString("electrostatics_kind");
-        std::transform(
-            electrostatics_kind.begin(),
-            electrostatics_kind.end(),
-            electrostatics_kind.begin(),
-            ::tolower
-        );
+        std::string electrostatics_kind =
+            utils::toLower(mlmm_config->getString("electrostatics_kind"));
         std::vector<std::string> supported_electrostatics_kinds = {"none"};
         if (!isMechanicalEmbedding(mlmm_coupling)) {
             supported_electrostatics_kinds = {"hard-cutoff"};
@@ -747,6 +747,14 @@ auto GlobalConfig::fromNamelistFile(
     if (source == "qmmm-and-mlip" && program == "sander") {
         if (!file_has_qmmm) {
             throw std::runtime_error("No &qmmm namelist found in " + abs_fpath);
+        }
+        std::size_t num_qmmm_groups =
+            std::count(group_names.begin(), group_names.end(), "qmmm");
+        if (num_qmmm_groups > 1) {
+            throw config_validation_error(
+                std::to_string(num_qmmm_groups) + " &qmmm namelists found in "
+                + abs_fpath + ", there should be a single &qmmm namelist"
+            );
         }
         ConfigDict qmmm_defaults = defaultAmberQmmmConfig();
         fortran_utils::NamelistSchema qmmm_schema;
@@ -801,8 +809,8 @@ auto GlobalConfig::validateConfig(
 ) -> void {
     if (mlip_config.getString("model_type").find("::") != std::string::npos) {
         throw config_validation_error(
-            "model_type can't contain '::', use extra_features_file_path to specify the"
-            " extra features file"
+            "model_type can't contain '::', use extra_scalar_atomic_features_file_path"
+            " to specify the extra features file"
         );
     }
     if (mlip_config.getInt("write_interval") < 1) {
@@ -846,6 +854,14 @@ auto GlobalConfig::validateConfig(
     }
     if (mlip_config.getInt("torch_num_threads") < 1) {
         throw config_validation_error("torch_num_threads must be at least 1");
+    }
+    long cuda_device_index = mlip_config.getInt("cuda_device_index");
+    long max_cuda_device_index = std::numeric_limits<torch::DeviceIndex>::max();
+    if (cuda_device_index < 0 || cuda_device_index > max_cuda_device_index) {
+        throw config_validation_error(
+            "cuda_device_index must be between 0 and "
+            + std::to_string(max_cuda_device_index)
+        );
     }
     if (mlip_config.getBool("write_kz_atomic_alphas")
         && !(mlmm_config && mlmm_config->getBool("use_mlip_atomic_volumes"))) {
@@ -979,6 +995,9 @@ auto GlobalConfig::validateConfig(
     resolvedGeepSigmas(mlmm);
     if (mlmm.getDouble("geep_factor") <= 0.0) {
         throw config_validation_error("geep_factor must be > 0");
+    }
+    if (mlmm.getDouble("mm_cutoff") <= 0.0) {
+        throw config_validation_error("mm_cutoff must be > 0");
     }
     if (!coupling_is_geep && !mlmm.values("geep_sigmas").empty()) {
         throw config_validation_error(
@@ -1124,8 +1143,7 @@ auto GlobalConfig::configDictWithOption(const std::string& key) const
 
 auto GlobalConfig::getPolarizability(const std::string& element_symbol) const
     -> double {
-    std::string key = "pol_" + element_symbol;
-    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    std::string key = utils::toLower("pol_" + element_symbol);
     double polarizability = getDouble(key);
     if (std::isnan(polarizability)) {
         throw std::runtime_error(
@@ -1216,8 +1234,8 @@ auto GlobalConfig::printInfo() const -> void {
     if (!getString("output_dir").empty()) {
         out << configLine(mlip(), "output_dir");
     }
-    if (!getString("extra_features_file_path").empty()) {
-        out << configLine(mlip(), "extra_features_file_path");
+    if (!getString("extra_scalar_atomic_features_file_path").empty()) {
+        out << configLine(mlip(), "extra_scalar_atomic_features_file_path");
     }
     if (!m_mlmm_config) {
         out << "ML/MM:--------------end config-------------------\n";
