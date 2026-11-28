@@ -40,6 +40,7 @@ skipped_names=(
     -o -name '*.png'
     -o -name '*.swp'
     -o -name '*.swo'
+    -o -name '*.md'
 )
 
 cd "${repo_root}"
@@ -47,7 +48,7 @@ cd "${repo_root}"
     find . \
         \( "${skipped_names[@]}" \
         -o -path ./AmberTools-patch \
-        -o -path ./make_amber_bundle.sh \
+        -o -path ./make_vendored_tarball.sh \
         -o -path ./run-cmake \
         -o -path ./environment.yaml \
         -o -path ./ci-environment.yaml \
