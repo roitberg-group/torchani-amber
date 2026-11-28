@@ -1122,9 +1122,15 @@ TEST_CASE("Charges for md engine electrostatics") {
         mlip_calc_energy_atomic_charges_vjp(
             size, zero_ml_electrostatic_potential, vjp_forces
         );
+        // The vjp forces are computed through a different autograd path than the
+        // reference forces, so the float32 round-off is larger
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
-                FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
+                CHECK_THAT(
+                    vjp_forces[j][c],
+                    WithinAbs(ref_forces[j][c], 3.5e-5)
+                        || WithinRel(ref_forces[j][c], 2e-5)
+                );
             }
         }
         // The in-vacuo forces plus those of the charges:
