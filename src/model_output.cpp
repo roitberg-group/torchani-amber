@@ -8,7 +8,7 @@
 #include <torch/all.h>
 #include <torch/csrc/autograd/autograd.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 namespace model_output {
 

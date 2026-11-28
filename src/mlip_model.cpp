@@ -1,4 +1,4 @@
-#include "mlip.h"
+#include "mlip_model.h"
 
 #include <filesystem>
 #include <memory>

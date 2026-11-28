@@ -4,7 +4,7 @@
 
 #include <torch/all.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 
 // Shared by the model formats, uses no TorchScript
 namespace model_output {

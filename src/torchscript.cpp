@@ -18,7 +18,7 @@
 #include <torch/csrc/jit/runtime/graph_executor.h>
 #include <torch/script.h>
 
-#include "mlip.h"
+#include "mlip_model.h"
 #include "model_output.h"
 
 using model_output::computeOutput;

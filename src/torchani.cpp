@@ -32,7 +32,7 @@
 #include "constants.h"
 #include "electro.h"
 #include "io.h"
-#include "mlip.h"
+#include "mlip_model.h"
 #include "timing.h"
 #include "utils.h"
 
