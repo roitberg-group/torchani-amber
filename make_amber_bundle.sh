@@ -50,6 +50,7 @@ cd "${repo_root}"
         -o -path ./make_amber_bundle.sh \
         -o -path ./run-cmake \
         -o -path ./environment.yaml \
+        -o -path ./ci-environment.yaml \
         -o -path ./compile_commands.json \
         -o -path ./build \
         -o -path ./inputs \
