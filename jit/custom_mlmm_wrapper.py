@@ -36,8 +36,8 @@ class CustomMLMMANImbis(torch.nn.Module):
     r"""ANImbis with the ML/MM coupling computed internally, through compute_mlmm
 
     The coupling energy is the same as the one computed by torchani-amber with
-    mlmm_coupling='simple-polarizable' and use_torchani_charges=.true., with the default
-    polarizabilities and polarization dielectric.
+    mlmm_coupling='simple-polarizable' and use_mlip_atomic_charges=.true., with the
+    default polarizabilities and polarization dielectric.
     """
 
     _znum_to_alpha: Tensor

@@ -222,42 +222,53 @@ torch::Tensor mlAtomicPolarizabilities() {
 }
 
 // Factors kz of the ML atoms (AU), such that their polarizabilities are kz times their
-// atomic volumes, from the ML/MM config. Exits if the ML/MM config was not read, or if
+// atomic volumes, from the ML/MM config. Throws if the ML/MM config was not read, or if
 // an element has no kz
-torch::Tensor mlVolumeKzs() {
+torch::Tensor computeMlVolumeKzs() {
     std::vector<double> kzs;
     for (long atomic_num : mlAtomicNumbers()) {
-        double kz = std::numeric_limits<double>::quiet_NaN();
-        try {
-            kz = global_config.getVolumeKz(atomic_num);
-        } catch (const std::exception& e) {
-            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
-            std::exit(2);
-        }
-        kzs.push_back(kz);
+        kzs.push_back(global_config.getVolumeKz(atomic_num));
     }
     return global_config.tensorToTorchaniDtypeAndDevice(
         torch::tensor(kzs, torch::TensorOptions().dtype(torch::kDouble))
     );
 }
 
-// GEEP widths of the ML atoms (bohr), from the ML/MM config. Exits if the ML/MM config
+// GEEP widths of the ML atoms (bohr), from the ML/MM config. Throws if the ML/MM config
 // was not read, or if an element has no width
-torch::Tensor mlGeepSigmas() {
+torch::Tensor computeMlGeepSigmas() {
     std::vector<double> sigmas;
     for (long atomic_num : mlAtomicNumbers()) {
-        double sigma = std::numeric_limits<double>::quiet_NaN();
-        try {
-            sigma = global_config.getGeepSigma(atomic_num);
-        } catch (const std::exception& e) {
-            std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
-            std::exit(2);
-        }
-        sigmas.push_back(sigma);
+        sigmas.push_back(global_config.getGeepSigma(atomic_num));
     }
     return global_config.tensorToTorchaniDtypeAndDevice(
         torch::tensor(sigmas, torch::TensorOptions().dtype(torch::kDouble))
     );
+}
+
+// Cached by mlip_set_atomic_numbers if the config needs them
+torch::Tensor mlVolumeKzs() {
+    if (tensor_container.contains("__volume_kzs")) {
+        return tensor_container.get("__volume_kzs");
+    }
+    try {
+        return computeMlVolumeKzs();
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
+}
+
+torch::Tensor mlGeepSigmas() {
+    if (tensor_container.contains("__geep_sigmas")) {
+        return tensor_container.get("__geep_sigmas");
+    }
+    try {
+        return computeMlGeepSigmas();
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
+    }
 }
 
 void printPolarizabilitiesInUse() {
@@ -715,6 +726,19 @@ void calcEnergyForceMlmm(
     bool coupling_is_none = mlmm_coupling == "none"
         || mlmm_coupling == "mechanical-embedding"
         || mlmm_coupling == "mechanical-embedding-no-electrostatics";
+    // AOTI models have no autograd graph. Currently coupling forces can only be calculated
+    // if the ML charges and volumes don't depend on the coords
+    bool model_is_aoti = model->format() == mlip::ModelFormat::PT2_AOTI;
+    bool uses_mlip_charges_or_volumes = global_config.getBool("use_mlip_atomic_charges")
+        || (config::isPolarizableCoupling(mlmm_coupling)
+            && global_config.getBool("use_mlip_atomic_volumes"));
+    if (model_is_aoti && !coupling_is_none && uses_mlip_charges_or_volumes) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlmm_coupling = '" << mlmm_coupling
+                  << "' with use_mlip_atomic_charges = T or use_mlip_atomic_volumes = T"
+                  << " is currently not supported with pt2-aoti models" << std::endl;
+        std::exit(2);
+    }
     mlip::MlipOutput output = model->computeSinglePoint(
         atomic_numbers,
         ml_coords,
@@ -724,7 +748,7 @@ void calcEnergyForceMlmm(
         /*atomic=*/false,
         /*ensemble_values=*/false,
         /*molecule_idxs=*/std::nullopt,
-        /*calc_forces=*/coupling_is_none,
+        /*calc_forces=*/coupling_is_none || model_is_aoti,
         /*calc_qbc_and_qbc_grad=*/calc_qbc
     );
     storeResults(output);
@@ -820,6 +844,9 @@ void calcEnergyForceMlmm(
         );
         ml_forces = -ad_output[0];
         mm_forces = -ad_output[1];
+        if (model_is_aoti) {
+            ml_forces += output.at("forces");
+        }
     }
     populateEmbeddingForces(
         ml_forces, mm_forces, ml_atoms_num, mm_atoms_num, ml_forces_buf, mm_forces_buf
@@ -1085,15 +1112,20 @@ void mlip_set_atomic_numbers(int num_atoms, int atomic_nums[], bool print_info) 
         tensor_container.store("__extra_features", extra_features);
         setModelExtraFeatures(extra_features);
     }
-    if (global_config.hasMlmmConfig()
-        && global_config.getBool("use_mlip_atomic_volumes")) {
-        // Exits if an element of the ML atoms has no kz
-        mlVolumeKzs();
-    }
-    if (global_config.hasMlmmConfig()
-        && config::isGeepCoupling(global_config.getString("mlmm_coupling"))) {
-        // Exits if an element of the ML atoms has no GEEP width
-        mlGeepSigmas();
+    try {
+        if (global_config.hasMlmmConfig()
+            && global_config.getBool("use_mlip_atomic_volumes")) {
+            // Exits if an element of the ML atoms has no kz
+            tensor_container.store("__volume_kzs", computeMlVolumeKzs());
+        }
+        if (global_config.hasMlmmConfig()
+            && config::isGeepCoupling(global_config.getString("mlmm_coupling"))) {
+            // Exits if an element of the ML atoms has no GEEP width
+            tensor_container.store("__geep_sigmas", computeMlGeepSigmas());
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
     }
     if (print_info && global_config.hasMlmmConfig()
         && config::isPolarizableCoupling(global_config.getString("mlmm_coupling"))) {
@@ -1136,6 +1168,17 @@ void mlip_set_no_eval_atoms_mask(int num_atoms, int values[]) {
                 .index_select(0, do_eval_atoms_idxs.to(torch::kCPU));
         tensor_container.store("__extra_features", extra_features);
         setModelExtraFeatures(extra_features);
+    }
+    try {
+        if (tensor_container.contains("__volume_kzs")) {
+            tensor_container.store("__volume_kzs", computeMlVolumeKzs());
+        }
+        if (tensor_container.contains("__geep_sigmas")) {
+            tensor_container.store("__geep_sigmas", computeMlGeepSigmas());
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR (libtorchani)\n" << e.what() << std::endl;
+        std::exit(2);
     }
 }
 
@@ -1368,6 +1411,12 @@ void mlip_calc_energy_atomic_charges_retain(
     exitIfNotInitialized(global_config);
     exitIfNoAtomicNumbers(global_config);
     exitIfNoEvalAtoms(global_config);
+    if (model->format() == mlip::ModelFormat::PT2_AOTI) {
+        std::cerr << "ERROR (libtorchani)\n"
+                  << "mlip_calc_energy_atomic_charges_retain is currently not supported"
+                  << " with pt2-aoti models" << std::endl;
+        std::exit(2);
+    }
     torch::Tensor atomic_numbers = tensor_container.get("__atomic_numbers");
     // The graph outlives this call, so it must not refer to the caller's buffer
     // (dblBufToCoordsTensor does not copy for CPU double precision)

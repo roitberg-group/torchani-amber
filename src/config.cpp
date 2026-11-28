@@ -519,14 +519,19 @@ GlobalConfig::GlobalConfig(
         );
     }
 #endif
-    torch::DeviceType device_type =
-        getBool("use_cuda_device") ? torch::kCUDA : torch::kCPU;
-    auto device_idx = static_cast<torch::DeviceIndex>(getInt("cuda_device_index"));
+    // torch accepts and index for kCPU but
+    // does nothing with it, better to pass nothing
+    // to keep the canonical "cpu" name
+    // instead of the misleading "cpu:0"
+    torch::Device device{torch::kCPU};
+    if (getBool("use_cuda_device")) {
+        device = torch::Device{
+            torch::kCUDA, static_cast<torch::DeviceIndex>(getInt("cuda_device_index"))
+        };
+    }
     torch::ScalarType dtype =
         getBool("use_double_precision") ? torch::kFloat64 : torch::kFloat32;
-    m_opts = torch::TensorOptions()
-                 .device(torch::Device{device_type, device_idx})
-                 .dtype(dtype);
+    m_opts = torch::TensorOptions().device(device).dtype(dtype);
 }
 
 auto GlobalConfig::fromNamelistFile(

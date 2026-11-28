@@ -72,7 +72,8 @@ auto CompiledMlipModel::makeLoader(const std::string& prefix) const
         modelName(prefix),
         /* run_single_threaded= */ false,
         /* num_runners= */ 1,
-        m_device.index()
+        // The CPU runner only accepts index -1
+        m_device.is_cpu() ? -1 : m_device.index()
     );
 }
 

@@ -106,6 +106,12 @@ device (`cpu`, `cuda`) and precision (`f32`, `f64`), named
   charge and no optional argument.
 - The package computes the forces (and MM forces) itself, libtorchani doesn't run
   autograd on them.
+- With the built-in ML/MM couplings (`coulombic`, `simple-polarizable` and their GEEP
+  variants), the package's forces are added to the coupling forces, which libtorchani
+  calculates with autograd. This requires fixed charges and volumes
+  (`use_mlip_atomic_charges = F`, `use_mlip_atomic_volumes = F`), since the package's
+  charges and volumes have no autograd graph. `mlip_calc_energy_atomic_charges_retain`
+  is not supported, for the same reason.
 - A model that doesn't predict atomic charges must return an empty tensor for them.
 - Not supported: `atomic`, `ensemble_values`, `molecule_idxs`, QBC, PBC in ML/MM,
   selecting ensemble members (`model_index`) and extra features. `set_strategy` is a

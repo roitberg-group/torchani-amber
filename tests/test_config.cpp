@@ -117,7 +117,7 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         writeTmpFile("torchani_test_config_values.in", "&mlip use_cuda_device = F /\n");
     CHECK(
         GlobalConfig::fromNamelistFile(path.string()).device()
-        == torch::Device(torch::kCPU, 0)
+        == torch::Device(torch::kCPU)
     );
 
     writeTmpFile(
@@ -723,7 +723,7 @@ TEST_CASE("GlobalConfig from config dicts", "[config]") {
     mlip_config = mlip_config.withValue("use_double_precision", false);
     mlip_config = mlip_config.withValue("no_eval_mask", std::string{"  "});
     GlobalConfig config{mlip_config};
-    CHECK(config.device() == torch::Device(torch::kCPU, 0));
+    CHECK(config.device() == torch::Device(torch::kCPU));
     CHECK(config.dtype() == torch::kFloat32);
     CHECK_FALSE(config.useNoEvalAtoms());
     CHECK_THROWS_AS(config.mlmm(), std::logic_error);

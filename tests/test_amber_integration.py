@@ -122,7 +122,7 @@ class AmberIntegration(unittest.TestCase):
     def setUp(self) -> None:
         self.d: tempfile.TemporaryDirectory | None = None
 
-    def cleanUp(self) -> None:
+    def tearDown(self) -> None:
         if self.d is not None:
             self.d.cleanup()
 
