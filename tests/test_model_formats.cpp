@@ -166,7 +166,7 @@ TEST_CASE("Python model single point", "[python_models]") {
     );
     checkTensorsClose(output.at("forces"), -2 * K * coords.detach());
 
-    model->setExtraFeatures(torch::tensor({1.5, 0.5}, torch::kDouble));
+    model->setExtraScalarAtomicFeatures(torch::tensor({1.5, 0.5}, torch::kDouble));
     output = model->computeSinglePoint(species, coords);
     CHECK_THAT(
         output.at("energy").item<double>(),

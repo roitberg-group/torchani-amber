@@ -76,7 +76,8 @@ class CompiledMlipModel : public mlip::MlipModel {
     );
 
     auto useOnlyEnsembleMember(std::int64_t member_idx) -> void override;
-    auto setExtraFeatures(torch::Tensor extra_features) -> void override;
+    auto setExtraScalarAtomicFeatures(torch::Tensor extra_scalar_atomic_features)
+        -> void override;
     auto setStrategy(const std::string& strat) -> void override;
     auto supportsCustomMlmm() const -> bool override;
     auto supportsMultipoleMlmm() const -> bool override;

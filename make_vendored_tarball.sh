@@ -20,51 +20,45 @@ fi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bundle_name="mlip-interface"
 output="$(realpath "${positional_args[0]:-${PWD}/${bundle_name}.tar.gz}")"
-torchani_csrc="./submodules/torchani/torchani/csrc"
+torchani_csrc="submodules/torchani/torchani/csrc"
 
 skipped_names=(
-    -name .git
-    -o -name .github
-    -o -name .gitignore
-    -o -name .gitmodules
-    -o -name .clang-format
-    -o -name .pre-commit-config.yaml
-    -o -name .vscode
-    -o -name .cache
-    -o -name .mypy_cache
-    -o -name .pytest_cache
-    -o -name __pycache__
-    -o -name 'dump_sander_*'
-    -o -name 'dump_pmemd_*'
-    -o -name '*.pt'
-    -o -name '*.png'
-    -o -name '*.swp'
-    -o -name '*.swo'
+    ':!*.gitignore'
+    ':!*.clang-format'
+    ':!*.pre-commit-config.yaml'
+    ':!*dump_sander_*'
+    ':!*dump_pmemd_*'
+    ':!*.pt'
+    ':!*.png'
+    ':!*.md'
 )
 
 cd "${repo_root}"
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "ERROR: ${repo_root} has uncommitted or untracked changes" >&2
+    exit 1
+fi
 {
-    find . \
-        \( "${skipped_names[@]}" \
-        -o -path ./AmberTools-patch \
-        -o -path ./make_amber_bundle.sh \
-        -o -path ./run-cmake \
-        -o -path ./environment.yaml \
-        -o -path ./compile_commands.json \
-        -o -path ./build \
-        -o -path ./inputs \
-        -o -path ./jit \
-        -o -path ./tests \
-        -o -path ./submodules/Catch2 \
-        -o -path ./submodules/torchani \
-        -o -path "./${bundle_name}.tar.gz" \) -prune \
-        -o -print
-    echo ./submodules/torchani
-    echo ./submodules/torchani/torchani
-    find "${torchani_csrc}" \( "${skipped_names[@]}" \) -prune -o -print
+    git ls-files -- . \
+        "${skipped_names[@]}" \
+        ':!.github' \
+        ':!.gitmodules' \
+        ':!AmberTools-patch' \
+        ':!make_vendored_tarball.sh' \
+        ':!run-cmake' \
+        ':!environment.yaml' \
+        ':!ci-environment.yaml' \
+        ':!compile_commands.json' \
+        ':!inputs' \
+        ':!jit' \
+        ':!tests' \
+        ':!submodules'
+    git -C "${torchani_csrc}" ls-files -- \
+        . "${skipped_names[@]}" \
+        | sed "s,^,${torchani_csrc}/,"
 } | tar -czf "${output}" \
     --no-recursion \
-    --transform "s,^\.,${bundle_name}," \
+    --transform "s,^,${bundle_name}/," \
     -T -
 
 echo "WARNING: tests/, inputs/ and jit/ are not packed" >&2

@@ -256,6 +256,12 @@ subroutine mlip_calc_energy_force_mlmm( &
 
     real(c_double) :: pbc_cell(3, 3)
     logical :: do_calc_qbc_and_qbc_grad
+    if (size(ml_coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: ml_coords must have shape (3, ML)")
+    endif
+    if (size(mm_coords, 1) /= 3) then
+        call exit_with_error("mlip_calc_energy_force_mlmm: mm_coords must have shape (3, MM)")
+    endif
     if (any(shape(out_ml_forces) /= shape(ml_coords))) then
         call exit_with_error("mlip_calc_energy_force_mlmm: out_ml_forces and ml_coords shapes differ")
     endif
@@ -333,7 +339,7 @@ subroutine convert_sander_neighborlist_to_ani_fmt( &
 )
     integer, intent(in) :: img_idx_to_atom_idx(:)
     integer, intent(in) :: atom_idx_to_neighbors_num(:)
-    ! Sander's list is assumed-shape, so (:) can't be used
+    ! Sander's list is assumed-size, so (:) can't be used
     integer, intent(in) :: sander_neighborlist(*)
     double precision, intent(in) :: translation_vector(1:3, 1:18)
     integer, allocatable, intent(out) :: ani_neighborlist(:, :)

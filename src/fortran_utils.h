@@ -117,6 +117,9 @@ struct NamelistGroup {
  * "a(1)", derived types "a%b", and complex values are not supported. All errors
  * throw a subclass of namelist_parse_error.
  *
+ * This parser is not fully compliant with gfortran, or with the Fortran standard for
+ * namelist input.
+ *
  * If group_name is not empty, only the groups with that name (case-insensitive) are
  * parsed and returned. Other groups are skipped without parsing, as Fortran does, so
  * they can't cause errors.

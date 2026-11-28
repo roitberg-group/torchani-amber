@@ -60,9 +60,11 @@ class NutmegWrapper(torch.nn.Module):
         self._nlist = AdaptiveList().to(device=param.device, dtype=param.dtype)
 
     @torch.jit.export
-    def set_extra_features(self, extra_features: list[float]) -> None:
+    def set_extra_scalar_atomic_features(
+        self, extra_scalar_atomic_features: list[float]
+    ) -> None:
         self._atomic_charges = torch.tensor(
-            extra_features,
+            extra_scalar_atomic_features,
             dtype=self._atomic_charges.dtype,
             device=self._atomic_charges.device,
         )
@@ -99,22 +101,22 @@ class NutmegWrapper(torch.nn.Module):
         coords: Tensor,
         cell: Tensor | None,
         pbc: Tensor | None,
-        _molecule_idxs: Tensor | None,
+        molecule_idxs: Tensor | None,
     ) -> Neighbors:
         # Neighborlist is "complete" (duplicated)
         # edge_attrs is None for these models
         neigh_lr = self._nlist(self._cutoff, species, coords.detach(), cell, pbc)
         # Experimental _molecule_idxs feature
-        if _molecule_idxs is not None:
+        if molecule_idxs is not None:
             if not (torch.jit.is_scripting() or torch.compiler.is_compiling()):
                 warnings.warn("molecule_idxs is experimental and subject to change")
             if coords.shape[0] != 1:
                 raise ValueError("molecule_idxs expects only one conformation")
-            if len(_molecule_idxs) != coords.shape[1]:
+            if len(molecule_idxs) != coords.shape[1]:
                 raise ValueError(
                     "molecule_idxs must be the same length as num atoms, if passed"
                 )
-            neigh_lr = discard_inter_molecule_pairs(neigh_lr, _molecule_idxs)
+            neigh_lr = discard_inter_molecule_pairs(neigh_lr, molecule_idxs)
         return neigh_lr
 
     def forward(
@@ -125,13 +127,13 @@ class NutmegWrapper(torch.nn.Module):
         charge: Tensor | None = None,
         atomic: bool = False,
         ensemble_values: bool = False,
-        _molecule_idxs: Tensor | None = None,
+        molecule_idxs: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
 
         species, coords = species_coords
         if charge is not None:
             self._check_charge(charge)
-        neigh = self._calc_neighbors(species, coords, cell, pbc, _molecule_idxs)
+        neigh = self._calc_neighbors(species, coords, cell, pbc, molecule_idxs)
         full_idxs = torch.cat((neigh.indices, neigh.indices.flipud()), dim=1)
         species = species.squeeze(0)
         coords = coords.squeeze(0)

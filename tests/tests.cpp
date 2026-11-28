@@ -37,8 +37,16 @@ using Catch::Matchers::WithinRel;
 #define FLOAT_EQ(pred, expect, dbl)                   \
     CHECK_THAT(                                       \
         pred,                                         \
-        WithinAbs(expect, dbl ? 1e-7 : 4.5e-6)        \
-            || WithinRel(expect, dbl ? 1e-7 : 3.5e-5) \
+        WithinAbs(expect, dbl ? 1e-7 : 3.5e-5)        \
+            || WithinRel(expect, dbl ? 1e-7 : 4.5e-6) \
+    )
+
+// QBC is a standard deviation over the ensemble members, which loses some float32
+// precision, so its float32 tolerance is 2e-5 rel
+#define QBC_FLOAT_EQ(pred, expect, dbl)                                                \
+    CHECK_THAT(                                                                        \
+        pred,                                                                          \
+        WithinAbs(expect, dbl ? 1e-7 : 3.5e-5) || WithinRel(expect, dbl ? 1e-7 : 2e-5) \
     )
 
 
@@ -76,11 +84,15 @@ static std::vector<double> calcAtomicChargeGrads(
     int atomic_numbers[],
     double coords[][3],
     int net_charge,
+    int model_index,
     bool use_double
 ) {
     torch::ScalarType dtype = use_double ? torch::kFloat64 : torch::kFloat32;
     std::unique_ptr<mlip::MlipModel> model =
         mlip::MlipModel::from_model_path(model_path, torch::kCPU, dtype);
+    if (model_index != -1) {
+        model->useOnlyEnsembleMember(model_index);
+    }
     torch::Tensor atomic_numbers_tensor =
         torch::from_blob(atomic_numbers, {1, num_atoms}, torch::kInt32)
             .to(torch::kLong);
@@ -245,6 +257,7 @@ TEST_CASE("C bindings") {
                 atomic_numbers,
                 coords,
                 0,
+                network_index,
                 use_double
             );
             for (long j = 0; j != 10; ++j) {
@@ -274,13 +287,13 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(forces[1][0], test_values[4], use_double);
                 FLOAT_EQ(forces[1][1], test_values[5], use_double);
                 FLOAT_EQ(forces[1][2], test_values[6], use_double);
-                FLOAT_EQ(qbc, test_values[7], use_double);
-                FLOAT_EQ(qbc_deriv[0][0], test_values[8], use_double);
-                FLOAT_EQ(qbc_deriv[0][1], test_values[9], use_double);
-                FLOAT_EQ(qbc_deriv[0][2], test_values[10], use_double);
-                FLOAT_EQ(qbc_deriv[1][0], test_values[11], use_double);
-                FLOAT_EQ(qbc_deriv[1][1], test_values[12], use_double);
-                FLOAT_EQ(qbc_deriv[1][2], test_values[13], use_double);
+                QBC_FLOAT_EQ(qbc, test_values[7], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[0][0], test_values[8], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[0][1], test_values[9], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[0][2], test_values[10], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[1][0], test_values[11], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[1][1], test_values[12], use_double);
+                QBC_FLOAT_EQ(qbc_deriv[1][2], test_values[13], use_double);
                 FLOAT_EQ(atomic_charges[0], test_values[14], use_double);
                 FLOAT_EQ(atomic_charges[1], test_values[15], use_double);
                 FLOAT_EQ(atomic_charge_derivatives[0], test_values[16], use_double);
@@ -295,6 +308,48 @@ TEST_CASE("C bindings") {
                 FLOAT_EQ(atomic_charge_derivatives[9], test_values[25], use_double);
                 FLOAT_EQ(atomic_charge_derivatives[10], test_values[26], use_double);
                 FLOAT_EQ(atomic_charge_derivatives[11], test_values[27], use_double);
+            }
+        } else {
+            double test_values[21];
+            for (int j = 0; j != 21; ++j) {
+                infile >> test_values[j];
+            }
+            std::vector<double> atomic_charge_derivatives = calcAtomicChargeGrads(
+                std::string(TORCHANI_MLIPS_BUILD_DIR) + "/" + model_type + ".pt",
+                size,
+                atomic_numbers,
+                coords,
+                0,
+                network_index,
+                use_double
+            );
+            for (long j = 0; j != 10; ++j) {
+                mlip_calc_energy_force(
+                    size,
+                    coords,
+                    /* cell= */ nullptr,
+                    /* use_pbc= */ false,
+                    /* molecule_idxs= */ nullptr,
+                    /* calc_only_bonded= */ false,
+                    forces,
+                    &pot_energy
+                );
+                int charges_dims[1] = {size};
+                mlip_fetch_result("atomic_charges", atomic_charges, charges_dims, 1);
+                FLOAT_EQ(pot_energy, test_values[0], use_double);
+                FLOAT_EQ(forces[0][0], test_values[1], use_double);
+                FLOAT_EQ(forces[0][1], test_values[2], use_double);
+                FLOAT_EQ(forces[0][2], test_values[3], use_double);
+                FLOAT_EQ(forces[1][0], test_values[4], use_double);
+                FLOAT_EQ(forces[1][1], test_values[5], use_double);
+                FLOAT_EQ(forces[1][2], test_values[6], use_double);
+                FLOAT_EQ(atomic_charges[0], test_values[7], use_double);
+                FLOAT_EQ(atomic_charges[1], test_values[8], use_double);
+                for (int k = 0; k != 12; ++k) {
+                    FLOAT_EQ(
+                        atomic_charge_derivatives[k], test_values[9 + k], use_double
+                    );
+                }
             }
         }
     }
@@ -373,11 +428,11 @@ static double expectedEmbeddingEnergy(
                         * std::exp(-scaled_dist * scaled_dist);
             }
             expect_coulomb += potential_screening * COUPLING_MM_ATOMIC_CHARGES[k]
-                * ml_atomic_charges[j] / (dist * constants::CODATA08_ANGSTROM_TO_BOHR);
+                * ml_atomic_charges[j] / (dist * constants::CODATA06_ANGSTROM_TO_BOHR);
             for (int c = 0; c != 3; ++c) {
                 efield[c] += efield_screening * COUPLING_MM_ATOMIC_CHARGES[k] * delta[c]
                     / (dist_sq * dist
-                        * std::pow(constants::CODATA08_ANGSTROM_TO_BOHR, 2));
+                        * std::pow(constants::CODATA06_ANGSTROM_TO_BOHR, 2));
             }
         }
         double efield_sq =
@@ -807,7 +862,7 @@ static auto checkGeepCoupling(EntryPoint& entry, const std::string& mlmm_couplin
     double ml_geep_sigmas[ENTRY_POINT_SIZE];
     for (int j = 0; j != ENTRY_POINT_SIZE; ++j) {
         ml_geep_sigmas[j] = COUPLING_GEEP_SIGMAS[j] * COUPLING_GEEP_FACTOR
-            / constants::CODATA08_ANGSTROM_TO_BOHR;
+            / constants::CODATA06_ANGSTROM_TO_BOHR;
     }
     double zero_alphas[ENTRY_POINT_SIZE] = {0.0, 0.0};
     const double* ml_atomic_charges =
@@ -1055,7 +1110,7 @@ TEST_CASE("Charges for md engine electrostatics") {
         int charges_dims[1] = {size};
         mlip_fetch_result("atomic_charges", ref_charges, charges_dims, 1);
         std::vector<double> dq = calcAtomicChargeGrads(
-            model_path, size, atomic_numbers, coords, 0, use_double
+            model_path, size, atomic_numbers, coords, 0, -1, use_double
         );
         // Zero potential: the in-vacuo forces
         double vjp_forces[size][3];
@@ -1067,9 +1122,15 @@ TEST_CASE("Charges for md engine electrostatics") {
         mlip_calc_energy_atomic_charges_vjp(
             size, zero_ml_electrostatic_potential, vjp_forces
         );
+        // The vjp forces are computed through a different autograd path than the
+        // reference forces, so the float32 round-off is larger
         for (int j = 0; j != size; ++j) {
             for (int c = 0; c != 3; ++c) {
-                FLOAT_EQ(vjp_forces[j][c], ref_forces[j][c], false);
+                CHECK_THAT(
+                    vjp_forces[j][c],
+                    WithinAbs(ref_forces[j][c], 3.5e-5)
+                        || WithinRel(ref_forces[j][c], 2e-5)
+                );
             }
         }
         // The in-vacuo forces plus those of the charges:

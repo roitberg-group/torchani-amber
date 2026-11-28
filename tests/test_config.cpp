@@ -92,9 +92,9 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
         "  model_type = 'animbis', use_cuda_device = F, use_double_precision = F,\n"
         "  net_charge = -1, no_eval_mask = ':WAT', use_amber_neighborlist = T,\n"
         "  use_all_amber_nonbond = T, use_cuaev = F, model_index = 3, cuda_device_index = 1,\n"
-        "  ml_spin_mult = 2, extra_features_file_path = 'features.txt', torch_num_threads = 4,\n"
+        "  ml_spin_mult = 2, extra_scalar_atomic_features_file_path = 'features.txt',\n"
+        "  torch_num_threads = 4,\n"
         "/\n"
-        "&mlip model_type = 'ignored' /\n"
     );
     GlobalConfig config = GlobalConfig::fromNamelistFile(path.string());
     CHECK(config.getInt("cuda_device_index") == 1);
@@ -110,14 +110,14 @@ TEST_CASE("GlobalConfig from namelist file values", "[config]") {
     CHECK(config.getInt("ml_charge") == -1);
     CHECK(config.getInt("ml_spin_mult") == 2);
     CHECK(config.getString("no_eval_mask") == ":WAT");
-    CHECK(config.getString("extra_features_file_path") == "features.txt");
+    CHECK(config.getString("extra_scalar_atomic_features_file_path") == "features.txt");
     std::filesystem::remove(path);
 
     path =
         writeTmpFile("torchani_test_config_values.in", "&mlip use_cuda_device = F /\n");
     CHECK(
         GlobalConfig::fromNamelistFile(path.string()).device()
-        == torch::Device(torch::kCPU, 0)
+        == torch::Device(torch::kCPU)
     );
 
     writeTmpFile(
@@ -160,8 +160,28 @@ TEST_CASE("GlobalConfig from namelist file errors", "[config]") {
     CHECK_THROWS_AS(
         GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
     );
+    for (
+        const std::string& text :
+        {"&mlip cuda_device_index = -1 /\n", "&mlip cuda_device_index = 255 /\n"}
+    ) {
+        writeTmpFile("torchani_test_config_errors.in", text);
+        INFO(text);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string()),
+            config::config_validation_error
+        );
+    }
     writeTmpFile("torchani_test_config_errors.in", "&mlip /\n&ani /\n");
     CHECK_THROWS_AS(GlobalConfig::fromNamelistFile(path.string()), std::runtime_error);
+    writeTmpFile("torchani_test_config_errors.in", "&mlip /\n&mlip /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string()), config::config_validation_error
+    );
+    writeTmpFile("torchani_test_config_errors.in", "&mlmm /\n&mlmm /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+        config::config_validation_error
+    );
     std::filesystem::remove(path);
 }
 
@@ -228,6 +248,18 @@ TEST_CASE("GlobalConfig ML/MM mm_cutoff, ml_mask and ml_shake", "[config]") {
     CHECK(config.getDouble("mm_cutoff") == 10.0);
     CHECK(config.getString("ml_mask") == ":1-2");
     CHECK_FALSE(config.getBool("ml_shake"));
+
+    for (
+        const std::string& text :
+        {"&mlmm mm_cutoff = 0.0 /\n", "&mlmm mm_cutoff = -5.0 /\n"}
+    ) {
+        writeTmpFile("torchani_test_config_mlmm_cutoff_mask.in", text);
+        INFO(text);
+        CHECK_THROWS_AS(
+            GlobalConfig::fromNamelistFile(path.string(), "mlmm", "sander"),
+            config::config_validation_error
+        );
+    }
     std::filesystem::remove(path);
 }
 
@@ -567,6 +599,11 @@ TEST_CASE("GlobalConfig Amber &qmmm namelist", "[config]") {
     CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"));
     writeTmpFile(fname, "&mlip /\n&qmmm qmmm_int = 2 /\n");
     CHECK_NOTHROW(GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip"));
+    writeTmpFile(fname, "&mlip /\n&qmmm qmcharge = 1 /\n&qmmm qmcharge = 1 /\n");
+    CHECK_THROWS_AS(
+        GlobalConfig::fromNamelistFile(path.string(), "qmmm-and-mlip", "sander"),
+        config::config_validation_error
+    );
     writeTmpFile(
         fname,
         "&mlip use_qm_coupling = T, qm_coupling_method = 'orca', mlmm_coupling = 'none' /\n"
@@ -646,11 +683,13 @@ TEST_CASE("GlobalConfig printInfo", "[config]") {
     CHECK(info.find("model_type") != std::string::npos);
     CHECK(info.find("animbis") != std::string::npos);
     CHECK(info.find("mlmm_coupling") == std::string::npos);
-    CHECK(info.find("extra_features_file_path") == std::string::npos);
+    CHECK(info.find("extra_scalar_atomic_features_file_path") == std::string::npos);
 
-    writeTmpFile(fname, "&mlip extra_features_file_path = 'features.txt' /\n");
+    writeTmpFile(
+        fname, "&mlip extra_scalar_atomic_features_file_path = 'features.txt' /\n"
+    );
     info = capturedPrintInfo(GlobalConfig::fromNamelistFile(path.string()));
-    CHECK(info.find("extra_features_file_path") != std::string::npos);
+    CHECK(info.find("extra_scalar_atomic_features_file_path") != std::string::npos);
     CHECK(info.find("features.txt") != std::string::npos);
 
     writeTmpFile(
@@ -723,7 +762,7 @@ TEST_CASE("GlobalConfig from config dicts", "[config]") {
     mlip_config = mlip_config.withValue("use_double_precision", false);
     mlip_config = mlip_config.withValue("no_eval_mask", std::string{"  "});
     GlobalConfig config{mlip_config};
-    CHECK(config.device() == torch::Device(torch::kCPU, 0));
+    CHECK(config.device() == torch::Device(torch::kCPU));
     CHECK(config.dtype() == torch::kFloat32);
     CHECK_FALSE(config.useNoEvalAtoms());
     CHECK_THROWS_AS(config.mlmm(), std::logic_error);
@@ -835,15 +874,15 @@ TEST_CASE("GlobalConfig GEEP sigmas", "[config]") {
     // The builtin widths are in Angstrom, converted to bohr
     CHECK_THAT(
         config.getGeepSigma(1L),
-        WithinRel(1.00 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.00 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THAT(
         config.getGeepSigma(6L),
-        WithinRel(1.50 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.50 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THAT(
         config.getGeepSigma(54L),
-        WithinRel(1.80 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+        WithinRel(1.80 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
     );
     CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);
     CHECK_THROWS_AS(config.getGeepSigma(0L), std::out_of_range);
@@ -858,7 +897,7 @@ TEST_CASE("GlobalConfig GEEP sigmas", "[config]") {
     for (long atomic_num : {1L, 6L, 54L}) {
         CHECK_THAT(
             config.getGeepSigma(atomic_num),
-            WithinRel(3.0 * constants::CODATA08_ANGSTROM_TO_BOHR, 1e-12)
+            WithinRel(3.0 * constants::CODATA06_ANGSTROM_TO_BOHR, 1e-12)
         );
     }
     CHECK_THROWS_AS(config.getGeepSigma(55L), std::runtime_error);
@@ -889,6 +928,9 @@ TEST_CASE("GlobalConfig GEEP validation", "[config]") {
         "&mlmm mlmm_coupling = 'coulombic-geep', inv_pol_dielectric = 1.0 /\n",
         "&mlmm mlmm_coupling = 'coulombic-geep', use_mlip_atomic_volumes = T /\n",
         "&mlmm mlmm_coupling = 'simple-polarizable-geep' /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = , /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = /\n",
+        "&mlmm mlmm_coupling = 'coulombic-geep', geep_sigmas = 3* /\n",
     };
     for (const std::string& text : invalid_texts) {
         std::filesystem::path path = writeTmpFile(fname, text);

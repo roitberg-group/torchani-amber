@@ -8,7 +8,7 @@ project(
     LANGUAGES C CXX
     VERSION 0.7
     DESCRIPTION "Fortran, C and C++ interface to execute general MLIPs, with special support for the TorchANI library"
-    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber.git"
+    HOMEPAGE_URL "https://github.com/roitberg-group/torchani-amber"
 )
 
 # Amber sets global compile definitions, flags, and other settings that would otherwise
@@ -164,7 +164,6 @@ endif()
 # JIT: Options and flags
 option(TORCHANI_JIT_COMPILE_MODELS "JIT-compile built-in TorchANI models" OFF)
 option(TORCHANI_JIT_COMPILE_AIMNET2 "Also JIT-compile AimNet2 models" ON)
-option(TORCHANI_JIT_DISABLE_OPTIMIZATIONS "Disable TorchScript optimizations when JIT-compiling models" ON)
 option(TORCHANI_JIT_FORCE_RECOMPILATION "Force JIT-recompilation of all models, even if jit-compiled *.pt files with the expected names are found" OFF)
 option(TORCHANI_DOWNLOAD_JIT_MODELS "Download the JIT-compiled MLIPs that match the PyTorch/LibTorch version from Hugging Face, and install them into TORCHANI_MLIPS_INSTALL_DIR" ON)
 
@@ -289,7 +288,10 @@ set(TORCHANI_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}" C
 # NOTE: Technically, from the Linux File System Hierarchy, the convention should be
 # lib/<arch-id>/Torchani/<tag>, but it is lib/Torchani/<tag> for now, for simplicity.
 # TorchANI follows the same convention.
-set(TORCHANI_LIBRARY_INSTALL_DIR "lib/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}" CACHE STRING "Install dir for libtorchani, cuaev and cell_list")
+set(TORCHANI_LIBRARY_INSTALL_DIR "" CACHE STRING "Install dir for libtorchani, cuaev and cell_list. Defaults to lib/${PROJECT_NAME}/<build tag>")
+if(TORCHANI_LIBRARY_INSTALL_DIR STREQUAL "")
+    set(TORCHANI_LIBRARY_INSTALL_DIR "lib/${PROJECT_NAME}/${TORCHANI_EXTENSIONS_BUILD_TAG}")
+endif()
 set(TORCHANI_MLIPS_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mlips/jit" CACHE STRING "Install dir for the downloaded JIT-compiled MLIPs")
 if(IS_ABSOLUTE "${TORCHANI_LIBRARY_INSTALL_DIR}" OR IS_ABSOLUTE "${TORCHANI_MLIPS_INSTALL_DIR}")
     Torchani_Msg_error("'TORCHANI_LIBRARY_INSTALL_DIR' and 'TORCHANI_MLIPS_INSTALL_DIR' must be relative to CMAKE_INSTALL_PREFIX")
@@ -356,9 +358,10 @@ target_link_libraries(torchani_cuaev PRIVATE ${TORCH_LIBRARIES})
 target_include_directories(torchani_cuaev PRIVATE ${CUAEV_ROOT})
 
 # The extensions are named as the TorchANI Python package expects them (cuaev.so,
-# cell_list.so). After installation, the TorchANI Python package finds them in
-# <prefix>/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so they don't need to be built
-# a second time by pip or "ani build-extensions"
+# cell_list.so). The TorchANI Python package looks for them in
+# ~/.local/lib/Torchani/<TORCHANI_EXTENSIONS_BUILD_TAG>, so if they are installed with
+# the run-cmake default prefix (~/.local) they don't need to be built a second time by
+# pip or "ani build-extensions"
 set_target_properties(torchani_cuaev torchani_cell_list PROPERTIES PREFIX "")
 set_target_properties(torchani_cuaev PROPERTIES OUTPUT_NAME cuaev EXPORT_NAME cuaev)
 set_target_properties(torchani_cell_list PROPERTIES OUTPUT_NAME cell_list EXPORT_NAME cell_list)
@@ -389,6 +392,7 @@ target_compile_definitions(
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>
         TORCHANI_MLIPS_RELATIVE_DIR="${TORCHANI_MLIPS_RELATIVE_DIR}"
+        TORCHANI_HOMEPAGE_URL="${PROJECT_HOMEPAGE_URL}"
         $<$<BOOL:${TORCHANI_BUILD_CUDA}>:TORCHANI_BUILD_CUDA>
         $<$<BOOL:${TORCHANI_SUPPORT_PYTHON_MODELS}>:TORCHANI_SUPPORT_PYTHON_MODELS>
 )
@@ -464,15 +468,10 @@ set_target_properties(
 
 # The models are JIT-compiled after the extensions are built, since scripting them
 # requires the cuAEV ops to be registered
-# NOTE: Disabling JIT optimizations during scripting has been confirmed to be a no-op
-# (the saved *.pt files are identical), since these flags only affect how torch *runs*
-# TorchScript graphs, not how it scripts or serializes them
-# TODO: Remove this in the future
 if(TORCHANI_JIT_COMPILE_MODELS)
     Torchani_Msg_info("Will attempt to JIT-compile ANI models after building the extensions")
     Torchani_TorchScriptUtils_add_jit_compile_models_target(
         FORCE_RECOMPILATION ${TORCHANI_JIT_FORCE_RECOMPILATION}
-        DISABLE_OPTIMIZATIONS ${TORCHANI_JIT_DISABLE_OPTIMIZATIONS}
         AIMNET2 ${TORCHANI_JIT_COMPILE_AIMNET2}
         EXTENSIONS_DIR $<TARGET_FILE_DIR:torchani_cuaev>
     )

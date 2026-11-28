@@ -1,6 +1,7 @@
 #include "model_output.h"
 
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,13 @@ auto computeOutput(
 ) -> mlip::MlipOutput {
     mlip::MlipOutput output = std::move(extra_outputs);
     if (calc_qbc_and_qbc_grad) {
+        if (energy.dim() < 2 || energy.size(0) < 2) {
+            throw std::runtime_error(
+                "QBC requires an ensemble, but the model output a single energy"
+                " per structure (model_index != -1, or the model ignores"
+                " ensemble_values)"
+            );
+        }
         torch::Tensor num_atoms = torch::tensor(
             coords.size(1),
             torch::TensorOptions().dtype(coords.dtype()).device(coords.device())
@@ -32,9 +40,14 @@ auto computeOutput(
     }
     output["energy"] = energy;
 
-    // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms)
-    if (output.count("atomic_charges") > 0 && output.at("atomic_charges").dim() == 3) {
-        output["atomic_charges"] = output.at("atomic_charges").squeeze(0);
+    // Old TorchANI outputs charges as (1, molecs, atoms), new as (molecs, atoms).
+    // Ensembles may output (members, molecs, atoms)
+    // TODO: The uncertainty of the charges and volumes is currently not calculated.
+    // Uncertainty handling may change in future versions
+    for (const char* key : {"atomic_charges", "atomic_volumes"}) {
+        if (output.count(key) > 0 && output.at(key).dim() == 3) {
+            output[key] = output.at(key).mean(0);
+        }
     }
 
     if (calc_forces) {

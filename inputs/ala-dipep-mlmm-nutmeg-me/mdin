@@ -23,7 +23,7 @@
     model_type = "nutmeg-small"
     ! The nutmeg potentials need a file with the Gasteiger charges, relative paths are
     ! resolved wrt the current working directory
-    extra_features_file_path = "ace-ala-nme.charges"
+    extra_scalar_atomic_features_file_path = "ace-ala-nme.charges"
     use_double_precision = .False.
     mlmm_coupling = 'coulombic'  ! Mechanical Embedding
     model_index = -1

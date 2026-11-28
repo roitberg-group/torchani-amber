@@ -72,7 +72,8 @@ auto CompiledMlipModel::makeLoader(const std::string& prefix) const
         modelName(prefix),
         /* run_single_threaded= */ false,
         /* num_runners= */ 1,
-        m_device.index()
+        // The CPU runner only accepts index -1
+        m_device.is_cpu() ? -1 : m_device.index()
     );
 }
 
@@ -91,7 +92,9 @@ auto CompiledMlipModel::useOnlyEnsembleMember(std::int64_t /* member_idx */) -> 
     );
 }
 
-auto CompiledMlipModel::setExtraFeatures(torch::Tensor /* extra_features */) -> void {
+auto CompiledMlipModel::
+    setExtraScalarAtomicFeatures(torch::Tensor /* extra_scalar_atomic_features */)
+        -> void {
     throw std::runtime_error("Compiled models don't support extra features");
 }
 

@@ -413,7 +413,7 @@ customizable.
 
 Alternatively, subclassing `ANI` or `ANIq` and overriding `compute_from_neighbors(...)`
 is also supported. This is more complex. Consult the `TorchANI 2` source code for a
-reference implementation of `compute_from_neighbors`. `use_cuaev` and `network_index`
+reference implementation of `compute_from_neighbors`. `use_cuaev` and `model_index`
 may not be supported in this case, depending on your model.
 
 *ADVANCED*: AOTInductor-compiled, exported models (PyTorch 2 compilation method) are supported
@@ -524,9 +524,10 @@ an extra dim prepended in this case, which indexes the models in the network.
 
 ## Tests
 
-To run the `Amber` integration tests run `pytest -v ./tests/test_sander.py` (a working Sander
-binary is assumed to be on `PATH`). This will run CPU and CUDA tests for the ML/MM
-and Full-ML Amber integrations.
+To run the `Amber` integration tests run `pytest -v ./tests/test_amber_integration.py`
+(working `sander` and `pmemd` binaries are assumed to be on `PATH`). This will run CPU
+and CUDA tests for the ML/MM and Full-ML Amber integrations. If the
+`TORCHANI_SKIP_CUDA_TESTS` env var is set, the CUDA tests are skipped.
 
 ## Debug logging
 
@@ -590,6 +591,9 @@ def compute_mlmm(
 `mm_cutoff`: float tensor with the MM cutoff of each molecule (default 0).
 
 Units are Angstrom for coordinates, elementary charge for charges, and Hartree for
-energies. Currently Amber always calls `compute_mlmm` with `cell = None`,
-`pbc = None`, `spin_mult = 1`, `mm_cutoff = 0`, `atomic = False` and
-`ensemble_values = False`.
+energies. `charge` and `spin_mult` are set from `ml_charge` and `ml_spin_mult`. `cell`
+is only passed (with `pbc` all `True`) if the md engine passes a cell to
+`mlip_calc_energy_force_mlmm`.
+
+Amber always calls `compute_mlmm` with `cell = None`, `pbc = None`, `mm_cutoff = 0`,
+`atomic = False` and `ensemble_values = False`.

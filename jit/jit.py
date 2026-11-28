@@ -76,26 +76,9 @@ def _jit_compile_and_save_models_in_spec(spec: ModelSpec) -> bool:
     return True
 
 
-def _disable_jit_optimizations() -> None:
-    # Avoid potential issues with JIT compilation by disabling these
-    torch._C._jit_set_profiling_executor(False)
-    torch._C._jit_set_profiling_mode(False)
-    torch._C._jit_override_can_fuse_on_cpu(False)
-    torch._C._jit_set_texpr_fuser_enabled(False)
-    if tuple(map(int, torch.__version__.split(".")[:-1])) < (2, 3):
-        # Avoid nvfuser bugs for old pytorch versions
-        # https://github.com/pytorch/pytorch/issues/84510)
-        torch._C._jit_set_nvfuser_enabled(False)
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--disable-optimizations",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
     parser.add_argument(
         "--infer",
         action="store_true",
@@ -156,15 +139,6 @@ if __name__ == "__main__":
             )
             import torch
             import torchani
-
-            # NOTE: Confirmed to be a no-op (the saved *.pt files are identical), since
-            # these flags only affect how torch *runs* TorchScript graphs
-            # TODO: Remove this in the future
-            if args.disable_optimizations:
-                console.print(
-                    "-- JIT - Disabling optimizations before scripting",
-                )
-                _disable_jit_optimizations()
         success = True
         console.print("-- JIT - Starting to compile models")
         for spec in tqdm(model_specs, leave=False):
